@@ -2,6 +2,7 @@ mod effects;
 mod event_bus;
 mod execution;
 mod leases;
+mod llm;
 mod replay;
 mod scheduler;
 mod snapshot;
@@ -14,9 +15,10 @@ use execution::engine::ExecutionEngine;
 use leases::{expire_leases, seed_demo_leases};
 use replay::engine::replay_validate;
 use rusqlite::Connection;
-use scheduler::{reconcile, schedule};
+use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
 use snapshot::{rebuild_snapshot, restore_snapshot};
 use std::fs;
+use workflow::compiler::Workflow;
 
 fn print_stats(db: &str) {
     let conn = Connection::open(db).unwrap();
@@ -95,12 +97,43 @@ fn vacuum_db(db: &str) {
     println!("VACUUM OK");
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
     let db = db.as_str();
 
     match args.get(1).map(|s| s.as_str()) {
+        Some("llm-smoke") => {
+            llm::smoke().await.unwrap();
+            return;
+        }
+        Some("llm-prompt") => {
+            let prompt = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
+            if prompt.trim().is_empty() {
+                eprintln!("usage: cargo run -- llm-prompt \"your prompt here\"");
+                std::process::exit(1);
+            }
+
+            let text = llm::coding_assistant(&prompt).await.unwrap();
+
+            println!("{}", text);
+            return;
+        }
+        Some("plan-task") => {
+            let task = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
+            if task.trim().is_empty() {
+                eprintln!("usage: cargo run -- plan-task \"your task here\"");
+                std::process::exit(1);
+            }
+
+            let steps = Workflow::build_from_task_llm(&task).await.unwrap();
+
+            for step in steps {
+                println!("{}", step.as_text());
+            }
+            return;
+        }
         Some("reset") => {
             reset_db(db);
             return;
@@ -113,6 +146,21 @@ fn main() {
         }
         Some("stats") => {
             print_stats(db);
+            return;
+        }
+        Some("status-map") => {
+            let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
+            let status = current_status_map(db, task_id).unwrap();
+            println!("STEP_STATUS: {:?}", status);
+            return;
+        }
+        Some("next-ready") => {
+            let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
+            let step = next_ready_step(db, task_id).unwrap();
+            match step {
+                Some(step_id) => println!("NEXT_READY: {}", step_id),
+                None => println!("NEXT_READY: <none>"),
+            }
             return;
         }
         Some("vacuum") => {
@@ -199,7 +247,8 @@ fn main() {
 
     let bus = EventBus::new(db).unwrap();
     let engine = ExecutionEngine::new(bus.clone());
-    engine.run("task1");
+    let plan = Workflow::build_steps("task1");
+    engine.run_plan("task1", &plan);
 
     let events = bus.query("task1").unwrap();
     println!("EVENTS: {}", events.len());

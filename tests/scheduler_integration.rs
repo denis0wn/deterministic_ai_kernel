@@ -104,13 +104,13 @@ CREATE TABLE IF NOT EXISTS leases (
 );
 
 INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES
-('{0}','step_0','pending'),
-('{0}','step_1','pending'),
-('{0}','step_2','pending');
+('{0}','00_analyze_task','pending'),
+('{0}','01_plan_execution','pending'),
+('{0}','02_execute_changes','pending');
 
 INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) VALUES
-('{0}','step_1','step_0'),
-('{0}','step_2','step_1');
+('{0}','01_plan_execution','00_analyze_task'),
+('{0}','02_execute_changes','01_plan_execution');
 "#,
         task_id
     );
@@ -125,18 +125,18 @@ fn happy_path_chain_completes() {
 
     run(&db, &["schedule", "task_test"]);
     run(&db, &["claim-worker", "task_test", "worker-A"]);
-    run(&db, &["start-step", "task_test", "worker-A", "step_0"]);
-    run(&db, &["complete-step", "task_test", "worker-A", "step_0"]);
+    run(&db, &["start-step", "task_test", "worker-A", "00_analyze_task"]);
+    run(&db, &["complete-step", "task_test", "worker-A", "00_analyze_task"]);
 
     run(&db, &["schedule", "task_test"]);
     run(&db, &["claim-worker", "task_test", "worker-A"]);
-    run(&db, &["start-step", "task_test", "worker-A", "step_1"]);
-    run(&db, &["complete-step", "task_test", "worker-A", "step_1"]);
+    run(&db, &["start-step", "task_test", "worker-A", "01_plan_execution"]);
+    run(&db, &["complete-step", "task_test", "worker-A", "01_plan_execution"]);
 
     run(&db, &["schedule", "task_test"]);
     run(&db, &["claim-worker", "task_test", "worker-A"]);
-    run(&db, &["start-step", "task_test", "worker-A", "step_2"]);
-    run(&db, &["complete-step", "task_test", "worker-A", "step_2"]);
+    run(&db, &["start-step", "task_test", "worker-A", "02_execute_changes"]);
+    run(&db, &["complete-step", "task_test", "worker-A", "02_execute_changes"]);
 
     let out = Command::new("sqlite3")
         .arg(&db)
@@ -145,9 +145,9 @@ fn happy_path_chain_completes() {
         .expect("failed to inspect db");
 
     let statuses = String::from_utf8_lossy(&out.stdout);
-    assert!(statuses.contains("step_0|committed"));
-    assert!(statuses.contains("step_1|committed"));
-    assert!(statuses.contains("step_2|committed"));
+    assert!(statuses.contains("00_analyze_task|committed"));
+    assert!(statuses.contains("01_plan_execution|committed"));
+    assert!(statuses.contains("02_execute_changes|committed"));
 
     let _ = fs::remove_file(&db);
 }
@@ -159,14 +159,92 @@ fn stale_worker_is_rejected_after_reclaim() {
 
     run(&db, &["schedule", "task_test2"]);
     run(&db, &["claim-worker", "task_test2", "worker-A"]);
-    run(&db, &["start-step", "task_test2", "worker-A", "step_0"]);
+    run(&db, &["start-step", "task_test2", "worker-A", "00_analyze_task"]);
     run(&db, &["expire-leases", "task_test2"]);
     run(&db, &["reconcile", "task_test2"]);
     run(&db, &["schedule", "task_test2"]);
     run(&db, &["claim-worker", "task_test2", "worker-B"]);
 
-    let err = run_expect_fail(&db, &["complete-step", "task_test2", "worker-A", "step_0"]);
+    let err = run_expect_fail(&db, &["complete-step", "task_test2", "worker-A", "00_analyze_task"]);
     assert!(err.contains("no active lease owned by worker for step"));
 
     let _ = fs::remove_file(&db);
+}
+
+
+#[test]
+fn retryable_failure_returns_step_to_pending() {
+    let db = unique_db_path("retryable_failure_returns_step_to_pending");
+    setup_task(&db, "task_retry");
+
+    run(&db, &["schedule", "task_retry"]);
+    run(&db, &["claim-worker", "task_retry", "worker-A"]);
+    run(&db, &["start-step", "task_retry", "worker-A", "00_analyze_task"]);
+    run(&db, &["fail-step", "task_retry", "worker-A", "00_analyze_task", "retry: network blip"]);
+    run(&db, &["reconcile", "task_retry"]);
+    run(&db, &["schedule", "task_retry"]);
+
+    let out = Command::new("sqlite3")
+        .arg(&db)
+        .arg("select status from step_status where task_id='task_retry' and step_id='00_analyze_task';")
+        .output()
+        .expect("failed to inspect db");
+
+    let status = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        status.contains("ready") || status.contains("dispatched"),
+        "expected retryable failed step to become ready or dispatched again, got: {}",
+        status
+    );
+
+    let _ = fs::remove_file(&db);
+}
+
+
+#[test]
+fn blocked_failure_returns_step_to_pending() {
+    let db = unique_db_path("blocked_failure_returns_step_to_pending");
+    setup_task(&db, "task_blocked");
+
+    run(&db, &["schedule", "task_blocked"]);
+    run(&db, &["claim-worker", "task_blocked", "worker-A"]);
+    run(&db, &["start-step", "task_blocked", "worker-A", "00_analyze_task"]);
+    run(&db, &["fail-step", "task_blocked", "worker-A", "00_analyze_task", "blocked: waiting_on dependency"]);
+    run(&db, &["reconcile", "task_blocked"]);
+    run(&db, &["schedule", "task_blocked"]);
+
+    let out = Command::new("sqlite3")
+        .arg(&db)
+        .arg("select status from step_status where task_id='task_blocked' and step_id='00_analyze_task';")
+        .output()
+        .expect("failed to inspect db");
+
+    let status = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        status.contains("ready") || status.contains("dispatched"),
+        "expected blocked failed step to become ready or dispatched again, got: {}",
+        status
+    );
+
+    let _ = fs::remove_file(&db);
+}
+
+#[test]
+fn claim_step_filters_by_capability() {
+    use deterministic_ai_kernel::workflow::contract::WorkerCapability;
+    use deterministic_ai_kernel::scheduler::{claim_step, seed_dependencies, schedule};
+
+    let db = tmp_db();
+    let task_id = "task-claim-cap";
+
+    seed_dependencies(&db, task_id).unwrap();
+    schedule(&db, task_id).unwrap();
+
+    // Executor не должен получить первый шаг (Planner)
+    let result = claim_step(&db, task_id, "worker-exec", WorkerCapability::Executor).unwrap();
+    assert!(result.is_none(), "executor should not claim a planner step");
+
+    // Planner должен получить первый шаг
+    let result = claim_step(&db, task_id, "worker-plan", WorkerCapability::Planner).unwrap();
+    assert!(result.is_some(), "planner should claim first ready step");
 }

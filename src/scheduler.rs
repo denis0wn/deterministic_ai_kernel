@@ -1,20 +1,67 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-fn step_key(step: &str) -> i64 {
-    step.trim_start_matches("step_").parse::<i64>().unwrap_or(0)
+use crate::workflow::compiler::Workflow;
+use crate::workflow::contract::{terminal_outcome, Step, StepKind, StepOutcome};
+
+fn step_slug(step: &Step) -> String {
+    match step.kind {
+        StepKind::TightenPlannerPrompt => "tighten_planner_prompt".into(),
+        StepKind::NormalizePlannerOutput => "normalize_planner_output".into(),
+        StepKind::AddLlmFallbackHandling => "add_llm_fallback_handling".into(),
+        StepKind::AddPlannerTestCoverage => "add_planner_test_coverage".into(),
+        StepKind::ValidatePlannerOutput => "validate_planner_output".into(),
+        StepKind::AnalyzeTask => "analyze_task".into(),
+        StepKind::PlanExecution => "plan_execution".into(),
+        StepKind::ExecuteChanges => "execute_changes".into(),
+        StepKind::ReadRepository => "read_repository".into(),
+        StepKind::LocateBug => "locate_bug".into(),
+        StepKind::PatchCode => "patch_code".into(),
+        StepKind::RunTests => "run_tests".into(),
+        StepKind::ValidatePatch => "validate_patch".into(),
+    }
 }
 
-fn terminal(status: &str) -> bool {
-    status == "committed" || status == "rejected"
+fn ordered_step_ids(task_id: &str) -> Vec<String> {
+    Workflow::build_steps(task_id)
+        .into_iter()
+        .enumerate()
+        .map(|(i, step)| format!("{:02}_{}", i, step_slug(&step)))
+        .collect()
+}
+
+fn status_outcome(status: &str) -> Option<StepOutcome> {
+    match status {
+        "committed" => Some(StepOutcome::Success),
+        "rejected" => Some(StepOutcome::TerminalFailure),
+        _ => None,
+    }
+}
+
+fn failed_step_status_from_payload(payload: &str) -> &'static str {
+    let outcome = serde_json::from_str::<Value>(payload)
+        .ok()
+        .and_then(|value| {
+            value.get("outcome")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
+
+    match outcome.as_deref() {
+        Some("RetryableFailure") | Some("Blocked") => "pending",
+        _ => "rejected",
+    }
 }
 
 pub fn seed_dependencies(db: &str, task_id: &str) -> Result<()> {
     let conn = Connection::open(db)?;
+    let ordered = ordered_step_ids(task_id);
 
-    for (step, dep) in [("step_1", "step_0"), ("step_2", "step_1")] {
+    for window in ordered.windows(2) {
+        let dep = &window[0];
+        let step = &window[1];
         conn.execute(
             "INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id)
              VALUES (?1, ?2, ?3)",
@@ -22,7 +69,7 @@ pub fn seed_dependencies(db: &str, task_id: &str) -> Result<()> {
         )?;
     }
 
-    for step in ["step_0", "step_1", "step_2"] {
+    for step in ordered {
         conn.execute(
             "INSERT OR IGNORE INTO step_status (task_id, step_id, status)
              VALUES (?1, ?2, 'pending')",
@@ -43,18 +90,22 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
     )?;
 
     let mut stmt = conn.prepare(
-        "SELECT step_id, event_type
+        "SELECT step_id, event_type, payload
          FROM event_log
          WHERE task_id = ?1 AND step_id IS NOT NULL
          ORDER BY causal_unit_id, sequence_in_unit, id",
     )?;
 
     let rows = stmt.query_map([task_id], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     })?;
 
     for row in rows.filter_map(|r| r.ok()) {
-        let (step_id, event_type) = row;
+        let (step_id, event_type, payload) = row;
 
         match event_type.as_str() {
             "STEP_COMPLETED" => {
@@ -72,9 +123,9 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
             }
             "STEP_FAILED" => {
                 conn.execute(
-                    "UPDATE step_status SET status = 'rejected'
+                    "UPDATE step_status SET status = ?3
                      WHERE task_id = ?1 AND step_id = ?2",
-                    params![task_id, step_id],
+                    params![task_id, step_id, failed_step_status_from_payload(&payload)],
                 )?;
                 conn.execute(
                     "UPDATE leases
@@ -89,7 +140,7 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
                     params![task_id, step_id],
                     |r| r.get(0),
                 )?;
-                if !terminal(&current) {
+                if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
                     conn.execute(
                         "UPDATE step_status SET status = 'dispatched'
                          WHERE task_id = ?1 AND step_id = ?2",
@@ -103,7 +154,7 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
                     params![task_id, step_id],
                     |r| r.get(0),
                 )?;
-                if !terminal(&current) {
+                if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
                     conn.execute(
                         "UPDATE step_status SET status = 'pending'
                          WHERE task_id = ?1 AND step_id = ?2",
@@ -121,17 +172,7 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let mut all_steps: Vec<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT step_id
-             FROM step_status
-             WHERE task_id = ?1
-             ORDER BY step_id",
-        )?;
-        let rows = stmt.query_map([task_id], |r| r.get::<_, String>(0))?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
-    all_steps.sort_by_key(|s| step_key(s));
+    let all_steps = ordered_step_ids(task_id);
 
     for step_id in &all_steps {
         let current: String = conn.query_row(
@@ -140,7 +181,7 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
             |r| r.get(0),
         )?;
 
-        if terminal(&current) || current == "dispatched" || current == "ready" {
+        if status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) || current == "dispatched" || current == "ready" {
             continue;
         }
 
@@ -214,17 +255,21 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
 
     {
         let mut stmt = tx.prepare(
-            "SELECT step_id, event_type
+            "SELECT step_id, event_type, payload
              FROM event_log
              WHERE task_id = ?1 AND step_id IS NOT NULL
              ORDER BY causal_unit_id, sequence_in_unit, id",
         )?;
         let rows = stmt.query_map([task_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         })?;
 
         for row in rows.filter_map(|r| r.ok()) {
-            let (step_id, event_type) = row;
+            let (step_id, event_type, payload) = row;
 
             match event_type.as_str() {
                 "STEP_COMPLETED" => {
@@ -242,9 +287,9 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
                 }
                 "STEP_FAILED" => {
                     tx.execute(
-                        "UPDATE step_status SET status = 'rejected'
+                        "UPDATE step_status SET status = ?3
                          WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id],
+                        params![task_id, step_id, failed_step_status_from_payload(&payload)],
                     )?;
                     tx.execute(
                         "UPDATE leases
@@ -259,7 +304,7 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
                         params![task_id, step_id],
                         |r| r.get(0),
                     )?;
-                    if !terminal(&current) {
+                    if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
                         tx.execute(
                             "UPDATE step_status SET status = 'dispatched'
                              WHERE task_id = ?1 AND step_id = ?2",
@@ -273,7 +318,7 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
                         params![task_id, step_id],
                         |r| r.get(0),
                     )?;
-                    if !terminal(&current) {
+                    if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
                         tx.execute(
                             "UPDATE step_status SET status = 'pending'
                              WHERE task_id = ?1 AND step_id = ?2",
@@ -292,17 +337,7 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let mut all_steps: Vec<String> = {
-        let mut stmt = tx.prepare(
-            "SELECT step_id
-             FROM step_status
-             WHERE task_id = ?1
-             ORDER BY step_id",
-        )?;
-        let rows = stmt.query_map([task_id], |r| r.get::<_, String>(0))?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
-    all_steps.sort_by_key(|s| step_key(s));
+    let all_steps = ordered_step_ids(task_id);
 
     for step_id in &all_steps {
         let current: String = tx.query_row(
@@ -311,7 +346,7 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
             |r| r.get(0),
         )?;
 
-        if terminal(&current) || current == "dispatched" || current == "ready" {
+        if status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) || current == "dispatched" || current == "ready" {
             continue;
         }
 
@@ -353,25 +388,31 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let mut ready: Vec<String> = {
-        let mut stmt = tx.prepare(
-            "SELECT s.step_id
-             FROM step_status s
-             WHERE s.task_id = ?1
-               AND s.status = 'ready'
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM leases l
-                   WHERE l.task_id = s.task_id
-                     AND l.step_id = s.step_id
-                     AND l.state = 'active'
-               )
-             ORDER BY s.step_id",
-        )?;
-        let rows = stmt.query_map([task_id], |r| r.get::<_, String>(0))?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
-    ready.sort_by_key(|s| step_key(s));
+    let ready: Vec<String> = ordered_step_ids(task_id)
+        .into_iter()
+        .filter(|step_id| {
+            let status: Option<String> = tx.query_row(
+                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                params![task_id, step_id],
+                |r| r.get(0),
+            ).optional().unwrap_or(None);
+
+            if status.as_deref() != Some("ready") {
+                return false;
+            }
+
+            let active_lease: Option<i64> = tx.query_row(
+                "SELECT 1
+                 FROM leases
+                 WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'
+                 LIMIT 1",
+                params![task_id, step_id],
+                |r| r.get(0),
+            ).optional().unwrap_or(None);
+
+            active_lease.is_none()
+        })
+        .collect();
     println!("READY_QUEUE: {:?}", ready);
 
     for step_id in ready {
@@ -500,23 +541,92 @@ pub fn current_status_map(db: &str, task_id: &str) -> Result<BTreeMap<String, St
 
 pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
     let conn = Connection::open(db)?;
-    let step = conn
-        .query_row(
-            "SELECT s.step_id
-             FROM step_status s
-             WHERE s.task_id = ?1
-               AND s.status = 'ready'
-               AND NOT EXISTS (
-                   SELECT 1 FROM leases l
-                   WHERE l.task_id = s.task_id
-                     AND l.step_id = s.step_id
-                     AND l.state = 'active'
-               )
-             ORDER BY s.step_id
-             LIMIT 1",
-            [task_id],
-            |r| r.get::<_, String>(0),
-        )
-        .optional()?;
-    Ok(step)
+
+    for step_id in ordered_step_ids(task_id) {
+        let status: Option<String> = conn
+            .query_row(
+                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                params![task_id, step_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if status.as_deref() != Some("ready") {
+            continue;
+        }
+
+        let active_lease: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM leases
+                 WHERE task_id = ?1
+                   AND step_id = ?2
+                   AND state = 'active'
+                 LIMIT 1",
+                params![task_id, step_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if active_lease.is_none() {
+            return Ok(Some(step_id));
+        }
+    }
+
+    Ok(None)
+}
+
+pub fn claim_step(
+    db: &str,
+    task_id: &str,
+    worker_id: &str,
+    capability: crate::workflow::contract::WorkerCapability,
+) -> Result<Option<String>> {
+    use crate::workflow::contract::required_capability_for_step;
+    use crate::workflow::compiler::Workflow;
+
+    let conn = Connection::open(db)?;
+
+    for step in Workflow::build_steps(task_id) {
+        if required_capability_for_step(&step.kind) != capability {
+            continue;
+        }
+
+        let step_id = format!("{:02}_{}",
+            Workflow::build_steps(task_id).iter().position(|s| s.kind == step.kind).unwrap_or(0),
+            step_slug(&step)
+        );
+
+        let status: Option<String> = conn
+            .query_row(
+                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                params![task_id, &step_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if status.as_deref() != Some("ready") {
+            continue;
+        }
+
+        let active_lease: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM leases WHERE task_id = ?1 AND step_id = ?2 AND state = 'active' LIMIT 1",
+                params![task_id, &step_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if active_lease.is_some() {
+            continue;
+        }
+
+        conn.execute(
+            "UPDATE step_status SET status = 'running', worker_id = ?3 WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, &step_id, worker_id],
+        )?;
+
+        return Ok(Some(step_id));
+    }
+
+    Ok(None)
 }

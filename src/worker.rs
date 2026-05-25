@@ -2,6 +2,80 @@ use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
+use crate::workflow::contract::{required_capability_for_step, StepKind, StepOutcome, WorkerCapability};
+
+
+fn parse_step_kind_from_step_id(step_id: &str) -> Result<StepKind> {
+    let slug = step_id
+        .split_once('_')
+        .map(|(_, rest)| rest)
+        .unwrap_or(step_id);
+
+    match slug {
+        "tighten_planner_prompt" => Ok(StepKind::TightenPlannerPrompt),
+        "normalize_planner_output" => Ok(StepKind::NormalizePlannerOutput),
+        "add_llm_fallback_handling" => Ok(StepKind::AddLlmFallbackHandling),
+        "add_planner_test_coverage" => Ok(StepKind::AddPlannerTestCoverage),
+        "validate_planner_output" => Ok(StepKind::ValidatePlannerOutput),
+        "analyze_task" => Ok(StepKind::AnalyzeTask),
+        "plan_execution" => Ok(StepKind::PlanExecution),
+        "execute_changes" => Ok(StepKind::ExecuteChanges),
+        _ => Err(anyhow!("unknown step id: {}", step_id)),
+    }
+}
+
+fn capability_for_worker_id(worker_id: &str) -> Result<WorkerCapability> {
+    let lower = worker_id.to_ascii_lowercase();
+
+    if lower.contains("planner") {
+        return Ok(WorkerCapability::Planner);
+    }
+
+    if lower.contains("executor") {
+        return Ok(WorkerCapability::Executor);
+    }
+
+    if lower.contains("verifier") {
+        return Ok(WorkerCapability::Verifier);
+    }
+
+    if lower.starts_with("worker-") || lower.starts_with("worker_") {
+        return Ok(WorkerCapability::LegacyGeneric);
+    }
+
+    Err(anyhow!("worker has no declared capability: {}", worker_id))
+}
+
+
+fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
+    match outcome {
+        StepOutcome::Success => "STEP_COMPLETED",
+        StepOutcome::RetryableFailure
+        | StepOutcome::TerminalFailure
+        | StepOutcome::Blocked => "STEP_FAILED",
+    }
+}
+
+fn classify_failure_outcome(reason: &str) -> StepOutcome {
+    let lower = reason.trim().to_ascii_lowercase();
+
+    if lower.starts_with("retry:")
+        || lower.starts_with("transient:")
+        || lower.starts_with("timeout")
+    {
+        return StepOutcome::RetryableFailure;
+    }
+
+    if lower.starts_with("blocked:")
+        || lower.starts_with("waiting_on:")
+        || lower.starts_with("dependency:")
+    {
+        return StepOutcome::Blocked;
+    }
+
+    StepOutcome::TerminalFailure
+}
+
 pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
     let mut conn = Connection::open(db)?;
     let tx = conn.transaction()?;
@@ -73,6 +147,19 @@ pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
 }
 
 pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
+    let step_kind = parse_step_kind_from_step_id(step_id)?;
+    let worker_capability = capability_for_worker_id(worker_id)?;
+    let required_capability = required_capability_for_step(&step_kind);
+
+    if worker_capability != required_capability && worker_capability != WorkerCapability::LegacyGeneric {
+        return Err(anyhow!(
+            "worker capability mismatch for step: worker={:?}, required={:?}, step_id={}",
+            worker_capability,
+            required_capability,
+            step_id
+        ));
+    }
+
     let mut conn = Connection::open(db)?;
     let tx = conn.transaction()?;
 
@@ -221,21 +308,24 @@ pub fn fail_step(
         |r| r.get(0),
     )?;
 
+    let outcome = classify_failure_outcome(reason);
     let fail_payload = json!({
         "lease_id": lease_id,
         "worker_id": worker_id,
-        "reason": reason
+        "reason": reason,
+        "outcome": format!("{:?}", outcome)
     });
 
     tx.execute(
         "INSERT INTO event_log
          (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'STEP_FAILED', ?5, ?6)",
+         VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
         params![
             next_generation,
             next_generation,
             task_id,
             step_id,
+            outcome_to_event_type(outcome),
             serde_json::to_string(&fail_payload)?,
             next_generation
         ],
@@ -292,21 +382,24 @@ pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) ->
         |r| r.get(0),
     )?;
 
+    let outcome = StepOutcome::Success;
     let complete_payload = json!({
         "lease_id": lease_id,
         "worker_id": worker_id,
-        "result": "ok"
+        "result": "ok",
+        "outcome": format!("{:?}", outcome)
     });
 
     tx.execute(
         "INSERT INTO event_log
          (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'STEP_COMPLETED', ?5, ?6)",
+         VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
         params![
             next_generation,
             next_generation,
             task_id,
             step_id,
+            outcome_to_event_type(outcome),
             serde_json::to_string(&complete_payload)?,
             next_generation
         ],
@@ -334,4 +427,45 @@ pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) ->
     println!("WORKER: {}", worker_id);
     println!("STEP_COMPLETED_BY_WORKER: {}", step_id);
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_failure_outcome, outcome_to_event_type};
+    use crate::workflow::contract::StepOutcome;
+
+    #[test]
+    fn classify_failure_outcome_maps_retry_prefixes() {
+        assert_eq!(
+            classify_failure_outcome("retry: network blip"),
+            StepOutcome::RetryableFailure
+        );
+        assert_eq!(
+            classify_failure_outcome("timeout waiting for lock"),
+            StepOutcome::RetryableFailure
+        );
+    }
+
+    #[test]
+    fn classify_failure_outcome_maps_blocked_prefixes() {
+        assert_eq!(
+            classify_failure_outcome("blocked: waiting on dependency"),
+            StepOutcome::Blocked
+        );
+    }
+
+    #[test]
+    fn classify_failure_outcome_defaults_to_terminal_failure() {
+        assert_eq!(
+            classify_failure_outcome("syntax error"),
+            StepOutcome::TerminalFailure
+        );
+    }
+
+    #[test]
+    fn outcome_to_event_type_maps_success_and_blocked() {
+        assert_eq!(outcome_to_event_type(StepOutcome::Success), "STEP_COMPLETED");
+        assert_eq!(outcome_to_event_type(StepOutcome::Blocked), "STEP_FAILED");
+    }
 }
