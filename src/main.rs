@@ -124,10 +124,26 @@ async fn main() {
             let task = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
             if task.trim().is_empty() {
                 eprintln!("usage: cargo run -- plan-task \"your task here\"");
+                eprintln!("   or: cargo run -- plan-task --planner-hardening \"your task here\"");
+                eprintln!("   or: cargo run -- plan-task --compile-error path/to/log.txt");
+                eprintln!("   or: cargo run -- plan-task --test-failure path/to/log.txt");
+                eprintln!("   or: cargo run -- plan-task --lint-report path/to/log.txt");
                 std::process::exit(1);
             }
 
-            let steps = Workflow::build_from_task_llm(&task).await.unwrap();
+            let input = if let Some(rest) = task.strip_prefix("--planner-hardening ") {
+                workflow::compiler::TaskInput::planner_hardening(rest)
+            } else if let Some(rest) = task.strip_prefix("--compile-error ") {
+                workflow::compiler::TaskInput::from_compile_error(rest)
+            } else if let Some(rest) = task.strip_prefix("--test-failure ") {
+                workflow::compiler::TaskInput::from_test_failure(rest)
+            } else if let Some(rest) = task.strip_prefix("--lint-report ") {
+                workflow::compiler::TaskInput::from_lint_report(rest)
+            } else {
+                workflow::compiler::TaskInput::generic(task.as_str())
+            };
+
+            let steps = Workflow::build_from_task_llm(&input).await.unwrap();
 
             for step in steps {
                 println!("{}", step.as_text());
@@ -247,7 +263,7 @@ async fn main() {
 
     let bus = EventBus::new(db).unwrap();
     let engine = ExecutionEngine::new(bus.clone());
-    let plan = Workflow::build_steps("task1");
+    let plan = Workflow::build_steps(&workflow::compiler::TaskInput::generic("task1"));
     engine.run_plan("task1", &plan);
 
     let events = bus.query("task1").unwrap();

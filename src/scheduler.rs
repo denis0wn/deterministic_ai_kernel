@@ -3,7 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-use crate::workflow::compiler::Workflow;
+use crate::workflow::compiler::{TaskInput, Workflow};
 use crate::workflow::contract::{terminal_outcome, Step, StepKind, StepOutcome};
 
 fn step_slug(step: &Step) -> String {
@@ -25,7 +25,7 @@ fn step_slug(step: &Step) -> String {
 }
 
 fn ordered_step_ids(task_id: &str) -> Vec<String> {
-    Workflow::build_steps(task_id)
+    Workflow::build_steps(&TaskInput::generic(task_id))
         .into_iter()
         .enumerate()
         .map(|(i, step)| format!("{:02}_{}", i, step_slug(&step)))
@@ -397,7 +397,7 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
                 |r| r.get(0),
             ).optional().unwrap_or(None);
 
-            if status.as_deref() != Some("ready") {
+            if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
                 return false;
             }
 
@@ -551,7 +551,7 @@ pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
             )
             .optional()?;
 
-        if status.as_deref() != Some("ready") {
+        if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
             continue;
         }
 
@@ -575,6 +575,7 @@ pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
+#[allow(dead_code)]
 pub fn claim_step(
     db: &str,
     task_id: &str,
@@ -582,19 +583,17 @@ pub fn claim_step(
     capability: crate::workflow::contract::WorkerCapability,
 ) -> Result<Option<String>> {
     use crate::workflow::contract::required_capability_for_step;
-    use crate::workflow::compiler::Workflow;
+    use crate::workflow::compiler::{TaskInput, Workflow};
 
     let conn = Connection::open(db)?;
+    let steps = Workflow::build_steps(&TaskInput::generic(task_id));
 
-    for step in Workflow::build_steps(task_id) {
+    for (idx, step) in steps.iter().enumerate() {
         if required_capability_for_step(&step.kind) != capability {
             continue;
         }
 
-        let step_id = format!("{:02}_{}",
-            Workflow::build_steps(task_id).iter().position(|s| s.kind == step.kind).unwrap_or(0),
-            step_slug(&step)
-        );
+        let step_id = format!("{:02}_{}", idx, step_slug(step));
 
         let status: Option<String> = conn
             .query_row(
@@ -604,7 +603,7 @@ pub fn claim_step(
             )
             .optional()?;
 
-        if status.as_deref() != Some("ready") {
+        if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
             continue;
         }
 
@@ -620,9 +619,10 @@ pub fn claim_step(
             continue;
         }
 
+        let _ = worker_id;
         conn.execute(
-            "UPDATE step_status SET status = 'running', worker_id = ?3 WHERE task_id = ?1 AND step_id = ?2",
-            params![task_id, &step_id, worker_id],
+            "UPDATE step_status SET status = 'dispatched' WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, &step_id],
         )?;
 
         return Ok(Some(step_id));

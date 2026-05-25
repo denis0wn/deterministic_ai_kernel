@@ -231,20 +231,23 @@ fn blocked_failure_returns_step_to_pending() {
 
 #[test]
 fn claim_step_filters_by_capability() {
+    use deterministic_ai_kernel::scheduler::claim_step;
     use deterministic_ai_kernel::workflow::contract::WorkerCapability;
-    use deterministic_ai_kernel::scheduler::{claim_step, seed_dependencies, schedule};
 
-    let db = tmp_db();
     let task_id = "task-claim-cap";
+    let db = unique_db_path(task_id);
+    setup_task(&db, task_id);
 
-    seed_dependencies(&db, task_id).unwrap();
-    schedule(&db, task_id).unwrap();
+    sqlite(&db, &format!(
+        "UPDATE step_status SET status = 'ready' WHERE task_id = '{}' AND step_id = '00_analyze_task';",
+        task_id
+    ));
 
-    // Executor не должен получить первый шаг (Planner)
-    let result = claim_step(&db, task_id, "worker-exec", WorkerCapability::Executor).unwrap();
-    assert!(result.is_none(), "executor should not claim a planner step");
+    let db_str = db.to_str().unwrap();
 
-    // Planner должен получить первый шаг
-    let result = claim_step(&db, task_id, "worker-plan", WorkerCapability::Planner).unwrap();
-    assert!(result.is_some(), "planner should claim first ready step");
+    let result = claim_step(db_str, task_id, "worker-exec", WorkerCapability::Executor).unwrap();
+    assert!(result.is_none(), "executor should not claim planner step");
+
+    let result = claim_step(db_str, task_id, "worker-plan", WorkerCapability::Planner).unwrap();
+    assert_eq!(result.as_deref(), Some("00_analyze_task"));
 }
