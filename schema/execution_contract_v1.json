@@ -1,0 +1,11 @@
+{
+  "contract_version": 1,
+  "task_envelope": {
+    "required": ["task_id", "run_id", "task_class", "input", "requested_capabilities", "contract_version"]
+  },
+  "event_envelope": {
+    "required": ["event_id", "run_id", "task_id", "event_type", "ts", "payload", "contract_version"]
+  },
+  "terminal_outcomes": ["Success", "TerminalFailure"],
+  "non_terminal_outcomes": ["RetryableFailure", "Blocked"]
+}

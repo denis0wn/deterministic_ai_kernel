@@ -1,0 +1,22 @@
+{
+  "contract_version": 1,
+  "event_envelope": {
+    "required": [
+      "event_id",
+      "run_id",
+      "task_id",
+      "event_type",
+      "ts",
+      "payload",
+      "contract_version"
+    ],
+    "event_types": [
+      "task.created",
+      "task.started",
+      "task.progress",
+      "task.succeeded",
+      "task.failed",
+      "task.blocked"
+    ]
+  }
+}
