@@ -1,8 +1,12 @@
 mod effects;
+mod embeddings;
 mod event_bus;
 mod execution;
 mod leases;
 mod llm;
+mod lm_control;
+mod model_registry;
+mod model_manifest;
 mod replay;
 mod scheduler;
 mod snapshot;
@@ -99,13 +103,141 @@ fn vacuum_db(db: &str) {
 
 #[tokio::main]
 async fn main() {
+    model_registry::validate().unwrap();
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
     let db = db.as_str();
 
     match args.get(1).map(|s| s.as_str()) {
         Some("llm-smoke") => {
-            llm::smoke().await.unwrap();
+            match llm::smoke().await {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("llm-smoke failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("embeddings-smoke") => {
+            match embeddings::embeddings_smoke().await {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("embeddings-smoke failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+
+        Some("llm-planner-smoke") => {
+            match llm::planner_smoke().await {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("llm-planner-smoke failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("print-model-manifest") => {
+            match model_manifest::print_manifest() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("print-model-manifest failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("current-models") => {
+            match model_manifest::print_current_models() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("current-models failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("doctor") => {
+            match lm_control::print_doctor_text() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("doctor failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("doctor-json") => {
+            match lm_control::print_doctor_json() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("doctor-json failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("auto-route") => {
+            let role = args.get(2).cloned().unwrap_or_default();
+            if role.trim().is_empty() {
+                eprintln!("usage: cargo run -- auto-route <coding_assistant|task_planning|embeddings>");
+                std::process::exit(1);
+            }
+
+            match lm_control::auto_route(&role) {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("auto-route failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("sync-all-model-roles") => {
+            match model_manifest::sync_all_roles() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("sync-all-model-roles failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("memory") => {
+            let threshold = args.get(2).and_then(|s| s.parse::<f64>().ok());
+            match lm_control::print_memory(threshold) {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("memory failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+        Some("switch") => {
+            let role = args.get(2).cloned().unwrap_or_default();
+            if role.trim().is_empty() {
+                eprintln!("usage: cargo run -- switch <coding_assistant|task_planning|embeddings> [--dry-run]");
+                std::process::exit(1);
+            }
+
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let result = if dry_run {
+                lm_control::dry_run_switch(&role)
+            } else {
+                lm_control::safe_switch(&role)
+            };
+
+            match result {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("switch failed: {e}");
+                    std::process::exit(1);
+                }
+            };
             return;
         }
         Some("llm-prompt") => {
