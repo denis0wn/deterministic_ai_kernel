@@ -55,6 +55,16 @@ CREATE TABLE IF NOT EXISTS state_snapshots (
     payload TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS semantic_artifacts (
+    artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    step_id TEXT NOT NULL,
+    source_generation BIGINT NOT NULL,
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification')),
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     task_id TEXT PRIMARY KEY,
     task_class TEXT NOT NULL CHECK(task_class IN ('Generic','PlannerHardening','CodeFix'))
@@ -95,6 +105,9 @@ ON leases(task_id, step_id, state);
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_task
 ON state_snapshots(task_id, snapshot_id);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_artifacts_task
+ON semantic_artifacts(task_id, step_id, source_generation);
 
 CREATE INDEX IF NOT EXISTS idx_deps_task
 ON step_dependencies(task_id, step_id, depends_on_step_id);
