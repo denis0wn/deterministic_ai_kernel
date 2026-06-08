@@ -65,6 +65,40 @@ impl EventBus {
         Ok(unit_gen)
     }
 
+    pub fn append_semantic_artifact(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        source_generation: i64,
+        artifact_type: &str,
+        payload: &Value,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO semantic_artifacts
+             (task_id, step_id, source_generation, artifact_type, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                task_id,
+                step_id,
+                source_generation,
+                artifact_type,
+                Self::canonical_json(payload)
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn latest_generation_for_task(&self, task_id: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let generation = conn.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) FROM event_log WHERE task_id = ?1",
+            [task_id],
+            |r| r.get(0),
+        )?;
+        Ok(generation)
+    }
+
     pub fn commit_causal_unit(
         &self,
         task_id: &str,
@@ -168,24 +202,24 @@ impl EventBus {
             })
         })?;
 
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    fn canonicalize(value: &Value) -> Value {
-        match value {
-            Value::Object(map) => {
-                let mut ordered: BTreeMap<_, _> = BTreeMap::new();
-                for (k, v) in map {
-                    ordered.insert(k.clone(), Self::canonicalize(v));
+    fn canonical_json(value: &Value) -> String {
+        fn normalize(v: &Value) -> Value {
+            match v {
+                Value::Object(map) => {
+                    let mut ordered = BTreeMap::new();
+                    for (k, val) in map {
+                        ordered.insert(k.clone(), normalize(val));
+                    }
+                    Value::Object(ordered.into_iter().collect())
                 }
-                serde_json::to_value(ordered).unwrap()
+                Value::Array(items) => Value::Array(items.iter().map(normalize).collect()),
+                _ => v.clone(),
             }
-            Value::Array(arr) => Value::Array(arr.iter().map(Self::canonicalize).collect()),
-            _ => value.clone(),
         }
-    }
 
-    fn canonical_json(val: &Value) -> String {
-        serde_json::to_string(&Self::canonicalize(val)).unwrap()
+        serde_json::to_string(&normalize(value)).unwrap()
     }
 }

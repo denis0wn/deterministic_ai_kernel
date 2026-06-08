@@ -19,13 +19,14 @@ impl Runtime {
             StepKind::AnalyzeTask => {
                 let detail = step.detail.as_deref().unwrap_or("analyze task").trim();
                 let vector = embed_text(detail).await?;
+                let source_generation = self.bus.latest_generation_for_task(task_id)?;
 
-                self.bus.append_event(
+                self.bus.append_semantic_artifact(
                     task_id,
-                    None,
-                    "ANALYZE_TASK_EMBEDDED",
+                    &step.as_text(),
+                    source_generation,
+                    "analysis_seed",
                     &json!({
-                        "step": step.as_text(),
                         "input_representation": detail,
                         "embedding_dim": vector.len(),
                         "analysis_kind": "semantic_seed"
