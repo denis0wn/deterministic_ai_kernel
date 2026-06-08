@@ -85,7 +85,10 @@ pub fn validate_steps(steps: Vec<Step>) -> Vec<Step> {
 
     for kind in canonical_order {
         if let Some(step) = steps.iter().find(|s| s.kind == kind) {
-            if !validated.iter().any(|existing: &Step| existing.kind == step.kind) {
+            if !validated
+                .iter()
+                .any(|existing: &Step| existing.kind == step.kind)
+            {
                 validated.push(step.clone());
             }
         }
@@ -142,11 +145,26 @@ mod tests {
     #[test]
     fn validate_steps_dedupes_and_orders_canonical_steps() {
         let steps = vec![
-            Step { kind: StepKind::ValidatePlannerOutput, detail: None },
-            Step { kind: StepKind::AddPlannerTestCoverage, detail: None },
-            Step { kind: StepKind::NormalizePlannerOutput, detail: None },
-            Step { kind: StepKind::AddPlannerTestCoverage, detail: None },
-            Step { kind: StepKind::TightenPlannerPrompt, detail: None },
+            Step {
+                kind: StepKind::ValidatePlannerOutput,
+                detail: None,
+            },
+            Step {
+                kind: StepKind::AddPlannerTestCoverage,
+                detail: None,
+            },
+            Step {
+                kind: StepKind::NormalizePlannerOutput,
+                detail: None,
+            },
+            Step {
+                kind: StepKind::AddPlannerTestCoverage,
+                detail: None,
+            },
+            Step {
+                kind: StepKind::TightenPlannerPrompt,
+                detail: None,
+            },
         ];
 
         let validated = validate_steps(steps);

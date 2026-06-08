@@ -3,8 +3,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-use crate::workflow::compiler::{TaskInput, Workflow};
-use crate::workflow::contract::{terminal_outcome, Step, StepKind, StepOutcome};
+use crate::workflow::contract::{
+    step_specs_to_steps, task_class_to_flow, terminal_outcome, Step, StepKind, StepOutcome,
+    TaskClass,
+};
 
 fn step_slug(step: &Step) -> String {
     match step.kind {
@@ -24,12 +26,37 @@ fn step_slug(step: &Step) -> String {
     }
 }
 
-fn ordered_step_ids(task_id: &str) -> Vec<String> {
-    Workflow::build_steps(&TaskInput::generic(task_id))
+fn parse_task_class(raw: &str) -> Result<TaskClass> {
+    match raw {
+        "Generic" => Ok(TaskClass::Generic),
+        "PlannerHardening" => Ok(TaskClass::PlannerHardening),
+        "CodeFix" => Ok(TaskClass::CodeFix),
+        other => anyhow::bail!("unknown task_class '{}' in persistence layer", other),
+    }
+}
+
+fn load_task_class(conn: &Connection, task_id: &str) -> Result<TaskClass> {
+    let task_class: Option<String> = conn
+        .query_row(
+            "SELECT task_class FROM tasks WHERE task_id = ?1",
+            [task_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+
+    let raw = task_class
+        .ok_or_else(|| anyhow::anyhow!("missing task_class for task_id '{}'", task_id))?;
+
+    parse_task_class(&raw)
+}
+
+fn ordered_step_ids(conn: &Connection, task_id: &str) -> Result<Vec<String>> {
+    let flow = task_class_to_flow(load_task_class(conn, task_id)?);
+    Ok(step_specs_to_steps(&flow, None)
         .into_iter()
         .enumerate()
         .map(|(i, step)| format!("{:02}_{}", i, step_slug(&step)))
-        .collect()
+        .collect())
 }
 
 fn status_outcome(status: &str) -> Option<StepOutcome> {
@@ -44,7 +71,8 @@ fn failed_step_status_from_payload(payload: &str) -> &'static str {
     let outcome = serde_json::from_str::<Value>(payload)
         .ok()
         .and_then(|value| {
-            value.get("outcome")
+            value
+                .get("outcome")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         });
@@ -57,7 +85,7 @@ fn failed_step_status_from_payload(payload: &str) -> &'static str {
 
 pub fn seed_dependencies(db: &str, task_id: &str) -> Result<()> {
     let conn = Connection::open(db)?;
-    let ordered = ordered_step_ids(task_id);
+    let ordered = ordered_step_ids(&conn, task_id)?;
 
     for window in ordered.windows(2) {
         let dep = &window[0];
@@ -140,7 +168,11 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
                     params![task_id, step_id],
                     |r| r.get(0),
                 )?;
-                if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
+                if !status_outcome(&current)
+                    .as_ref()
+                    .map(terminal_outcome)
+                    .unwrap_or(false)
+                {
                     conn.execute(
                         "UPDATE step_status SET status = 'dispatched'
                          WHERE task_id = ?1 AND step_id = ?2",
@@ -154,7 +186,11 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
                     params![task_id, step_id],
                     |r| r.get(0),
                 )?;
-                if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
+                if !status_outcome(&current)
+                    .as_ref()
+                    .map(terminal_outcome)
+                    .unwrap_or(false)
+                {
                     conn.execute(
                         "UPDATE step_status SET status = 'pending'
                          WHERE task_id = ?1 AND step_id = ?2",
@@ -172,7 +208,7 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let all_steps = ordered_step_ids(task_id);
+    let all_steps = ordered_step_ids(&conn, task_id)?;
 
     for step_id in &all_steps {
         let current: String = conn.query_row(
@@ -181,7 +217,13 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
             |r| r.get(0),
         )?;
 
-        if status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) || current == "dispatched" || current == "ready" {
+        if status_outcome(&current)
+            .as_ref()
+            .map(terminal_outcome)
+            .unwrap_or(false)
+            || current == "dispatched"
+            || current == "ready"
+        {
             continue;
         }
 
@@ -304,7 +346,11 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
                         params![task_id, step_id],
                         |r| r.get(0),
                     )?;
-                    if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
+                    if !status_outcome(&current)
+                        .as_ref()
+                        .map(terminal_outcome)
+                        .unwrap_or(false)
+                    {
                         tx.execute(
                             "UPDATE step_status SET status = 'dispatched'
                              WHERE task_id = ?1 AND step_id = ?2",
@@ -318,7 +364,11 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
                         params![task_id, step_id],
                         |r| r.get(0),
                     )?;
-                    if !status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) {
+                    if !status_outcome(&current)
+                        .as_ref()
+                        .map(terminal_outcome)
+                        .unwrap_or(false)
+                    {
                         tx.execute(
                             "UPDATE step_status SET status = 'pending'
                              WHERE task_id = ?1 AND step_id = ?2",
@@ -337,7 +387,7 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let all_steps = ordered_step_ids(task_id);
+    let all_steps = ordered_step_ids(&tx, task_id)?;
 
     for step_id in &all_steps {
         let current: String = tx.query_row(
@@ -346,7 +396,13 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
             |r| r.get(0),
         )?;
 
-        if status_outcome(&current).as_ref().map(terminal_outcome).unwrap_or(false) || current == "dispatched" || current == "ready" {
+        if status_outcome(&current)
+            .as_ref()
+            .map(terminal_outcome)
+            .unwrap_or(false)
+            || current == "dispatched"
+            || current == "ready"
+        {
             continue;
         }
 
@@ -388,27 +444,33 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let ready: Vec<String> = ordered_step_ids(task_id)
+    let ready: Vec<String> = ordered_step_ids(&tx, task_id)?
         .into_iter()
         .filter(|step_id| {
-            let status: Option<String> = tx.query_row(
-                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-                params![task_id, step_id],
-                |r| r.get(0),
-            ).optional().unwrap_or(None);
+            let status: Option<String> = tx
+                .query_row(
+                    "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                    params![task_id, step_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .unwrap_or(None);
 
             if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
                 return false;
             }
 
-            let active_lease: Option<i64> = tx.query_row(
-                "SELECT 1
+            let active_lease: Option<i64> = tx
+                .query_row(
+                    "SELECT 1
                  FROM leases
                  WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'
                  LIMIT 1",
-                params![task_id, step_id],
-                |r| r.get(0),
-            ).optional().unwrap_or(None);
+                    params![task_id, step_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .unwrap_or(None);
 
             active_lease.is_none()
         })
@@ -542,7 +604,7 @@ pub fn current_status_map(db: &str, task_id: &str) -> Result<BTreeMap<String, St
 pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
     let conn = Connection::open(db)?;
 
-    for step_id in ordered_step_ids(task_id) {
+    for step_id in ordered_step_ids(&conn, task_id)? {
         let status: Option<String> = conn
             .query_row(
                 "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
@@ -575,58 +637,3 @@ pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
-#[allow(dead_code)]
-pub fn claim_step(
-    db: &str,
-    task_id: &str,
-    worker_id: &str,
-    capability: crate::workflow::contract::WorkerCapability,
-) -> Result<Option<String>> {
-    use crate::workflow::contract::required_capability_for_step;
-    use crate::workflow::compiler::{TaskInput, Workflow};
-
-    let conn = Connection::open(db)?;
-    let steps = Workflow::build_steps(&TaskInput::generic(task_id));
-
-    for (idx, step) in steps.iter().enumerate() {
-        if required_capability_for_step(&step.kind) != capability {
-            continue;
-        }
-
-        let step_id = format!("{:02}_{}", idx, step_slug(step));
-
-        let status: Option<String> = conn
-            .query_row(
-                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-                params![task_id, &step_id],
-                |r| r.get(0),
-            )
-            .optional()?;
-
-        if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
-            continue;
-        }
-
-        let active_lease: Option<i64> = conn
-            .query_row(
-                "SELECT 1 FROM leases WHERE task_id = ?1 AND step_id = ?2 AND state = 'active' LIMIT 1",
-                params![task_id, &step_id],
-                |r| r.get(0),
-            )
-            .optional()?;
-
-        if active_lease.is_some() {
-            continue;
-        }
-
-        let _ = worker_id;
-        conn.execute(
-            "UPDATE step_status SET status = 'dispatched' WHERE task_id = ?1 AND step_id = ?2",
-            params![task_id, &step_id],
-        )?;
-
-        return Ok(Some(step_id));
-    }
-
-    Ok(None)
-}

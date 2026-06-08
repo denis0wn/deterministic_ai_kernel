@@ -68,7 +68,11 @@ impl TaskInput {
         match self {
             TaskInput::Generic(task) | TaskInput::PlannerHardening(task) => {
                 let normalized = task.trim();
-                if normalized.is_empty() { None } else { Some(normalized) }
+                if normalized.is_empty() {
+                    None
+                } else {
+                    Some(normalized)
+                }
             }
             TaskInput::CodeFix(_) => None,
         }
@@ -154,9 +158,7 @@ mod tests {
 
     #[test]
     fn generic_task_uses_default_execution_flow() {
-        let steps = Workflow::build_steps(&TaskInput::generic(
-            "Refactor scheduler reconciliation",
-        ));
+        let steps = Workflow::build_steps(&TaskInput::generic("Refactor scheduler reconciliation"));
         let kinds: Vec<StepKind> = steps.into_iter().map(|s| s.kind).collect();
 
         assert_eq!(
@@ -171,23 +173,28 @@ mod tests {
 
     #[test]
     fn planner_hardening_input_maps_to_planner_hardening_task_class() {
-        let input = TaskInput::planner_hardening(
-            "Add LLM-powered task planning to the kernel",
-        );
+        let input = TaskInput::planner_hardening("Add LLM-powered task planning to the kernel");
 
-        assert_eq!(input.task_class(), crate::workflow::contract::TaskClass::PlannerHardening);
+        assert_eq!(
+            input.task_class(),
+            crate::workflow::contract::TaskClass::PlannerHardening
+        );
     }
 
     #[test]
     fn codefix_input_maps_to_codefix_task_class() {
         let input = TaskInput::from_compile_error("cargo-check.log");
 
-        assert_eq!(input.task_class(), crate::workflow::contract::TaskClass::CodeFix);
+        assert_eq!(
+            input.task_class(),
+            crate::workflow::contract::TaskClass::CodeFix
+        );
     }
 
     #[test]
     fn codefix_input_uses_canonical_codefix_flow() {
-        let steps = Workflow::build_steps(&TaskInput::from_test_failure("scheduler_integration.log"));
+        let steps =
+            Workflow::build_steps(&TaskInput::from_test_failure("scheduler_integration.log"));
         let kinds: Vec<StepKind> = steps.into_iter().map(|s| s.kind).collect();
 
         assert_eq!(
@@ -206,6 +213,25 @@ mod tests {
     fn lint_report_codefix_input_maps_to_codefix_task_class() {
         let input = TaskInput::from_lint_report("clippy.log");
 
-        assert_eq!(input.task_class(), crate::workflow::contract::TaskClass::CodeFix);
+        assert_eq!(
+            input.task_class(),
+            crate::workflow::contract::TaskClass::CodeFix
+        );
+    }
+
+    #[test]
+    fn all_codefix_failure_signals_converge_to_same_canonical_flow() {
+        let compile_steps =
+            Workflow::build_steps(&TaskInput::from_compile_error("cargo-check.log"));
+        let test_steps =
+            Workflow::build_steps(&TaskInput::from_test_failure("scheduler_integration.log"));
+        let lint_steps = Workflow::build_steps(&TaskInput::from_lint_report("clippy.log"));
+
+        let compile_kinds: Vec<StepKind> = compile_steps.into_iter().map(|s| s.kind).collect();
+        let test_kinds: Vec<StepKind> = test_steps.into_iter().map(|s| s.kind).collect();
+        let lint_kinds: Vec<StepKind> = lint_steps.into_iter().map(|s| s.kind).collect();
+
+        assert_eq!(compile_kinds, test_kinds);
+        assert_eq!(test_kinds, lint_kinds);
     }
 }

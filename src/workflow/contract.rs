@@ -82,47 +82,114 @@ pub fn terminal_outcome(outcome: &StepOutcome) -> bool {
     matches!(outcome, StepOutcome::Success | StepOutcome::TerminalFailure)
 }
 
-pub fn required_capability_for_step(step_kind: &StepKind) -> WorkerCapability {
-    match step_kind {
-        StepKind::TightenPlannerPrompt
-        | StepKind::NormalizePlannerOutput
-        | StepKind::AddLlmFallbackHandling
-        | StepKind::AddPlannerTestCoverage
-        | StepKind::AnalyzeTask
-        | StepKind::PlanExecution
-        | StepKind::ReadRepository
-        | StepKind::LocateBug => WorkerCapability::Planner,
-        StepKind::ExecuteChanges
-        | StepKind::PatchCode
-        | StepKind::RunTests => WorkerCapability::Executor,
-        StepKind::ValidatePlannerOutput
-        | StepKind::ValidatePatch => WorkerCapability::Verifier,
+#[allow(dead_code)]
+pub const CONTRACT_VERSION: u32 = 1;
+
+#[allow(dead_code)]
+pub fn contract_version() -> u32 {
+    CONTRACT_VERSION
+}
+
+#[allow(dead_code)]
+pub fn task_class_names() -> &'static [&'static str] {
+    &["Generic", "PlannerHardening", "CodeFix"]
+}
+
+#[allow(dead_code)]
+pub fn step_kind_names() -> &'static [&'static str] {
+    &[
+        "TightenPlannerPrompt",
+        "NormalizePlannerOutput",
+        "AddLlmFallbackHandling",
+        "AddPlannerTestCoverage",
+        "ValidatePlannerOutput",
+        "AnalyzeTask",
+        "PlanExecution",
+        "ExecuteChanges",
+        "ReadRepository",
+        "LocateBug",
+        "PatchCode",
+        "RunTests",
+        "ValidatePatch",
+    ]
+}
+
+#[allow(dead_code)]
+pub fn outcome_names() -> &'static [&'static str] {
+    &["Success", "RetryableFailure", "TerminalFailure", "Blocked"]
+}
+
+#[allow(dead_code)]
+pub fn event_type_names() -> &'static [&'static str] {
+    &[
+        "task.created",
+        "task.started",
+        "task.progress",
+        "task.succeeded",
+        "task.failed",
+        "task.blocked",
+    ]
+}
+
+/// Advisory-only capability hint from the static workflow contract.
+/// Runtime execution is lease-authorized; this mapping is metadata, not an execution guard.
+#[allow(dead_code)]
+pub fn advisory_capability_for_step(step_kind: &StepKind) -> WorkerCapability {
+    required_capability_for_step(step_kind)
+}
+
+const GENERIC_FLOW: &[(StepKind, WorkerCapability)] = &[
+    (StepKind::AnalyzeTask, WorkerCapability::Planner),
+    (StepKind::PlanExecution, WorkerCapability::Planner),
+    (StepKind::ExecuteChanges, WorkerCapability::Executor),
+];
+
+const PLANNER_HARDENING_FLOW: &[(StepKind, WorkerCapability)] = &[
+    (StepKind::TightenPlannerPrompt, WorkerCapability::Planner),
+    (StepKind::NormalizePlannerOutput, WorkerCapability::Planner),
+    (StepKind::AddLlmFallbackHandling, WorkerCapability::Planner),
+    (StepKind::AddPlannerTestCoverage, WorkerCapability::Planner),
+    (StepKind::ValidatePlannerOutput, WorkerCapability::Verifier),
+];
+
+const CODEFIX_FLOW: &[(StepKind, WorkerCapability)] = &[
+    (StepKind::ReadRepository, WorkerCapability::Planner),
+    (StepKind::LocateBug, WorkerCapability::Planner),
+    (StepKind::PatchCode, WorkerCapability::Executor),
+    (StepKind::RunTests, WorkerCapability::Executor),
+    (StepKind::ValidatePatch, WorkerCapability::Verifier),
+];
+
+fn flow_table(task_class: TaskClass) -> &'static [(StepKind, WorkerCapability)] {
+    match task_class {
+        TaskClass::Generic => GENERIC_FLOW,
+        TaskClass::PlannerHardening => PLANNER_HARDENING_FLOW,
+        TaskClass::CodeFix => CODEFIX_FLOW,
     }
 }
 
+pub fn required_capability_for_step(step_kind: &StepKind) -> WorkerCapability {
+    for (kind, capability) in GENERIC_FLOW
+        .iter()
+        .chain(PLANNER_HARDENING_FLOW.iter())
+        .chain(CODEFIX_FLOW.iter())
+    {
+        if kind == step_kind {
+            return *capability;
+        }
+    }
+
+    panic!("missing capability mapping for step kind")
+}
 
 pub fn task_class_to_flow(task_class: TaskClass) -> Vec<StepSpec> {
-    match task_class {
-        TaskClass::Generic => vec![
-            StepSpec { kind: StepKind::AnalyzeTask, required_capability: required_capability_for_step(&StepKind::AnalyzeTask) },
-            StepSpec { kind: StepKind::PlanExecution, required_capability: required_capability_for_step(&StepKind::PlanExecution) },
-            StepSpec { kind: StepKind::ExecuteChanges, required_capability: required_capability_for_step(&StepKind::ExecuteChanges) },
-        ],
-        TaskClass::PlannerHardening => vec![
-            StepSpec { kind: StepKind::TightenPlannerPrompt, required_capability: required_capability_for_step(&StepKind::TightenPlannerPrompt) },
-            StepSpec { kind: StepKind::NormalizePlannerOutput, required_capability: required_capability_for_step(&StepKind::NormalizePlannerOutput) },
-            StepSpec { kind: StepKind::AddLlmFallbackHandling, required_capability: required_capability_for_step(&StepKind::AddLlmFallbackHandling) },
-            StepSpec { kind: StepKind::AddPlannerTestCoverage, required_capability: required_capability_for_step(&StepKind::AddPlannerTestCoverage) },
-            StepSpec { kind: StepKind::ValidatePlannerOutput, required_capability: required_capability_for_step(&StepKind::ValidatePlannerOutput) },
-        ],
-        TaskClass::CodeFix => vec![
-            StepSpec { kind: StepKind::ReadRepository, required_capability: required_capability_for_step(&StepKind::ReadRepository) },
-            StepSpec { kind: StepKind::LocateBug, required_capability: required_capability_for_step(&StepKind::LocateBug) },
-            StepSpec { kind: StepKind::PatchCode, required_capability: required_capability_for_step(&StepKind::PatchCode) },
-            StepSpec { kind: StepKind::RunTests, required_capability: required_capability_for_step(&StepKind::RunTests) },
-            StepSpec { kind: StepKind::ValidatePatch, required_capability: required_capability_for_step(&StepKind::ValidatePatch) },
-        ],
-    }
+    flow_table(task_class)
+        .iter()
+        .map(|(kind, capability)| StepSpec {
+            kind: kind.clone(),
+            required_capability: *capability,
+        })
+        .collect()
 }
 
 pub fn step_specs_to_steps(step_specs: &[StepSpec], detail: Option<&str>) -> Vec<Step> {
@@ -137,7 +204,11 @@ pub fn step_specs_to_steps(step_specs: &[StepSpec], detail: Option<&str>) -> Vec
 
 #[cfg(test)]
 mod tests {
-    use super::{required_capability_for_step, step_specs_to_steps, task_class_to_flow, terminal_outcome, StepKind, StepOutcome, TaskClass, WorkerCapability};
+    use super::{
+        contract_version, event_type_names, outcome_names, required_capability_for_step,
+        step_kind_names, step_specs_to_steps, task_class_names, task_class_to_flow,
+        terminal_outcome, StepKind, StepOutcome, TaskClass, WorkerCapability,
+    };
 
     #[test]
     fn generic_task_class_maps_to_default_execution_flow() {
@@ -194,7 +265,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn analyze_and_plan_steps_require_planner_capability() {
         assert_eq!(
@@ -248,6 +318,121 @@ mod tests {
     }
 
     #[test]
+    fn every_task_class_has_a_non_empty_canonical_flow() {
+        for task_class in [
+            TaskClass::Generic,
+            TaskClass::PlannerHardening,
+            TaskClass::CodeFix,
+        ] {
+            assert!(
+                !task_class_to_flow(task_class).is_empty(),
+                "expected non-empty canonical flow for {:?}",
+                task_class
+            );
+        }
+    }
+
+    #[test]
+    fn every_step_kind_is_present_in_exactly_one_canonical_flow() {
+        let all_step_kinds = [
+            StepKind::TightenPlannerPrompt,
+            StepKind::NormalizePlannerOutput,
+            StepKind::AddLlmFallbackHandling,
+            StepKind::AddPlannerTestCoverage,
+            StepKind::ValidatePlannerOutput,
+            StepKind::AnalyzeTask,
+            StepKind::PlanExecution,
+            StepKind::ExecuteChanges,
+            StepKind::ReadRepository,
+            StepKind::LocateBug,
+            StepKind::PatchCode,
+            StepKind::RunTests,
+            StepKind::ValidatePatch,
+        ];
+
+        let flows = [
+            task_class_to_flow(TaskClass::Generic),
+            task_class_to_flow(TaskClass::PlannerHardening),
+            task_class_to_flow(TaskClass::CodeFix),
+        ];
+
+        let mut seen: Vec<StepKind> = Vec::new();
+
+        for flow in &flows {
+            for step in flow {
+                let duplicates = seen.iter().filter(|kind| **kind == step.kind).count();
+                assert_eq!(
+                    duplicates, 0,
+                    "step kind {:?} appears in more than one canonical flow",
+                    step.kind
+                );
+                seen.push(step.kind.clone());
+            }
+        }
+
+        for expected in all_step_kinds {
+            let count = seen.iter().filter(|kind| **kind == expected).count();
+            assert_eq!(
+                count, 1,
+                "expected step kind {:?} to appear exactly once",
+                expected
+            );
+        }
+
+        assert_eq!(
+            seen.len(),
+            13,
+            "unexpected extra step kinds in canonical flows"
+        );
+    }
+
+    #[test]
+    fn contract_v1_metadata_is_stable() {
+        assert_eq!(contract_version(), 1);
+        assert_eq!(
+            task_class_names(),
+            &["Generic", "PlannerHardening", "CodeFix"]
+        );
+        assert_eq!(
+            step_kind_names(),
+            &[
+                "TightenPlannerPrompt",
+                "NormalizePlannerOutput",
+                "AddLlmFallbackHandling",
+                "AddPlannerTestCoverage",
+                "ValidatePlannerOutput",
+                "AnalyzeTask",
+                "PlanExecution",
+                "ExecuteChanges",
+                "ReadRepository",
+                "LocateBug",
+                "PatchCode",
+                "RunTests",
+                "ValidatePatch",
+            ]
+        );
+        assert_eq!(
+            outcome_names(),
+            &["Success", "RetryableFailure", "TerminalFailure", "Blocked"]
+        );
+    }
+
+    #[test]
+    fn event_type_names_match_execution_event_v1_contract() {
+        assert_eq!(
+            event_type_names(),
+            &[
+                "task.created",
+                "task.started",
+                "task.progress",
+                "task.succeeded",
+                "task.failed",
+                "task.blocked",
+            ]
+        );
+    }
+
+    #[test]
     fn step_specs_can_be_lowered_to_steps_with_detail() {
         let specs = task_class_to_flow(TaskClass::Generic);
         let steps = step_specs_to_steps(&specs, Some("Refactor scheduler reconciliation"));
@@ -275,5 +460,4 @@ mod tests {
         assert!(!terminal_outcome(&StepOutcome::RetryableFailure));
         assert!(!terminal_outcome(&StepOutcome::Blocked));
     }
-
 }

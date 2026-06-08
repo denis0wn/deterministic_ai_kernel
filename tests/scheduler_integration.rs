@@ -8,7 +8,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run(db: &PathBuf, args: &[&str]) -> String {
@@ -103,6 +106,14 @@ CREATE TABLE IF NOT EXISTS leases (
   state TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  task_id TEXT PRIMARY KEY,
+  task_class TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES
+('{0}','Generic');
+
 INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES
 ('{0}','00_analyze_task','pending'),
 ('{0}','01_plan_execution','pending'),
@@ -118,6 +129,14 @@ INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) V
     sqlite(db, &schema_and_seed);
 }
 
+fn setup_codefix_task(db: &PathBuf, task_id: &str) {
+    setup_task(db, task_id);
+    sqlite(db, &format!(
+        "UPDATE tasks SET task_class = 'CodeFix' WHERE task_id = '{0}';         DELETE FROM step_status WHERE task_id = '{0}';         DELETE FROM step_dependencies WHERE task_id = '{0}';         INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES          ('{0}','00_read_repository','ready'),         ('{0}','01_locate_bug','pending'),         ('{0}','02_patch_code','pending'),         ('{0}','03_run_tests','pending'),         ('{0}','04_validate_patch','pending');         INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) VALUES          ('{0}','01_locate_bug','00_read_repository'),         ('{0}','02_patch_code','01_locate_bug'),         ('{0}','03_run_tests','02_patch_code'),         ('{0}','04_validate_patch','03_run_tests');",
+        task_id
+    ));
+}
+
 #[test]
 fn happy_path_chain_completes() {
     let db = unique_db_path("happy_path_chain_completes");
@@ -125,18 +144,46 @@ fn happy_path_chain_completes() {
 
     run(&db, &["schedule", "task_test"]);
     run(&db, &["claim-worker", "task_test", "worker-A"]);
-    run(&db, &["start-step", "task_test", "worker-A", "00_analyze_task"]);
-    run(&db, &["complete-step", "task_test", "worker-A", "00_analyze_task"]);
+    run(
+        &db,
+        &["start-step", "task_test", "worker-A", "00_analyze_task"],
+    );
+    run(
+        &db,
+        &["complete-step", "task_test", "worker-A", "00_analyze_task"],
+    );
 
     run(&db, &["schedule", "task_test"]);
     run(&db, &["claim-worker", "task_test", "worker-A"]);
-    run(&db, &["start-step", "task_test", "worker-A", "01_plan_execution"]);
-    run(&db, &["complete-step", "task_test", "worker-A", "01_plan_execution"]);
+    run(
+        &db,
+        &["start-step", "task_test", "worker-A", "01_plan_execution"],
+    );
+    run(
+        &db,
+        &[
+            "complete-step",
+            "task_test",
+            "worker-A",
+            "01_plan_execution",
+        ],
+    );
 
     run(&db, &["schedule", "task_test"]);
     run(&db, &["claim-worker", "task_test", "worker-A"]);
-    run(&db, &["start-step", "task_test", "worker-A", "02_execute_changes"]);
-    run(&db, &["complete-step", "task_test", "worker-A", "02_execute_changes"]);
+    run(
+        &db,
+        &["start-step", "task_test", "worker-A", "02_execute_changes"],
+    );
+    run(
+        &db,
+        &[
+            "complete-step",
+            "task_test",
+            "worker-A",
+            "02_execute_changes",
+        ],
+    );
 
     let out = Command::new("sqlite3")
         .arg(&db)
@@ -159,18 +206,23 @@ fn stale_worker_is_rejected_after_reclaim() {
 
     run(&db, &["schedule", "task_test2"]);
     run(&db, &["claim-worker", "task_test2", "worker-A"]);
-    run(&db, &["start-step", "task_test2", "worker-A", "00_analyze_task"]);
+    run(
+        &db,
+        &["start-step", "task_test2", "worker-A", "00_analyze_task"],
+    );
     run(&db, &["expire-leases", "task_test2"]);
     run(&db, &["reconcile", "task_test2"]);
     run(&db, &["schedule", "task_test2"]);
     run(&db, &["claim-worker", "task_test2", "worker-B"]);
 
-    let err = run_expect_fail(&db, &["complete-step", "task_test2", "worker-A", "00_analyze_task"]);
+    let err = run_expect_fail(
+        &db,
+        &["complete-step", "task_test2", "worker-A", "00_analyze_task"],
+    );
     assert!(err.contains("no active lease owned by worker for step"));
 
     let _ = fs::remove_file(&db);
 }
-
 
 #[test]
 fn retryable_failure_returns_step_to_pending() {
@@ -179,8 +231,20 @@ fn retryable_failure_returns_step_to_pending() {
 
     run(&db, &["schedule", "task_retry"]);
     run(&db, &["claim-worker", "task_retry", "worker-A"]);
-    run(&db, &["start-step", "task_retry", "worker-A", "00_analyze_task"]);
-    run(&db, &["fail-step", "task_retry", "worker-A", "00_analyze_task", "retry: network blip"]);
+    run(
+        &db,
+        &["start-step", "task_retry", "worker-A", "00_analyze_task"],
+    );
+    run(
+        &db,
+        &[
+            "fail-step",
+            "task_retry",
+            "worker-A",
+            "00_analyze_task",
+            "retry: network blip",
+        ],
+    );
     run(&db, &["reconcile", "task_retry"]);
     run(&db, &["schedule", "task_retry"]);
 
@@ -200,7 +264,6 @@ fn retryable_failure_returns_step_to_pending() {
     let _ = fs::remove_file(&db);
 }
 
-
 #[test]
 fn blocked_failure_returns_step_to_pending() {
     let db = unique_db_path("blocked_failure_returns_step_to_pending");
@@ -208,8 +271,20 @@ fn blocked_failure_returns_step_to_pending() {
 
     run(&db, &["schedule", "task_blocked"]);
     run(&db, &["claim-worker", "task_blocked", "worker-A"]);
-    run(&db, &["start-step", "task_blocked", "worker-A", "00_analyze_task"]);
-    run(&db, &["fail-step", "task_blocked", "worker-A", "00_analyze_task", "blocked: waiting_on dependency"]);
+    run(
+        &db,
+        &["start-step", "task_blocked", "worker-A", "00_analyze_task"],
+    );
+    run(
+        &db,
+        &[
+            "fail-step",
+            "task_blocked",
+            "worker-A",
+            "00_analyze_task",
+            "blocked: waiting_on dependency",
+        ],
+    );
     run(&db, &["reconcile", "task_blocked"]);
     run(&db, &["schedule", "task_blocked"]);
 
@@ -230,24 +305,133 @@ fn blocked_failure_returns_step_to_pending() {
 }
 
 #[test]
-fn claim_step_filters_by_capability() {
-    use deterministic_ai_kernel::scheduler::claim_step;
-    use deterministic_ai_kernel::workflow::contract::WorkerCapability;
+fn cli_compile_error_routes_to_codefix_flow() {
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "plan-task",
+            "--compile-error",
+            "dummy.log",
+        ])
+        .output()
+        .expect("failed to run cargo plan-task");
 
+    assert!(
+        out.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("read repository"),
+        "missing step: {}",
+        stdout
+    );
+    assert!(stdout.contains("locate bug"), "missing step: {}", stdout);
+    assert!(stdout.contains("patch code"), "missing step: {}", stdout);
+    assert!(stdout.contains("run tests"), "missing step: {}", stdout);
+    assert!(
+        stdout.contains("validate patch"),
+        "missing step: {}",
+        stdout
+    );
+}
+
+#[test]
+fn scheduler_treats_all_codefix_sources_the_same() {
+    use deterministic_ai_kernel::workflow::compiler::{TaskInput, Workflow};
+
+    let compile_steps = Workflow::build_steps(&TaskInput::from_compile_error("cargo-check.log"));
+    let test_steps =
+        Workflow::build_steps(&TaskInput::from_test_failure("scheduler_integration.log"));
+    let lint_steps = Workflow::build_steps(&TaskInput::from_lint_report("clippy.log"));
+
+    assert_eq!(compile_steps, test_steps);
+    assert_eq!(test_steps, lint_steps);
+}
+
+#[test]
+fn codefix_runtime_flow_uses_lease_backed_claim_and_execution() {
+    let task_id = "task-codefix-runtime";
+    let db = unique_db_path(task_id);
+    setup_codefix_task(&db, task_id);
+
+    run(&db, &["schedule", task_id]);
+    run(&db, &["claim-worker", task_id, "worker-plan"]);
+    run(
+        &db,
+        &["start-step", task_id, "worker-plan", "00_read_repository"],
+    );
+    run(
+        &db,
+        &[
+            "complete-step",
+            task_id,
+            "worker-plan",
+            "00_read_repository",
+        ],
+    );
+
+    run(&db, &["schedule", task_id]);
+    let out = run(&db, &["claim-worker", task_id, "worker-exec"]);
+    assert!(
+        out.contains("STEP_CLAIMED: 01_locate_bug"),
+        "unexpected claim output: {}",
+        out
+    );
+
+    let out = run(
+        &db,
+        &["start-step", task_id, "worker-exec", "01_locate_bug"],
+    );
+    assert!(out.contains("STEP_RUNNING_OK"), "unexpected output: {}", out);
+}
+
+#[test]
+fn start_step_allows_legacy_generic_worker_but_accepts_planner_worker_too() {
     let task_id = "task-claim-cap";
     let db = unique_db_path(task_id);
-    setup_task(&db, task_id);
+    setup_codefix_task(&db, task_id);
 
-    sqlite(&db, &format!(
-        "UPDATE step_status SET status = 'ready' WHERE task_id = '{}' AND step_id = '00_analyze_task';",
-        task_id
-    ));
+    run(&db, &["schedule", task_id]);
+    run(&db, &["claim-worker", task_id, "worker-exec"]);
+    let out = run(
+        &db,
+        &["start-step", task_id, "worker-exec", "00_read_repository"],
+    );
+    assert!(out.contains("STEP_RUNNING_OK"), "unexpected output: {}", out);
 
-    let db_str = db.to_str().unwrap();
+    let db2 = unique_db_path("task-claim-cap-ok");
+    setup_codefix_task(&db2, task_id);
+    run(&db2, &["schedule", task_id]);
+    run(&db2, &["claim-worker", task_id, "worker-plan"]);
+    let out = run(
+        &db2,
+        &["start-step", task_id, "worker-plan", "00_read_repository"],
+    );
+    assert!(out.contains("STEP_RUNNING_OK"), "unexpected output: {}", out);
+}
 
-    let result = claim_step(db_str, task_id, "worker-exec", WorkerCapability::Executor).unwrap();
-    assert!(result.is_none(), "executor should not claim planner step");
+#[test]
+fn unknown_task_class_is_rejected() {
+    let db = unique_db_path("unknown_task_class_is_rejected");
+    setup_task(&db, "task_bad_class");
 
-    let result = claim_step(db_str, task_id, "worker-plan", WorkerCapability::Planner).unwrap();
-    assert_eq!(result.as_deref(), Some("00_analyze_task"));
+    sqlite(
+        &db,
+        "UPDATE tasks SET task_class = 'Bogus' WHERE task_id = 'task_bad_class';",
+    );
+
+    let err = run_expect_fail(&db, &["schedule", "task_bad_class"]);
+    assert!(
+        err.contains("unknown task_class") || err.contains("missing task_class"),
+        "expected explicit task_class validation failure, got: {}",
+        err
+    );
+
+    let _ = fs::remove_file(&db);
 }

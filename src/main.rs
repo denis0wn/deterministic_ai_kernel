@@ -120,6 +120,28 @@ async fn main() {
             println!("{}", text);
             return;
         }
+        Some("gateway-stdin") => {
+            use std::io::Read;
+
+            let mut input = String::new();
+            std::io::stdin().read_to_string(&mut input).unwrap();
+
+            if input.trim().is_empty() {
+                eprintln!("gateway-stdin: empty stdin");
+                std::process::exit(1);
+            }
+
+            let parsed: serde_json::Value = match serde_json::from_str(&input) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("gateway-stdin: invalid json: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            println!("{}", serde_json::to_string(&parsed).unwrap());
+            return;
+        }
         Some("plan-task") => {
             let task = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
             if task.trim().is_empty() {
@@ -261,9 +283,19 @@ async fn main() {
         _ => {}
     }
 
+
     let bus = EventBus::new(db).unwrap();
     let engine = ExecutionEngine::new(bus.clone());
-    let plan = Workflow::build_steps(&workflow::compiler::TaskInput::generic("task1"));
+    let input = workflow::compiler::TaskInput::generic("task1");
+    let task_class = input.task_class();
+    let plan = Workflow::build_steps(&input);
+
+    let conn = rusqlite::Connection::open(db).unwrap();
+    conn.execute(
+        "INSERT OR REPLACE INTO tasks (task_id, task_class) VALUES (?1, ?2)",
+        rusqlite::params!["task1", format!("{:?}", task_class)],
+    ).unwrap();
+
     engine.run_plan("task1", &plan);
 
     let events = bus.query("task1").unwrap();

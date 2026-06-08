@@ -20,6 +20,11 @@ fn parse_step_kind_from_step_id(step_id: &str) -> Result<StepKind> {
         "analyze_task" => Ok(StepKind::AnalyzeTask),
         "plan_execution" => Ok(StepKind::PlanExecution),
         "execute_changes" => Ok(StepKind::ExecuteChanges),
+        "read_repository" => Ok(StepKind::ReadRepository),
+        "locate_bug" => Ok(StepKind::LocateBug),
+        "patch_code" => Ok(StepKind::PatchCode),
+        "run_tests" => Ok(StepKind::RunTests),
+        "validate_patch" => Ok(StepKind::ValidatePatch),
         _ => Err(anyhow!("unknown step id: {}", step_id)),
     }
 }

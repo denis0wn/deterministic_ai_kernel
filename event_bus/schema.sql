@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS state_snapshots (
     payload TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+    task_id TEXT PRIMARY KEY,
+    task_class TEXT NOT NULL CHECK(task_class IN ('Generic','PlannerHardening','CodeFix'))
+);
+
 CREATE TABLE IF NOT EXISTS step_dependencies (
     task_id TEXT NOT NULL,
     step_id TEXT NOT NULL,
