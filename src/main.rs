@@ -160,6 +160,36 @@ async fn main() {
             };
             return;
         }
+        Some("semantic-artifacts") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: cargo run -- semantic-artifacts <task_id> [step_id]");
+                std::process::exit(1);
+            }
+            let step_id = args.get(3).map(|s| s.as_str());
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match bus.list_semantic_artifacts(&task_id, step_id) {
+                Ok(rows) => {
+                    for row in rows {
+                        println!(
+                            "{}	{}	{}	{}	{}	{}",
+                            row.artifact_id,
+                            row.task_id,
+                            row.step_id,
+                            row.source_generation,
+                            row.artifact_type,
+                            row.payload
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!("semantic-artifacts failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+
         Some("doctor") => {
             match lm_control::print_doctor_text() {
                 Ok(()) => {}

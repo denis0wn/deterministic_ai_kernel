@@ -16,6 +16,17 @@ pub struct EventRow {
     pub payload: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct SemanticArtifactRow {
+    pub artifact_id: i64,
+    pub task_id: String,
+    pub step_id: String,
+    pub source_generation: i64,
+    pub artifact_type: String,
+    pub payload: String,
+    pub created_at: String,
+}
+
 #[derive(Clone)]
 pub struct EventBus {
     conn: Arc<Mutex<Connection>>,
@@ -97,6 +108,56 @@ impl EventBus {
             |r| r.get(0),
         )?;
         Ok(generation)
+    }
+
+    pub fn list_semantic_artifacts(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+    ) -> Result<Vec<SemanticArtifactRow>> {
+        let conn = self.conn.lock().unwrap();
+
+        if let Some(step_id) = step_id {
+            let mut stmt = conn.prepare(
+                "SELECT artifact_id, task_id, step_id, source_generation, artifact_type, payload, created_at
+                 FROM semantic_artifacts
+                 WHERE task_id = ?1 AND step_id = ?2
+                 ORDER BY source_generation DESC, artifact_id DESC",
+            )?;
+            let mapped = stmt.query_map(params![task_id, step_id], |r| {
+                Ok(SemanticArtifactRow {
+                    artifact_id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    step_id: r.get(2)?,
+                    source_generation: r.get(3)?,
+                    artifact_type: r.get(4)?,
+                    payload: r.get(5)?,
+                    created_at: r.get(6)?,
+                })
+            })?;
+            let rows = mapped.collect::<std::result::Result<Vec<_>, _>>()?;
+            return Ok(rows);
+        }
+
+        let mut stmt = conn.prepare(
+            "SELECT artifact_id, task_id, step_id, source_generation, artifact_type, payload, created_at
+             FROM semantic_artifacts
+             WHERE task_id = ?1
+             ORDER BY source_generation DESC, artifact_id DESC",
+        )?;
+        let mapped = stmt.query_map([task_id], |r| {
+            Ok(SemanticArtifactRow {
+                artifact_id: r.get(0)?,
+                task_id: r.get(1)?,
+                step_id: r.get(2)?,
+                source_generation: r.get(3)?,
+                artifact_type: r.get(4)?,
+                payload: r.get(5)?,
+                created_at: r.get(6)?,
+            })
+        })?;
+        let rows = mapped.collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn commit_causal_unit(
