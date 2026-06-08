@@ -20,23 +20,14 @@ impl Runtime {
                 let detail = step.detail.as_deref().unwrap_or("analyze task").trim();
                 let vector = embed_text(detail).await?;
 
-                let token_estimate = detail.split_whitespace().count();
-                let summary = if detail.len() > 160 {
-                    format!("{}...", &detail[..160])
-                } else {
-                    detail.to_string()
-                };
-
                 self.bus.append_event(
                     task_id,
                     None,
                     "ANALYZE_TASK_EMBEDDED",
                     &json!({
                         "step": step.as_text(),
-                        "detail": detail,
-                        "summary": summary,
+                        "input_representation": detail,
                         "embedding_dim": vector.len(),
-                        "token_estimate": token_estimate,
                         "analysis_kind": "semantic_seed"
                     }),
                 )?;
