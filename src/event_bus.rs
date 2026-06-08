@@ -29,10 +29,12 @@ pub struct SemanticArtifactRow {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct EventBus {
     conn: Arc<Mutex<Connection>>,
 }
 
+#[allow(dead_code)]
 impl EventBus {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(db_path)?;
@@ -109,6 +111,14 @@ impl EventBus {
             |r| r.get(0),
         )?;
         Ok(generation)
+    }
+
+    pub fn latest_analysis_seed(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+    ) -> Result<Option<SemanticArtifactRow>> {
+        Ok(self.list_semantic_artifacts(task_id, step_id)?.into_iter().next())
     }
 
     pub fn list_semantic_artifacts(

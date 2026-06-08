@@ -3,10 +3,12 @@ use crate::execution::runtime::Runtime;
 use crate::workflow::contract::{Step, StepKind};
 use serde_json::json;
 
+#[allow(dead_code)]
 pub struct ExecutionEngine {
     bus: EventBus,
 }
 
+#[allow(dead_code)]
 impl ExecutionEngine {
     pub fn new(bus: EventBus) -> Self {
         Self { bus }

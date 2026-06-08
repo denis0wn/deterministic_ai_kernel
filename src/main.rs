@@ -115,6 +115,7 @@ async fn main() {
         println!("  print-model-manifest");
         println!("  current-models");
         println!("  semantic-artifacts <task_id> [step_id]");
+        println!("  latest-analysis-seed <task_id> [step_id]");
         println!("  analyze-task <task_id> <text>");
         println!("  doctor");
         println!("  doctor-json");
@@ -207,6 +208,35 @@ async fn main() {
                 }
                 Err(e) => {
                     eprintln!("semantic-artifacts failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+
+        Some("latest-analysis-seed") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: cargo run -- latest-analysis-seed <task_id> [step_id]");
+                std::process::exit(1);
+            }
+            let step_id = args.get(3).map(|s| s.as_str());
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match bus.latest_analysis_seed(&task_id, step_id) {
+                Ok(Some(row)) => {
+                    println!(
+                        "{}	{}	{}	{}	{}	{}",
+                        row.artifact_id,
+                        row.task_id,
+                        row.step_id,
+                        row.source_generation,
+                        row.artifact_type,
+                        row.payload
+                    );
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("latest-analysis-seed failed: {e}");
                     std::process::exit(1);
                 }
             };
