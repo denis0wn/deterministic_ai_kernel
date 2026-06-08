@@ -1,0 +1,52 @@
+{
+  "models": [
+    {
+      "id": "qwen2.5-coder-3b-instruct-mlx",
+      "role": "coding_assistant",
+      "priority": 1,
+      "ram_class": "light",
+      "enabled": true,
+      "notes": "Primary coding model."
+    },
+    {
+      "id": "huihui-gemma-4-e2b-it-abliterated-mlx",
+      "role": "task_planning",
+      "priority": 1,
+      "ram_class": "medium",
+      "enabled": true,
+      "notes": "Primary task planning model. Verified by planner smoke."
+    },
+    {
+      "id": "omnicoder-9b-mlx-mxfp8",
+      "role": "coding_fallback",
+      "priority": 2,
+      "ram_class": "medium",
+      "enabled": true,
+      "notes": "Optional heavier code fallback."
+    },
+    {
+      "id": "qwen2.5-14b-instruct-mlx",
+      "role": "task_planning_fallback",
+      "priority": 3,
+      "ram_class": "heavy",
+      "enabled": false,
+      "notes": "Disabled by default; LM Studio returned speculative decoding incompatibility."
+    },
+    {
+      "id": "qwen3-vl-8b-instruct-mlx",
+      "role": "vision",
+      "priority": 1,
+      "ram_class": "heavy",
+      "enabled": false,
+      "notes": "Enable only when multimodal support is needed."
+    },
+    {
+      "id": "text-embedding-nomic-embed-text-v1.5",
+      "role": "embeddings",
+      "priority": 1,
+      "ram_class": "light",
+      "enabled": true,
+      "notes": "Embedding-only model; not for chat."
+    }
+  ]
+}

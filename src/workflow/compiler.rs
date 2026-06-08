@@ -113,7 +113,7 @@ No numbering, no bullets, no commentary.\n\nTask: {}\n\nDraft plan:\n{}",
                 .join("\n")
         );
 
-        let text = llm::coding_assistant(&prompt).await?;
+        let text = llm::task_planner(&prompt).await?;
         let mut steps = deterministic.clone();
 
         for kind in parse_steps(&text) {
