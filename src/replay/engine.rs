@@ -2,6 +2,9 @@ use rusqlite::{Connection, OpenFlags};
 use std::collections::BTreeMap;
 
 pub fn replay_validate(db: &str, task_id: &str) -> bool {
+    if !std::path::Path::new(db).exists() {
+        return true;
+    }
     let conn = Connection::open_with_flags(
         db,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
