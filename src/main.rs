@@ -14,8 +14,7 @@ mod worker;
 mod workflow;
 
 use effects::execute_effects;
-use event_bus::EventBus;
-use execution::engine::ExecutionEngine;
+use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
 use replay::engine::replay_validate;
 use rusqlite::Connection;
@@ -108,6 +107,30 @@ async fn main() {
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
     let db = db.as_str();
 
+    if matches!(args.get(1).map(|s| s.as_str()), Some("--help") | Some("-h") | Some("help")) {
+        println!("deterministic_ai_kernel commands:");
+        println!("  llm-smoke");
+        println!("  embeddings-smoke");
+        println!("  llm-planner-smoke");
+        println!("  print-model-manifest");
+        println!("  current-models");
+        println!("  semantic-artifacts <task_id> [step_id]");
+        println!("  analyze-task <task_id> <text>");
+        println!("  doctor");
+        println!("  doctor-json");
+        println!("  auto-route <coding_assistant|task_planning|embeddings>");
+        println!("  switch <coding_assistant|task_planning|embeddings> [--dry-run]");
+        println!("  sync-all-model-roles");
+        println!("  claim-worker [task_id] [worker_id]");
+        println!("  start-step [task_id] [worker_id] <step_id>");
+        println!("  heartbeat [task_id] [worker_id] <step_id>");
+        println!("  fail-step [task_id] [worker_id] <step_id> <reason>");
+        println!("  complete-step [task_id] [worker_id] <step_id>");
+        println!("  rmdb");
+        return;
+    }
+
+
     match args.get(1).map(|s| s.as_str()) {
         Some("llm-smoke") => {
             match llm::smoke().await {
@@ -184,6 +207,39 @@ async fn main() {
                 }
                 Err(e) => {
                     eprintln!("semantic-artifacts failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+
+        Some("analyze-task") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: cargo run -- analyze-task <task_id> <text>");
+                std::process::exit(1);
+            }
+
+            let detail = args.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
+            if detail.trim().is_empty() {
+                eprintln!("usage: cargo run -- analyze-task <task_id> <text>");
+                std::process::exit(1);
+            }
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            let runtime = Runtime::new(bus);
+
+            let step = workflow::contract::Step {
+                kind: workflow::contract::StepKind::AnalyzeTask,
+                detail: Some(detail),
+            };
+
+            match runtime.execute_step(&task_id, &step).await {
+                Ok(()) => {
+                    println!("ANALYZE_TASK_OK task_id={}", task_id);
+                }
+                Err(e) => {
+                    eprintln!("analyze-task failed: {e}");
                     std::process::exit(1);
                 }
             };
@@ -446,23 +502,7 @@ async fn main() {
     }
 
 
-    let bus = EventBus::new(db).unwrap();
-    let engine = ExecutionEngine::new(bus.clone());
-    let input = workflow::compiler::TaskInput::generic("task1");
-    let task_class = input.task_class();
-    let plan = Workflow::build_steps(&input);
-
-    let conn = rusqlite::Connection::open(db).unwrap();
-    conn.execute(
-        "INSERT OR REPLACE INTO tasks (task_id, task_class) VALUES (?1, ?2)",
-        rusqlite::params!["task1", format!("{:?}", task_class)],
-    ).unwrap();
-
-    engine.run_plan("task1", &plan);
-
-    let events = bus.query("task1").unwrap();
-    println!("EVENTS: {}", events.len());
-
-    let ok = replay_validate(db, "task1");
-    println!("REPLAY OK: {}", ok);
+    eprintln!("no command provided");
+    eprintln!("run: cargo run -- --help");
+    std::process::exit(1);
 }

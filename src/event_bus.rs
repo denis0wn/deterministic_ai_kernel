@@ -17,6 +17,7 @@ pub struct EventRow {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SemanticArtifactRow {
     pub artifact_id: i64,
     pub task_id: String,
