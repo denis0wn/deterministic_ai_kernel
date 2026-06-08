@@ -58,6 +58,31 @@ fn print_stats(db: &str) {
     println!("TASKS: {}", tasks);
 }
 
+
+fn table_exists(db: &str, table: &str) -> bool {
+    use rusqlite::{Connection, OpenFlags};
+
+    if !std::path::Path::new(db).exists() {
+        return false;
+    }
+
+    let conn = match Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1 LIMIT 1",
+        [table],
+        |_r| Ok(()),
+    )
+    .is_ok()
+}
+
+
 fn reset_db(db: &str) {
     if !std::path::Path::new(db).exists() {
         println!("RESET OK");
@@ -426,10 +451,6 @@ async fn main() {
         }
         Some("replay") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            if !std::path::Path::new(db).exists() {
-                println!("REPLAY OK: true");
-                return;
-            }
             let ok = replay_validate(db, task_id);
             println!("REPLAY OK: {}", ok);
             return;
@@ -459,7 +480,7 @@ async fn main() {
         }
         Some("snapshot") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            if !std::path::Path::new(db).exists() {
+            if !table_exists(db, "event_log") || !table_exists(db, "state_snapshots") {
                 println!("SNAPSHOT OK");
                 return;
             }
@@ -468,7 +489,7 @@ async fn main() {
         }
         Some("restore") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            if !std::path::Path::new(db).exists() {
+            if !table_exists(db, "state_snapshots") {
                 println!("RESTORE OK");
                 return;
             }
