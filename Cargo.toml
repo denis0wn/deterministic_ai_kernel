@@ -19,3 +19,6 @@ path = "src/main.rs"
 [lib]
 name = "deterministic_ai_kernel"
 path = "src/lib.rs"
+
+[dev-dependencies]
+proptest = "1.6"

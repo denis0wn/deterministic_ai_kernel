@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::llm;
 use crate::workflow::contract::{step_specs_to_steps, task_class_to_flow, Step, TaskClass};
-use crate::workflow::planner::{parse_steps, validate_steps};
+use crate::workflow::planner::{apply_semantic_bias, parse_steps, validate_steps};
 
 pub struct Workflow;
 
@@ -115,8 +115,9 @@ No numbering, no bullets, no commentary.\n\nTask: {}\n\nDraft plan:\n{}",
 
         let text = llm::task_planner(&prompt).await?;
         let mut steps = deterministic.clone();
+        let parsed = apply_semantic_bias(parse_steps(&text), None);
 
-        for kind in parse_steps(&text) {
+        for kind in parsed {
             let step = Step { kind, detail: None };
             if !steps.iter().any(|existing| existing == &step) {
                 steps.push(step);
