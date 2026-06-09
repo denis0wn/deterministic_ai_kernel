@@ -29,12 +29,17 @@ fn latest_analysis_seed_returns_most_recent_artifact() {
     )
     .unwrap();
 
-    let latest = bus.latest_analysis_seed("task-1", Some("analyze")).unwrap().unwrap();
+    let latest = bus
+        .latest_analysis_seed("task-1", Some("analyze"))
+        .unwrap()
+        .unwrap();
     assert_eq!(latest.source_generation, 2);
     assert_eq!(latest.artifact_type, "analysis_seed");
     assert!(latest.payload.contains("\"seed\":\"new\""));
 
-    let rows = bus.list_semantic_artifacts("task-1", Some("analyze")).unwrap();
+    let rows = bus
+        .list_semantic_artifacts("task-1", Some("analyze"))
+        .unwrap();
     assert_eq!(rows.len(), 2);
 
     let _ = fs::remove_file(db);

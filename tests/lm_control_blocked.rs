@@ -1,4 +1,4 @@
-use deterministic_ai_kernel::lm_control::{dry_run_switch, safe_switch, auto_route};
+use deterministic_ai_kernel::lm_control::{auto_route, dry_run_switch, safe_switch};
 
 #[test]
 fn blocked_paths_return_errors_for_unknown_role() {

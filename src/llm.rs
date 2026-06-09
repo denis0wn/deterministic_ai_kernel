@@ -36,12 +36,7 @@ fn role_for_purpose(purpose: ModelPurpose) -> &'static str {
 
 #[allow(dead_code)]
 pub async fn chat(system_prompt: &str, user_prompt: &str) -> Result<String> {
-    chat_with_purpose(
-        ModelPurpose::CodingAssistant,
-        system_prompt,
-        user_prompt,
-    )
-    .await
+    chat_with_purpose(ModelPurpose::CodingAssistant, system_prompt, user_prompt).await
 }
 
 async fn chat_with_purpose(

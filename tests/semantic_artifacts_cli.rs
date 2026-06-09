@@ -11,8 +11,22 @@ fn latest_analysis_seed_cli_prints_latest_row() {
     let _ = fs::remove_file(format!("{db}-shm"));
 
     let bus = EventBus::new(db).unwrap();
-    bus.append_semantic_artifact("task-cli", "analyze", 1, "analysis_seed", &json!({"seed":"old"})).unwrap();
-    bus.append_semantic_artifact("task-cli", "analyze", 2, "analysis_seed", &json!({"seed":"new"})).unwrap();
+    bus.append_semantic_artifact(
+        "task-cli",
+        "analyze",
+        1,
+        "analysis_seed",
+        &json!({"seed":"old"}),
+    )
+    .unwrap();
+    bus.append_semantic_artifact(
+        "task-cli",
+        "analyze",
+        2,
+        "analysis_seed",
+        &json!({"seed":"new"}),
+    )
+    .unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db)

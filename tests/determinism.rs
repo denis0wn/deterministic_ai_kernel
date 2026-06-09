@@ -6,14 +6,14 @@ fn run_kernel(args: &[&str]) -> (String, bool) {
         .args(args)
         .output()
         .expect("failed to run kernel");
-    let text = String::from_utf8_lossy(&out.stdout).to_string() 
-             + &String::from_utf8_lossy(&out.stderr);
+    let text =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     (text, out.status.success())
 }
 
 #[test]
 fn deterministic_core_commands_are_stable() {
-    // Ядро должно стабильно отдавать help и не падать, 
+    // Ядро должно стабильно отдавать help и не падать,
     // даже если семантический слой (LLM/Embeddings) недоступен или не инициализирован.
     let (out, success) = run_kernel(&["--help"]);
     assert!(success, "kernel help failed: {}", out);

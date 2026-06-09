@@ -45,7 +45,11 @@ pub async fn embed_text(input: &str) -> Result<Vec<f32>> {
     let body = response.text().await?;
 
     if !status.is_success() {
-        return Err(anyhow!("embeddings request failed with status {}: {}", status, body));
+        return Err(anyhow!(
+            "embeddings request failed with status {}: {}",
+            status,
+            body
+        ));
     }
 
     let parsed: EmbeddingsResponse = serde_json::from_str(&body)?;

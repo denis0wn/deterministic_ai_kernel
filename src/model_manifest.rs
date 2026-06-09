@@ -135,13 +135,15 @@ pub fn print_current_models() -> Result<()> {
         println!("ROLE={}", row.role);
         println!("ENV_KEY={}", row.env_key);
         println!("MANIFEST_MODEL={}", row.manifest_model);
-        println!("ENV_MODEL={}", row.env_model.unwrap_or_else(|| "<missing>".to_string()));
+        println!(
+            "ENV_MODEL={}",
+            row.env_model.unwrap_or_else(|| "<missing>".to_string())
+        );
         println!("IN_SYNC={}", row.in_sync);
         println!();
     }
     Ok(())
 }
-
 
 pub fn sync_all_roles() -> Result<()> {
     for role in ["coding_assistant", "task_planning", "embeddings"] {

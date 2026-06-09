@@ -5,8 +5,8 @@ mod execution;
 mod leases;
 mod llm;
 mod lm_control;
-mod model_registry;
 mod model_manifest;
+mod model_registry;
 mod replay;
 mod scheduler;
 mod snapshot;
@@ -58,7 +58,6 @@ fn print_stats(db: &str) {
     println!("TASKS: {}", tasks);
 }
 
-
 fn table_exists(db: &str, table: &str) -> bool {
     use rusqlite::{Connection, OpenFlags};
 
@@ -81,7 +80,6 @@ fn table_exists(db: &str, table: &str) -> bool {
     )
     .is_ok()
 }
-
 
 fn reset_db(db: &str) {
     if !std::path::Path::new(db).exists() {
@@ -138,7 +136,10 @@ async fn main() {
     });
     let db = db.as_str();
 
-    if matches!(args.get(1).map(|s| s.as_str()), Some("--help") | Some("-h") | Some("help")) {
+    if matches!(
+        args.get(1).map(|s| s.as_str()),
+        Some("--help") | Some("-h") | Some("help")
+    ) {
         println!("deterministic_ai_kernel commands:");
         println!("  llm-smoke");
         println!("  embeddings-smoke");
@@ -161,7 +162,6 @@ async fn main() {
         println!("  rmdb");
         return;
     }
-
 
     match args.get(1).map(|s| s.as_str()) {
         Some("llm-smoke") => {
@@ -330,7 +330,9 @@ async fn main() {
         Some("auto-route") => {
             let role = args.get(2).cloned().unwrap_or_default();
             if role.trim().is_empty() {
-                eprintln!("usage: cargo run -- auto-route <coding_assistant|task_planning|embeddings>");
+                eprintln!(
+                    "usage: cargo run -- auto-route <coding_assistant|task_planning|embeddings>"
+                );
                 std::process::exit(1);
             }
 
@@ -569,7 +571,6 @@ async fn main() {
         }
         _ => {}
     }
-
 
     eprintln!("no command provided");
     eprintln!("run: cargo run -- --help");

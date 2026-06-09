@@ -636,4 +636,3 @@ pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
 
     Ok(None)
 }
-

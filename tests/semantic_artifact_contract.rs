@@ -17,7 +17,13 @@ fn semantic_artifact_type_contract_is_explicit() {
     }
 
     let err = bus
-        .append_semantic_artifact("task-1", "step-1", 2, "execution_plan", &json!({"ok": false}))
+        .append_semantic_artifact(
+            "task-1",
+            "step-1",
+            2,
+            "execution_plan",
+            &json!({"ok": false}),
+        )
         .unwrap_err();
 
     let msg = format!("{err:#}");

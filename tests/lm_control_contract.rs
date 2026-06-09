@@ -5,17 +5,15 @@ fn doctor_report_serializes_stably() {
     let report = DoctorReport {
         free_gb: 12.5,
         lm_studio_models: 3,
-        roles: vec![
-            DoctorRoleReport {
-                role: "coding_assistant".to_string(),
-                manifest_model: "qwen-coder".to_string(),
-                env_model: "qwen-coder".to_string(),
-                in_sync: true,
-                model_available: true,
-                switch_ready: true,
-                threshold_gb: 8.0,
-            }
-        ],
+        roles: vec![DoctorRoleReport {
+            role: "coding_assistant".to_string(),
+            manifest_model: "qwen-coder".to_string(),
+            env_model: "qwen-coder".to_string(),
+            in_sync: true,
+            model_available: true,
+            switch_ready: true,
+            threshold_gb: 8.0,
+        }],
     };
 
     let json = serde_json::to_string(&report).unwrap();

@@ -16,8 +16,12 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         match &self.original {
-            Some(text) => { let _ = fs::write(".env", text); }
-            None => { let _ = fs::remove_file(".env"); }
+            Some(text) => {
+                let _ = fs::write(".env", text);
+            }
+            None => {
+                let _ = fs::remove_file(".env");
+            }
         }
     }
 }
@@ -32,5 +36,7 @@ fn sync_all_roles_makes_statuses_in_sync() {
 
     assert!(!rows.is_empty());
     assert!(rows.iter().all(|r| r.in_sync));
-    assert!(rows.iter().all(|r| r.env_model.as_deref() == Some(r.manifest_model.as_str())));
+    assert!(rows
+        .iter()
+        .all(|r| r.env_model.as_deref() == Some(r.manifest_model.as_str())));
 }

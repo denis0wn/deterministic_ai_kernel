@@ -2,8 +2,9 @@ use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
-use crate::workflow::contract::{required_capability_for_step, StepKind, StepOutcome, WorkerCapability};
-
+use crate::workflow::contract::{
+    required_capability_for_step, StepKind, StepOutcome, WorkerCapability,
+};
 
 fn parse_step_kind_from_step_id(step_id: &str) -> Result<StepKind> {
     let slug = step_id
@@ -51,13 +52,12 @@ fn capability_for_worker_id(worker_id: &str) -> Result<WorkerCapability> {
     Err(anyhow!("worker has no declared capability: {}", worker_id))
 }
 
-
 fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
     match outcome {
         StepOutcome::Success => "STEP_COMPLETED",
-        StepOutcome::RetryableFailure
-        | StepOutcome::TerminalFailure
-        | StepOutcome::Blocked => "STEP_FAILED",
+        StepOutcome::RetryableFailure | StepOutcome::TerminalFailure | StepOutcome::Blocked => {
+            "STEP_FAILED"
+        }
     }
 }
 
@@ -156,7 +156,9 @@ pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Re
     let worker_capability = capability_for_worker_id(worker_id)?;
     let required_capability = required_capability_for_step(&step_kind);
 
-    if worker_capability != required_capability && worker_capability != WorkerCapability::LegacyGeneric {
+    if worker_capability != required_capability
+        && worker_capability != WorkerCapability::LegacyGeneric
+    {
         return Err(anyhow!(
             "worker capability mismatch for step: worker={:?}, required={:?}, step_id={}",
             worker_capability,
@@ -434,7 +436,6 @@ pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) ->
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{classify_failure_outcome, outcome_to_event_type};
@@ -470,7 +471,10 @@ mod tests {
 
     #[test]
     fn outcome_to_event_type_maps_success_and_blocked() {
-        assert_eq!(outcome_to_event_type(StepOutcome::Success), "STEP_COMPLETED");
+        assert_eq!(
+            outcome_to_event_type(StepOutcome::Success),
+            "STEP_COMPLETED"
+        );
         assert_eq!(outcome_to_event_type(StepOutcome::Blocked), "STEP_FAILED");
     }
 }

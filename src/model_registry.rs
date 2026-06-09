@@ -120,7 +120,10 @@ mod tests {
 
     #[test]
     fn resolves_task_planning_purpose() {
-        assert!(matches!(ModelPurpose::TaskPlanning, ModelPurpose::TaskPlanning));
+        assert!(matches!(
+            ModelPurpose::TaskPlanning,
+            ModelPurpose::TaskPlanning
+        ));
     }
 
     #[test]
@@ -144,10 +147,7 @@ mod tests {
     #[test]
     fn coding_assistant_prefers_purpose_specific_model() {
         let mut values = base_values();
-        values.insert(
-            "OPENAI_MODEL_CODING_ASSISTANT",
-            "coding-model".to_string(),
-        );
+        values.insert("OPENAI_MODEL_CODING_ASSISTANT", "coding-model".to_string());
 
         let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values).unwrap();
         assert_eq!(cfg.model, "coding-model");
