@@ -1,0 +1,29 @@
+use deterministic_ai_kernel::workflow::planner::{seed_to_bias, StepKind};
+
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let seed: u64 = args
+        .next()
+        .expect("usage: bias_explain <seed> [step...]")
+        .parse()
+        .expect("seed must be u64");
+
+    let steps: Vec<StepKind> = args
+        .filter_map(|raw| match raw.as_str() {
+            "AnalyzeAndPlan" => Some(StepKind::AnalyzeAndPlan),
+            "ExecuteChanges" => Some(StepKind::ExecuteChanges),
+            "ValidatePlannerOutput" => Some(StepKind::ValidatePlannerOutput),
+            _ => None,
+        })
+        .collect();
+
+    let bias = seed_to_bias(seed, &steps);
+
+    println!("version={}", bias.version);
+    println!("seed={}", bias.seed);
+    println!("preferred={:?}", bias.preferred);
+
+    for line in bias.explain_lines() {
+        println!("{line}");
+    }
+}

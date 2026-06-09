@@ -1,0 +1,60 @@
+use std::collections::BTreeMap;
+
+use crate::workflow::contract::StepKind;
+
+pub const BIAS_VERSION_V1: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SemanticBias {
+    pub version: u32,
+    pub seed: u64,
+    pub preferred: Vec<StepKind>,
+    pub weights: BTreeMap<StepKind, f64>,
+}
+
+impl SemanticBias {
+    pub fn metadata(&self) -> BiasMetadata {
+        BiasMetadata {
+            version: self.version,
+            seed: self.seed,
+            preferred_count: self.preferred.len(),
+            weighted_count: self.weights.len(),
+        }
+    }
+
+    pub fn explain_lines(&self) -> Vec<String> {
+        let mut lines = vec![
+            format!("bias.version={}", self.version),
+            format!("bias.seed={}", self.seed),
+            format!("bias.preferred={:?}", self.preferred),
+        ];
+
+        for (kind, weight) in &self.weights {
+            lines.push(format!("bias.weight.{kind:?}={weight:.6}"));
+        }
+
+        lines
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BiasMetadata {
+    pub version: u32,
+    pub seed: u64,
+    pub preferred_count: usize,
+    pub weighted_count: usize,
+}
+
+
+impl SemanticBias {
+    pub fn neutral_for(domain: &[StepKind]) -> Self {
+        let preferred = domain.to_vec();
+        let weights = domain.iter().copied().map(|k| (k, 1.0)).collect();
+        Self {
+            version: BIAS_VERSION_V1,
+            seed: 0,
+            preferred,
+            weights,
+        }
+    }
+}

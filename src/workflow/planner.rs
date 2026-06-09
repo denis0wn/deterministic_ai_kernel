@@ -80,6 +80,7 @@ pub fn parse_steps(text: &str) -> Vec<StepKind> {
 /// - different seeds may choose different stable orderings, but the same seed
 ///   must always produce the same preference vector.
 #[derive(Clone, Debug, Default, PartialEq)]
+// moved to workflow::semantic::bias::SemanticBias
 pub struct SemanticBias {
     pub preferred: Vec<StepKind>,
 }
@@ -120,6 +121,14 @@ pub fn seed_to_bias(seed: u64) -> SemanticBias {
 /// - membership and cardinality are preserved exactly.
 /// - canonical planner meaning is not enforced here; that is the job of
 ///   `validate_steps`.
+pub fn apply_semantic_bias_from_seed(
+    steps: Vec<StepKind>,
+    seed: Option<u64>,
+) -> Vec<StepKind> {
+    let bias = seed.map(seed_to_bias);
+    apply_semantic_bias(steps, bias)
+}
+
 pub fn apply_semantic_bias(steps: Vec<StepKind>, bias: Option<SemanticBias>) -> Vec<StepKind> {
     let Some(bias) = bias else {
         return steps;

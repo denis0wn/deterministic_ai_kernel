@@ -1,0 +1,25 @@
+use deterministic_ai_kernel::workflow::planner::StepKind;
+use deterministic_ai_kernel::workflow::planner::seed_to_bias;
+
+#[test]
+fn bias_snapshot_is_stable_for_known_seed() {
+    let steps = vec![
+        StepKind::AnalyzeAndPlan,
+        StepKind::ExecuteChanges,
+        StepKind::ValidatePlannerOutput,
+    ];
+
+    let bias = seed_to_bias(123, &steps);
+
+    let rendered = bias.explain_lines().join("\n");
+
+    let expected = [
+        format!("bias.version={}", bias.version),
+        "bias.seed=123".to_string(),
+        format!("bias.preferred={:?}", bias.preferred),
+    ];
+
+    for line in expected {
+        assert!(rendered.contains(&line), "missing line: {line}\n{rendered}");
+    }
+}
