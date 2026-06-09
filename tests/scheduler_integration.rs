@@ -392,7 +392,7 @@ fn codefix_runtime_flow_uses_lease_backed_claim_and_execution() {
 }
 
 #[test]
-fn start_step_allows_legacy_generic_worker_but_accepts_planner_worker_too() {
+fn start_step_accepts_generic_worker_and_planner_worker() {
     let task_id = "task-claim-cap";
     let db = unique_db_path(task_id);
     setup_codefix_task(&db, task_id);
