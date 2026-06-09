@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct EventRow {
     pub causal_unit_id: i64,
     pub sequence_in_unit: i64,
@@ -17,7 +16,6 @@ pub struct EventRow {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SemanticArtifactRow {
     pub artifact_id: i64,
     pub task_id: String,
@@ -29,12 +27,10 @@ pub struct SemanticArtifactRow {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct EventBus {
     conn: Arc<Mutex<Connection>>,
 }
 
-#[allow(dead_code)]
 impl EventBus {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(db_path)?;
