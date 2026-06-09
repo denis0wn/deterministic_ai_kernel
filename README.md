@@ -23,6 +23,27 @@ CLI commands:
 - `semantic-artifacts <task_id> [step_id]`
 - `latest-analysis-seed <task_id> [step_id]`
 
+## Demo workflow
+
+Example end-to-end walkthrough:
+
+1. Analyze a task:
+   - `cargo run -- analyze-task demo-task "Investigate scheduler retry semantics"`
+
+2. Read the latest semantic seed:
+   - `cargo run -- latest-analysis-seed demo-task analyze_task`
+
+3. List semantic artifacts for the task:
+   - `cargo run -- semantic-artifacts demo-task`
+
+4. Rebuild snapshot state:
+   - `cargo run -- snapshot demo-task`
+
+5. Replay persisted state:
+   - `cargo run -- replay demo-task`
+
+This demonstrates the intended loop: analyze -> persist semantic artifact -> inspect artifact state -> snapshot -> replay.
+
 ## Useful tests
 
 - `cargo test --test replay_snapshot -- --nocapture`
