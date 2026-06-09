@@ -129,7 +129,13 @@ fn vacuum_db(db: &str) {
 async fn main() {
     model_registry::validate().unwrap();
     let args: Vec<String> = std::env::args().collect();
-    let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+    let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .join("kernel.db")
+            .to_string_lossy()
+            .to_string()
+    });
     let db = db.as_str();
 
     if matches!(args.get(1).map(|s| s.as_str()), Some("--help") | Some("-h") | Some("help")) {
