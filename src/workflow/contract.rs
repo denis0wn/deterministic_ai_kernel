@@ -82,16 +82,20 @@ pub fn terminal_outcome(outcome: &StepOutcome) -> bool {
     matches!(outcome, StepOutcome::Success | StepOutcome::TerminalFailure)
 }
 
+#[allow(dead_code)]
 pub const CONTRACT_VERSION: u32 = 1;
 
+#[allow(dead_code)]
 pub fn contract_version() -> u32 {
     CONTRACT_VERSION
 }
 
+#[allow(dead_code)]
 pub fn task_class_names() -> &'static [&'static str] {
     &["Generic", "PlannerHardening", "CodeFix"]
 }
 
+#[allow(dead_code)]
 pub fn step_kind_names() -> &'static [&'static str] {
     &[
         "TightenPlannerPrompt",
@@ -110,10 +114,12 @@ pub fn step_kind_names() -> &'static [&'static str] {
     ]
 }
 
+#[allow(dead_code)]
 pub fn outcome_names() -> &'static [&'static str] {
     &["Success", "RetryableFailure", "TerminalFailure", "Blocked"]
 }
 
+#[allow(dead_code)]
 pub fn event_type_names() -> &'static [&'static str] {
     &[
         "task.created",
@@ -127,6 +133,7 @@ pub fn event_type_names() -> &'static [&'static str] {
 
 /// Advisory-only capability hint from the static workflow contract.
 /// Runtime execution is lease-authorized; this mapping is metadata, not an execution guard.
+#[allow(dead_code)]
 pub fn advisory_capability_for_step(step_kind: &StepKind) -> WorkerCapability {
     required_capability_for_step(step_kind)
 }

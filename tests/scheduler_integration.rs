@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,7 +14,7 @@ fn unique_db_path(test_name: &str) -> PathBuf {
     ))
 }
 
-fn run(db: &PathBuf, args: &[&str]) -> String {
+fn run(db: &Path, args: &[&str]) -> String {
     let out = Command::new("cargo")
         .args(["run", "--quiet", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
@@ -30,7 +30,7 @@ fn run(db: &PathBuf, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 
-fn run_expect_fail(db: &PathBuf, args: &[&str]) -> String {
+fn run_expect_fail(db: &Path, args: &[&str]) -> String {
     let out = Command::new("cargo")
         .args(["run", "--quiet", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
@@ -50,7 +50,7 @@ fn run_expect_fail(db: &PathBuf, args: &[&str]) -> String {
     )
 }
 
-fn sqlite(db: &PathBuf, sql: &str) {
+fn sqlite(db: &Path, sql: &str) {
     let out = Command::new("sqlite3")
         .arg(db)
         .arg(sql)
@@ -63,7 +63,7 @@ fn sqlite(db: &PathBuf, sql: &str) {
     );
 }
 
-fn setup_task(db: &PathBuf, task_id: &str) {
+fn setup_task(db: &Path, task_id: &str) {
     let _ = fs::remove_file(db);
 
     let schema_and_seed = format!(
@@ -129,7 +129,7 @@ INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) V
     sqlite(db, &schema_and_seed);
 }
 
-fn setup_codefix_task(db: &PathBuf, task_id: &str) {
+fn setup_codefix_task(db: &Path, task_id: &str) {
     setup_task(db, task_id);
     sqlite(db, &format!(
         "UPDATE tasks SET task_class = 'CodeFix' WHERE task_id = '{0}';         DELETE FROM step_status WHERE task_id = '{0}';         DELETE FROM step_dependencies WHERE task_id = '{0}';         INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES          ('{0}','00_read_repository','ready'),         ('{0}','01_locate_bug','pending'),         ('{0}','02_patch_code','pending'),         ('{0}','03_run_tests','pending'),         ('{0}','04_validate_patch','pending');         INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) VALUES          ('{0}','01_locate_bug','00_read_repository'),         ('{0}','02_patch_code','01_locate_bug'),         ('{0}','03_run_tests','02_patch_code'),         ('{0}','04_validate_patch','03_run_tests');",
@@ -388,7 +388,11 @@ fn codefix_runtime_flow_uses_lease_backed_claim_and_execution() {
         &db,
         &["start-step", task_id, "worker-exec", "01_locate_bug"],
     );
-    assert!(out.contains("STEP_RUNNING_OK"), "unexpected output: {}", out);
+    assert!(
+        out.contains("STEP_RUNNING_OK"),
+        "unexpected output: {}",
+        out
+    );
 }
 
 #[test]
@@ -403,7 +407,11 @@ fn start_step_accepts_generic_worker_and_planner_worker() {
         &db,
         &["start-step", task_id, "worker-exec", "00_read_repository"],
     );
-    assert!(out.contains("STEP_RUNNING_OK"), "unexpected output: {}", out);
+    assert!(
+        out.contains("STEP_RUNNING_OK"),
+        "unexpected output: {}",
+        out
+    );
 
     let db2 = unique_db_path("task-claim-cap-ok");
     setup_codefix_task(&db2, task_id);
@@ -413,7 +421,11 @@ fn start_step_accepts_generic_worker_and_planner_worker() {
         &db2,
         &["start-step", task_id, "worker-plan", "00_read_repository"],
     );
-    assert!(out.contains("STEP_RUNNING_OK"), "unexpected output: {}", out);
+    assert!(
+        out.contains("STEP_RUNNING_OK"),
+        "unexpected output: {}",
+        out
+    );
 }
 
 #[test]

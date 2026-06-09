@@ -18,7 +18,7 @@ pub fn normalize_step(raw: &str) -> Option<StepKind> {
     let lower = cleaned.to_ascii_lowercase();
     let tokens: Vec<&str> = lower.split_whitespace().collect();
 
-    let has = |needle: &str| tokens.iter().any(|t| *t == needle);
+    let has = |needle: &str| tokens.contains(&needle);
     let contains_pair = |a: &str, b: &str| has(a) && has(b);
 
     if has("deploy")

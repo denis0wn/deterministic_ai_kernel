@@ -15,25 +15,22 @@ impl Runtime {
     }
 
     pub async fn execute_step(&self, task_id: &str, step: &Step) -> Result<()> {
-        match step.kind {
-            StepKind::AnalyzeTask => {
-                let detail = step.detail.as_deref().unwrap_or("analyze task").trim();
-                let vector = embed_text(detail).await?;
-                let source_generation = self.bus.latest_generation_for_task(task_id)?;
+        if step.kind == StepKind::AnalyzeTask {
+            let detail = step.detail.as_deref().unwrap_or("analyze task").trim();
+            let vector = embed_text(detail).await?;
+            let source_generation = self.bus.latest_generation_for_task(task_id)?;
 
-                self.bus.append_semantic_artifact(
-                    task_id,
-                    &step.as_text(),
-                    source_generation,
-                    "analysis_seed",
-                    &json!({
-                        "input_representation": detail,
-                        "embedding_dim": vector.len(),
-                        "analysis_kind": "semantic_seed"
-                    }),
-                )?;
-            }
-            _ => {}
+            self.bus.append_semantic_artifact(
+                task_id,
+                &step.as_text(),
+                source_generation,
+                "analysis_seed",
+                &json!({
+                    "input_representation": detail,
+                    "embedding_dim": vector.len(),
+                    "analysis_kind": "semantic_seed"
+                }),
+            )?;
         }
 
         Ok(())

@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct EventRow {
     pub causal_unit_id: i64,
     pub sequence_in_unit: i64,
@@ -23,6 +24,7 @@ pub struct SemanticArtifactRow {
     pub source_generation: i64,
     pub artifact_type: String,
     pub payload: String,
+    #[allow(dead_code)]
     pub created_at: String,
 }
 
@@ -40,6 +42,7 @@ impl EventBus {
         })
     }
 
+    #[allow(dead_code)]
     pub fn append_event(
         &self,
         task_id: &str,
@@ -114,7 +117,10 @@ impl EventBus {
         task_id: &str,
         step_id: Option<&str>,
     ) -> Result<Option<SemanticArtifactRow>> {
-        Ok(self.list_semantic_artifacts(task_id, step_id)?.into_iter().next())
+        Ok(self
+            .list_semantic_artifacts(task_id, step_id)?
+            .into_iter()
+            .next())
     }
 
     pub fn list_semantic_artifacts(
@@ -167,6 +173,7 @@ impl EventBus {
         Ok(rows)
     }
 
+    #[allow(dead_code)]
     pub fn commit_causal_unit(
         &self,
         task_id: &str,
@@ -250,6 +257,7 @@ impl EventBus {
         Ok(unit_gen)
     }
 
+    #[allow(dead_code)]
     pub fn query(&self, task_id: &str) -> Result<Vec<EventRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(

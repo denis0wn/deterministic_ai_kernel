@@ -48,7 +48,8 @@ pub fn memory_snapshot() -> Result<String> {
 pub fn free_memory_gb_estimate() -> Result<f64> {
     let output = Command::new("sh")
         .arg("-lc")
-        .arg(r#"vm_stat | awk '
+        .arg(
+            r#"vm_stat | awk '
             /free/ {free=$3}
             /inactive/ {inactive=$3}
             /speculative/ {spec=$3}
@@ -57,7 +58,8 @@ pub fn free_memory_gb_estimate() -> Result<f64> {
                 pagesize=16384;
                 total=(free+inactive+spec)*pagesize;
                 printf "%.2f", total/1024/1024/1024;
-            }'"#)
+            }'"#,
+        )
         .output()?;
 
     if !output.status.success() {
@@ -121,11 +123,7 @@ pub fn safe_switch(role: &str) -> Result<()> {
     let synced_model = model_manifest::sync_env_for_role(role)?;
     println!(
         "SAFE_SWITCH_OK role={} model={} ram_class={} threshold_gb={:.2} free_gb={:.2}",
-        role,
-        synced_model,
-        ram_class,
-        threshold,
-        free
+        role, synced_model, ram_class, threshold, free
     );
     Ok(())
 }
@@ -213,10 +211,7 @@ pub fn auto_route(role: &str) -> Result<()> {
     let synced_model = model_manifest::sync_env_for_role(role)?;
     println!(
         "AUTO_ROUTE_OK role={} model={} free_gb={:.2} threshold_gb={:.2}",
-        role,
-        synced_model,
-        report.free_gb,
-        row.threshold_gb
+        role, synced_model, report.free_gb, row.threshold_gb
     );
     Ok(())
 }
@@ -253,6 +248,6 @@ mod tests {
 
     #[test]
     fn parse_gb_helper_works() {
-        assert!((free_memory_gb_estimate().is_ok()) || true);
+        assert!(free_memory_gb_estimate().is_ok());
     }
 }
