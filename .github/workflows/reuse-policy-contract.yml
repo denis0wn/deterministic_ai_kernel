@@ -1,0 +1,39 @@
+name: reuse-policy-contract
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  reuse-policy-contract:
+    name: reuse-policy-contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build
+
+      - name: Run reuse policy matrix
+        run: cargo test --test reuse_policy_matrix -- --nocapture
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reuse-policy-debug
+          path: |
+            artifacts/verification_plan*.json
+            artifacts/verification_verdict*.json
+          if-no-files-found: ignore
