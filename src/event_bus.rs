@@ -1,9 +1,11 @@
 use anyhow::{anyhow, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+
+use crate::kernel_types::{ExecutionEvent, StateGraph, StateGraphEdge, StateGraphNode, TrustContext, TrustLevel};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -281,21 +283,110 @@ impl EventBus {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    fn canonical_json(value: &Value) -> String {
-        fn normalize(v: &Value) -> Value {
-            match v {
-                Value::Object(map) => {
-                    let mut ordered = BTreeMap::new();
-                    for (k, val) in map {
-                        ordered.insert(k.clone(), normalize(val));
-                    }
-                    Value::Object(ordered.into_iter().collect())
-                }
-                Value::Array(items) => Value::Array(items.iter().map(normalize).collect()),
-                _ => v.clone(),
-            }
+
+    pub fn list_execution_events(&self, task_id: &str) -> Result<Vec<ExecutionEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, event_type, payload              FROM event_log              WHERE task_id = ?1              ORDER BY causal_unit_id, sequence_in_unit, id"
+        )?;
+
+        let mapped = stmt.query_map([task_id], |r| {
+            let id: i64 = r.get(0)?;
+            let task_id: String = r.get(1)?;
+            let event_type: String = r.get(2)?;
+            let payload_raw: String = r.get(3)?;
+            let payload: Value = serde_json::from_str(&payload_raw).unwrap_or(Value::String(payload_raw));
+
+            Ok(ExecutionEvent {
+                id: format!("evt-{}", id),
+                task_id,
+                timestamp: "event_log".to_string(),
+                event_type,
+                payload,
+                caused_by: None,
+                trust_context: TrustContext {
+                    source: "event_bus".into(),
+                    trust_level: TrustLevel::High,
+                    verification_status: "recorded".into(),
+                    policy_version: "v1".into(),
+                },
+            })
+        })?;
+
+        Ok(mapped.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn build_state_graph(&self, task_id: &str) -> Result<StateGraph> {
+        let events = self.list_execution_events(task_id)?;
+        let mut graph = StateGraph::default();
+
+        for event in &events {
+            graph.nodes.push(StateGraphNode {
+                id: format!("node-{}", event.id),
+                kind: "event".into(),
+                ref_id: event.id.clone(),
+            });
         }
 
-        serde_json::to_string(&normalize(value)).unwrap()
+        for pair in events.windows(2) {
+            let from = format!("node-{}", pair[0].id);
+            let to = format!("node-{}", pair[1].id);
+            graph.edges.push(StateGraphEdge {
+                from,
+                to,
+                relation: "observed_before".into(),
+            });
+        }
+
+        Ok(graph)
+    }
+
+    pub fn save_replay_capsule(&self, capsule: &crate::kernel_types::ReplayCapsule) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let payload = serde_json::to_string(capsule)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO replay_capsules (capsule_id, task_id, created_at, payload) VALUES (?1, ?2, ?3, ?4)",
+            params![capsule.capsule_id, capsule.execution_id, capsule.created_at, payload],
+        )?;
+        Ok(())
+    }
+
+    
+    pub fn latest_replay_capsule(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<crate::kernel_types::ReplayCapsule>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT payload
+             FROM replay_capsules
+             WHERE task_id = ?1
+             ORDER BY created_at DESC, capsule_id DESC
+             LIMIT 1"
+        )?;
+
+        let row: Option<String> = stmt
+            .query_row([task_id], |r| r.get::<_, String>(0))
+            .optional()?;
+
+        match row {
+            Some(payload) => {
+                let capsule = serde_json::from_str::<crate::kernel_types::ReplayCapsule>(&payload)?;
+                Ok(Some(capsule))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn canonical_json(value: &Value) -> String {
+        let mut ordered = BTreeMap::new();
+        if let Value::Object(map) = value {
+            for (k, v) in map {
+                ordered.insert(k.clone(), v.clone());
+            }
+            serde_json::to_string(&ordered).unwrap()
+        } else {
+            serde_json::to_string(value).unwrap()
+        }
     }
 }

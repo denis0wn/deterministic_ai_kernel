@@ -55,12 +55,21 @@ CREATE TABLE IF NOT EXISTS state_snapshots (
     payload TEXT NOT NULL
 );
 
+
+
+CREATE TABLE IF NOT EXISTS replay_capsules (
+    capsule_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS semantic_artifacts (
     artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id TEXT NOT NULL,
     step_id TEXT NOT NULL,
     source_generation BIGINT NOT NULL,
-    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification')),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1')),
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -105,6 +114,11 @@ ON leases(task_id, step_id, state);
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_task
 ON state_snapshots(task_id, snapshot_id);
+
+
+
+CREATE INDEX IF NOT EXISTS idx_replay_capsules_task
+ON replay_capsules(task_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_semantic_artifacts_task
 ON semantic_artifacts(task_id, step_id, source_generation);

@@ -4,6 +4,7 @@ mod event_bus;
 mod execution;
 mod leases;
 mod llm;
+mod kernel_types;
 mod lm_control;
 mod model_manifest;
 mod model_registry;
@@ -17,6 +18,7 @@ use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
 use replay::engine::replay_validate;
+use replay::capsule::build_replay_capsule;
 use rusqlite::Connection;
 use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
 use snapshot::{rebuild_snapshot, restore_snapshot};
@@ -105,6 +107,79 @@ fn reset_db(db: &str) {
     println!("RESET OK");
 }
 
+
+fn collect_integrity_report(db: &str) -> serde_json::Value {
+    use serde_json::{json, Value};
+    use std::fs;
+
+    if std::path::Path::new(db).exists() {
+        let _ = fs::remove_file(db);
+        let _ = fs::remove_file(format!("{db}-wal"));
+        let _ = fs::remove_file(format!("{db}-shm"));
+    }
+
+    let conn = Connection::open(db).unwrap();
+    conn.execute_batch(include_str!("../event_bus/schema.sql")).unwrap();
+    drop(conn);
+
+    snapshot::rebuild_snapshot(db, "integrity-task", true).unwrap();
+    snapshot::restore_snapshot(db, "integrity-task", true).unwrap();
+
+    let conn = Connection::open(db).unwrap();
+    let payload: String = conn
+        .query_row(
+            "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
+            ["integrity-task"],
+            |r| r.get(0),
+        )
+        .unwrap();
+
+    let parsed: Value = serde_json::from_str(&payload).unwrap();
+
+    json!({
+        "ok": true,
+        "snapshot_version": parsed.get("snapshot_version").and_then(|v| v.as_u64()).unwrap_or(0),
+        "schema_version": parsed.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(0),
+        "created_at_present": parsed.get("created_at").and_then(|v| v.as_u64()).is_some(),
+        "state_hash_present": parsed.get("state_hash").and_then(|v| v.as_u64()).is_some(),
+        "state_present": parsed.get("state").and_then(|v| v.as_object()).is_some(),
+        "task_id": parsed.get("task_id").cloned().unwrap_or(Value::Null)
+    })
+}
+
+fn run_integrity(db: &str) {
+    let report = collect_integrity_report(db);
+
+    assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        report.get("snapshot_version").and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        report.get("schema_version").and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        report.get("created_at_present").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        report.get("state_hash_present").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        report.get("state_present").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+
+    println!("INTEGRITY OK");
+}
+
+fn run_integrity_json(db: &str) {
+    let report = collect_integrity_report(db);
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+}
+
 fn vacuum_db(db: &str) {
     if !std::path::Path::new(db).exists() {
         println!("VACUUM OK");
@@ -146,11 +221,16 @@ async fn main() {
         println!("  llm-planner-smoke");
         println!("  print-model-manifest");
         println!("  current-models");
-        println!("  semantic-artifacts <task_id> [step_id]");
-        println!("  latest-analysis-seed <task_id> [step_id]");
+        println!("  latest-bias-artifact <task_id> [step_id]");
+        println!("  capture-capsule <task_id>");
+        println!("  capture-capsule-save <task_id>");
+        println!("  latest-capsule <task_id>");
+        println!("  bias-explain <step_kind>...");
         println!("  analyze-task <task_id> <text>");
         println!("  doctor");
         println!("  doctor-json");
+        println!("  integrity");
+        println!("  integrity-json");
         println!("  auto-route <coding_assistant|task_planning|embeddings>");
         println!("  switch <coding_assistant|task_planning|embeddings> [--dry-run]");
         println!("  sync-all-model-roles");
@@ -164,6 +244,189 @@ async fn main() {
     }
 
     match args.get(1).map(|s| s.as_str()) {
+
+
+        Some("capture-capsule-save") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: capture-capsule-save <task_id>");
+                std::process::exit(1);
+            }
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match build_replay_capsule(&bus, &task_id) {
+                Ok(capsule) => {
+                    bus.save_replay_capsule(&capsule).unwrap();
+                    println!("CAPTURE_CAPSULE_SAVE_OK\t{}\t{}", capsule.execution_id, capsule.capsule_id);
+                }
+                Err(e) => {
+                    eprintln!("capture-capsule-save failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
+        Some("latest-capsule") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: latest-capsule <task_id>");
+                std::process::exit(1);
+            }
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match bus.latest_replay_capsule(&task_id) {
+                Ok(Some(capsule)) => {
+                    println!("{}", serde_json::to_string_pretty(&capsule).unwrap());
+                }
+                Ok(None) => {
+                    eprintln!("no replay capsule found for task_id={}", task_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("latest-capsule failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
+        Some("capture-capsule") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: capture-capsule <task_id>");
+                std::process::exit(1);
+            }
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match build_replay_capsule(&bus, &task_id) {
+                Ok(capsule) => {
+                    println!("{}", serde_json::to_string_pretty(&capsule).unwrap());
+                }
+                Err(e) => {
+                    eprintln!("capture-capsule failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
+        Some("emit-bias-artifact") => {
+            use serde_json::json;
+            use workflow::contract::StepKind;
+            use workflow::semantic::bias::SemanticBias;
+
+            fn parse_step_kind(s: &str) -> Option<StepKind> {
+                match s {
+                    "TightenPlannerPrompt" => Some(StepKind::TightenPlannerPrompt),
+                    "NormalizePlannerOutput" => Some(StepKind::NormalizePlannerOutput),
+                    "AddLlmFallbackHandling" => Some(StepKind::AddLlmFallbackHandling),
+                    "AddPlannerTestCoverage" => Some(StepKind::AddPlannerTestCoverage),
+                    "ValidatePlannerOutput" => Some(StepKind::ValidatePlannerOutput),
+                    "AnalyzeTask" => Some(StepKind::AnalyzeTask),
+                    "PlanExecution" => Some(StepKind::PlanExecution),
+                    "ExecuteChanges" => Some(StepKind::ExecuteChanges),
+                    "ReadRepository" => Some(StepKind::ReadRepository),
+                    "LocateBug" => Some(StepKind::LocateBug),
+                    "PatchCode" => Some(StepKind::PatchCode),
+                    "RunTests" => Some(StepKind::RunTests),
+                    "ValidatePatch" => Some(StepKind::ValidatePatch),
+                    _ => None,
+                }
+            }
+
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            let step_id = args.get(3).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() || step_id.trim().is_empty() {
+                eprintln!("usage: emit-bias-artifact <task_id> <step_id> <step_kind>...");
+                std::process::exit(1);
+            }
+
+            let raw_domain: Vec<String> = args.iter().skip(4).cloned().collect();
+            if raw_domain.is_empty() {
+                eprintln!("usage: emit-bias-artifact <task_id> <step_id> <step_kind>...");
+                std::process::exit(1);
+            }
+
+            let mut domain: Vec<StepKind> = Vec::new();
+            for raw in &raw_domain {
+                match parse_step_kind(raw) {
+                    Some(kind) => domain.push(kind),
+                    None => {
+                        eprintln!("unknown step kind: {raw}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+
+            let bias = SemanticBias::neutral_for(&domain);
+            let payload = json!({
+                "lines": bias.explain_lines(),
+                "version": bias.version,
+                "seed": bias.seed,
+                "preferred": bias.preferred.iter().map(|k| format!("{:?}", k)).collect::<Vec<_>>(),
+                "weights": bias.weights,
+            });
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match bus.append_semantic_artifact(&task_id, &step_id, 0, "semantic_bias_v1", &payload) {
+                Ok(()) => {
+                    println!("EMIT_BIAS_ARTIFACT_OK\t{}\t{}", task_id, step_id);
+                }
+                Err(e) => {
+                    eprintln!("emit-bias-artifact failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
+        Some("bias-explain") => {
+            use workflow::contract::StepKind;
+            use workflow::semantic::bias::SemanticBias;
+
+            fn parse_step_kind(s: &str) -> Option<StepKind> {
+                match s {
+                    "TightenPlannerPrompt" => Some(StepKind::TightenPlannerPrompt),
+                    "NormalizePlannerOutput" => Some(StepKind::NormalizePlannerOutput),
+                    "AddLlmFallbackHandling" => Some(StepKind::AddLlmFallbackHandling),
+                    "AddPlannerTestCoverage" => Some(StepKind::AddPlannerTestCoverage),
+                    "ValidatePlannerOutput" => Some(StepKind::ValidatePlannerOutput),
+                    "AnalyzeTask" => Some(StepKind::AnalyzeTask),
+                    "PlanExecution" => Some(StepKind::PlanExecution),
+                    "ExecuteChanges" => Some(StepKind::ExecuteChanges),
+                    "ReadRepository" => Some(StepKind::ReadRepository),
+                    "LocateBug" => Some(StepKind::LocateBug),
+                    "PatchCode" => Some(StepKind::PatchCode),
+                    "RunTests" => Some(StepKind::RunTests),
+                    "ValidatePatch" => Some(StepKind::ValidatePatch),
+                    _ => None,
+                }
+            }
+
+            let raw_domain: Vec<String> = args.iter().skip(2).cloned().collect();
+            if raw_domain.is_empty() {
+                eprintln!("usage: bias-explain <step_kind>...");
+                std::process::exit(2);
+            }
+
+            let mut domain: Vec<StepKind> = Vec::new();
+            for raw in &raw_domain {
+                match parse_step_kind(raw) {
+                    Some(kind) => domain.push(kind),
+                    None => {
+                        eprintln!("unknown step kind: {raw}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+
+            let bias = SemanticBias::neutral_for(&domain);
+            for line in bias.explain_lines() {
+                println!("{line}");
+            }
+            return;
+        }
         Some("llm-smoke") => {
             match llm::smoke().await {
                 Ok(()) => {}
@@ -215,17 +478,17 @@ async fn main() {
             };
             return;
         }
-        Some("semantic-artifacts") => {
+        Some("latest-bias-artifact") => {
             let task_id = args.get(2).cloned().unwrap_or_default();
             if task_id.trim().is_empty() {
-                eprintln!("usage: cargo run -- semantic-artifacts <task_id> [step_id]");
+                eprintln!("usage: cargo run -- latest-bias-artifact <task_id> [step_id]");
                 std::process::exit(1);
             }
             let step_id = args.get(3).map(|s| s.as_str());
             let bus = event_bus::EventBus::new(db).unwrap();
             match bus.list_semantic_artifacts(&task_id, step_id) {
                 Ok(rows) => {
-                    for row in rows {
+                    if let Some(row) = rows.into_iter().find(|r| r.artifact_type == "semantic_bias_v1") {
                         println!(
                             "{}	{}	{}	{}	{}	{}",
                             row.artifact_id,
@@ -238,7 +501,7 @@ async fn main() {
                     }
                 }
                 Err(e) => {
-                    eprintln!("semantic-artifacts failed: {e}");
+                    eprintln!("latest-bias-artifact failed: {e}");
                     std::process::exit(1);
                 }
             };
@@ -315,6 +578,14 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            return;
+        }
+        Some("integrity") => {
+            run_integrity(db);
+            return;
+        }
+        Some("integrity-json") => {
+            run_integrity_json(db);
             return;
         }
         Some("doctor-json") => {
@@ -492,7 +763,7 @@ async fn main() {
                 println!("SNAPSHOT OK");
                 return;
             }
-            rebuild_snapshot(db, task_id).unwrap();
+            rebuild_snapshot(db, task_id, false).unwrap();
             return;
         }
         Some("restore") => {
@@ -501,7 +772,31 @@ async fn main() {
                 println!("RESTORE OK");
                 return;
             }
-            restore_snapshot(db, task_id).unwrap();
+            restore_snapshot(db, task_id, false).unwrap();
+            return;
+        }
+        Some("snapshot-artifacts") => {
+            use rusqlite::Connection;
+            use serde_json::Value;
+
+            let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
+            if !table_exists(db, "state_snapshots") {
+                return;
+            }
+
+            let conn = Connection::open(db).unwrap();
+            let payload: String = conn.query_row(
+                "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
+                [task_id],
+                |r| r.get(0),
+            ).unwrap();
+
+            let payload_json: Value = serde_json::from_str(&payload).unwrap();
+            if let Some(artifacts) = payload_json.get("artifacts").and_then(|v| v.as_object()) {
+                for (artifact_type, artifact_id) in artifacts {
+                    println!("ARTIFACT_REF\t{}\t{}", artifact_type, artifact_id);
+                }
+            }
             return;
         }
         Some("schedule") => {
