@@ -1,0 +1,233 @@
+   Compiling deterministic_ai_kernel v0.1.0 (/Users/denissmoliakov/deterministic_ai_kernel)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.49s
+     Running unittests src/lib.rs (target/debug/deps/deterministic_ai_kernel-dd57cabaf9b7a27d)
+
+running 56 tests
+test model_manifest::tests::threshold_mapping_is_stable ... ok
+test model_registry::tests::coding_assistant_prefers_purpose_specific_model ... ok
+test model_registry::tests::coding_assistant_uses_default_model_when_specific_key_missing ... ok
+test model_registry::tests::missing_base_url_is_an_error ... ok
+test cli_json::tests::capsule_summary_report_has_expected_shape ... ok
+test model_manifest::tests::best_enabled_task_planning_model_prefers_priority_one ... ok
+test model_manifest::tests::manifest_loads ... ok
+test model_manifest::tests::task_planning_model_is_present ... ok
+test model_manifest::tests::embedding_model_is_not_marked_as_chat_role ... ok
+test model_registry::tests::missing_default_model_is_an_error ... ok
+test cli_json::tests::print_json_report_emits_pretty_json ... ok
+test cli_json::tests::comparison_report_has_expected_shape_and_diff_payloads ... ok
+test model_registry::tests::resolves_coding_assistant_purpose ... ok
+test model_registry::tests::resolves_task_planning_purpose ... ok
+test model_registry::tests::task_planning_prefers_purpose_specific_model ... ok
+test model_registry::tests::task_planning_uses_default_model_when_specific_key_missing ... ok
+test workflow::compiler::tests::all_codefix_failure_signals_converge_to_same_canonical_flow ... ok
+test workflow::compiler::tests::codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::codefix_input_uses_canonical_codefix_flow ... ok
+test model_manifest::tests::current_models_reports_known_roles ... ok
+test workflow::compiler::tests::generic_task_uses_default_execution_flow ... ok
+test workflow::compiler::tests::lint_report_codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::llm_planning_task_uses_canonical_ir_steps ... ok
+test workflow::compiler::tests::planner_hardening_input_maps_to_planner_hardening_task_class ... ok
+test workflow::contract::tests::analyze_and_plan_steps_require_planner_capability ... ok
+test workflow::contract::tests::codefix_steps_require_expected_capabilities ... ok
+test workflow::contract::tests::codefix_task_class_maps_to_canonical_codefix_flow ... ok
+test workflow::contract::tests::contract_v1_metadata_is_stable ... ok
+test workflow::contract::tests::event_type_names_match_execution_event_v1_contract ... ok
+test workflow::contract::tests::every_step_kind_is_present_in_exactly_one_canonical_flow ... ok
+test workflow::contract::tests::every_task_class_has_a_non_empty_canonical_flow ... ok
+test workflow::contract::tests::execute_changes_requires_executor_capability ... ok
+test workflow::contract::tests::generic_task_class_maps_to_default_execution_flow ... ok
+test workflow::contract::tests::planner_hardening_task_class_maps_to_canonical_planner_flow ... ok
+test workflow::contract::tests::retryable_failure_and_blocked_are_not_terminal_outcomes ... ok
+test workflow::contract::tests::step_specs_can_be_lowered_to_steps_with_detail ... ok
+test workflow::contract::tests::success_and_terminal_failure_are_terminal_outcomes ... ok
+test workflow::contract::tests::validate_planner_output_requires_verifier_capability ... ok
+test workflow::planner::tests::apply_semantic_bias_none_is_noop ... ok
+test workflow::planner::tests::apply_semantic_bias_stably_orders_by_weight ... ok
+test workflow::planner::tests::normalize_step_maps_fallback_language ... ok
+test workflow::planner::tests::normalize_step_maps_test_language ... ok
+test workflow::planner::tests::normalize_step_rejects_deployment_language ... ok
+test workflow::planner::tests::parse_steps_extracts_unique_kinds_in_order ... ok
+test workflow::planner::tests::seed_to_bias_replay_safe ... ok
+test workflow::planner::tests::semantic_bias_none_preserves_identity_for_all_known_permutations ... ok
+test workflow::planner::tests::semantic_bias_is_deterministic_across_seed_and_input_matrix ... ok
+test workflow::planner::tests::semantic_bias_preserves_canonical_validation_result ... ok
+test workflow::planner::tests::validate_steps_dedupes_and_orders_canonical_steps ... ok
+test workflow::planner::tests::validate_steps_ignores_duplicate_permutations ... ok
+test workflow::planner::tests::semantic_bias_preserves_permutation_closure_across_seed_matrix ... ok
+test workflow::planner::tests::validate_steps_is_invariant_under_input_permutation ... ok
+test workflow::planner::tests::semantic_bias_none_is_identity_for_generated_inputs ... ok
+test lm_control::tests::parse_gb_helper_works ... ok
+test workflow::planner::tests::semantic_bias_preserves_membership_and_length_for_generated_inputs ... ok
+test lm_control::tests::doctor_json_report_has_expected_shape ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src/main.rs (target/debug/deps/deterministic_ai_kernel-b5a06a044dd565bd)
+
+running 66 tests
+test lm_policy_layer::tests::allowed_surfaces_are_strict ... ok
+test lm_policy_layer::policy_applier::tests::rejects_low_confidence_update ... ok
+test cli_json::tests::capsule_summary_report_has_expected_shape ... ok
+test model_manifest::tests::embedding_model_is_not_marked_as_chat_role ... ok
+test model_manifest::tests::task_planning_model_is_present ... ok
+test lm_policy_layer::lm_studio_client::tests::rejects_unknown_surface ... ok
+test model_manifest::tests::manifest_loads ... ok
+test model_manifest::tests::best_enabled_task_planning_model_prefers_priority_one ... ok
+test cli_json::tests::comparison_report_has_expected_shape_and_diff_payloads ... ok
+test model_manifest::tests::threshold_mapping_is_stable ... ok
+test cli_json::tests::print_json_report_emits_pretty_json ... ok
+test lm_policy_layer::lm_studio_client::tests::rejects_low_confidence ... ok
+test lm_policy_layer::tests::policy_state_has_four_surfaces ... ok
+test model_registry::tests::coding_assistant_prefers_purpose_specific_model ... ok
+test model_registry::tests::coding_assistant_uses_default_model_when_specific_key_missing ... ok
+test model_manifest::tests::current_models_reports_known_roles ... ok
+test model_registry::tests::missing_base_url_is_an_error ... ok
+test model_registry::tests::missing_default_model_is_an_error ... ok
+test model_registry::tests::resolves_coding_assistant_purpose ... ok
+test model_registry::tests::resolves_task_planning_purpose ... ok
+test model_registry::tests::task_planning_prefers_purpose_specific_model ... ok
+test model_registry::tests::task_planning_uses_default_model_when_specific_key_missing ... ok
+test worker::tests::classify_failure_outcome_defaults_to_terminal_failure ... ok
+test worker::tests::classify_failure_outcome_maps_blocked_prefixes ... ok
+test worker::tests::classify_failure_outcome_maps_retry_prefixes ... ok
+test worker::tests::outcome_to_event_type_maps_success_and_blocked ... ok
+test workflow::compiler::tests::all_codefix_failure_signals_converge_to_same_canonical_flow ... ok
+test workflow::compiler::tests::codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::codefix_input_uses_canonical_codefix_flow ... ok
+test workflow::compiler::tests::generic_task_uses_default_execution_flow ... ok
+test workflow::compiler::tests::lint_report_codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::llm_planning_task_uses_canonical_ir_steps ... ok
+test workflow::compiler::tests::planner_hardening_input_maps_to_planner_hardening_task_class ... ok
+test workflow::contract::tests::analyze_and_plan_steps_require_planner_capability ... ok
+test workflow::contract::tests::codefix_steps_require_expected_capabilities ... ok
+test workflow::contract::tests::codefix_task_class_maps_to_canonical_codefix_flow ... ok
+test workflow::contract::tests::contract_v1_metadata_is_stable ... ok
+test workflow::contract::tests::event_type_names_match_execution_event_v1_contract ... ok
+test workflow::contract::tests::every_step_kind_is_present_in_exactly_one_canonical_flow ... ok
+test workflow::contract::tests::every_task_class_has_a_non_empty_canonical_flow ... ok
+test workflow::contract::tests::execute_changes_requires_executor_capability ... ok
+test workflow::contract::tests::generic_task_class_maps_to_default_execution_flow ... ok
+test workflow::contract::tests::planner_hardening_task_class_maps_to_canonical_planner_flow ... ok
+test workflow::contract::tests::retryable_failure_and_blocked_are_not_terminal_outcomes ... ok
+test workflow::contract::tests::step_specs_can_be_lowered_to_steps_with_detail ... ok
+test workflow::contract::tests::success_and_terminal_failure_are_terminal_outcomes ... ok
+test workflow::contract::tests::validate_planner_output_requires_verifier_capability ... ok
+test workflow::planner::tests::apply_semantic_bias_stably_orders_by_weight ... ok
+test workflow::planner::tests::normalize_step_maps_fallback_language ... ok
+test workflow::planner::tests::apply_semantic_bias_none_is_noop ... ok
+test workflow::planner::tests::normalize_step_maps_test_language ... ok
+test workflow::planner::tests::normalize_step_rejects_deployment_language ... ok
+test workflow::planner::tests::parse_steps_extracts_unique_kinds_in_order ... ok
+test workflow::planner::tests::seed_to_bias_replay_safe ... ok
+test workflow::planner::tests::semantic_bias_none_preserves_identity_for_all_known_permutations ... ok
+test workflow::planner::tests::semantic_bias_is_deterministic_across_seed_and_input_matrix ... ok
+test workflow::planner::tests::semantic_bias_preserves_canonical_validation_result ... ok
+test workflow::planner::tests::validate_steps_dedupes_and_orders_canonical_steps ... ok
+test workflow::planner::tests::semantic_bias_preserves_permutation_closure_across_seed_matrix ... ok
+test workflow::planner::tests::validate_steps_ignores_duplicate_permutations ... ok
+test workflow::planner::tests::validate_steps_is_invariant_under_input_permutation ... ok
+test integrity_json_tests::integrity_json_report_has_expected_shape ... ok
+test lm_control::tests::parse_gb_helper_works ... ok
+test workflow::planner::tests::semantic_bias_none_is_identity_for_generated_inputs ... ok
+test workflow::planner::tests::semantic_bias_preserves_membership_and_length_for_generated_inputs ... ok
+test lm_control::tests::doctor_json_report_has_expected_shape ... ok
+
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/architecture.rs (target/debug/deps/architecture-b4987ed4a0d98b29)
+
+running 5 tests
+test execution_is_execution_only ... ok
+test llm_and_embeddings_are_external_only ... ok
+test worker_is_ownership_only ... ok
+test event_bus_is_persistence_only ... ok
+test scheduler_is_selection_only ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bias_artifact_cli.rs (target/debug/deps/bias_artifact_cli-334683611c305dc9)
+
+running 1 test
+test emit_bias_artifact_persists_semantic_bias_v1 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests/bias_explain_cli.rs (target/debug/deps/bias_explain_cli-379838991cd93a82)
+
+running 1 test
+test bias_explain_cli_prints_stable_lines ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_explain_help_cli.rs (target/debug/deps/bias_explain_help_cli-23229479638e419e)
+
+running 1 test
+test help_lists_bias_explain_command ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_explain_invalid_cli.rs (target/debug/deps/bias_explain_invalid_cli-9f95ef08d6f6050a)
+
+running 1 test
+test bias_explain_cli_rejects_unknown_step_kind ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_v1_snapshot.rs (target/debug/deps/bias_v1_snapshot-cab38f5c314491f5)
+
+running 2 tests
+test bias_v1_weight_lines_are_stably_sorted ... ok
+test bias_v1_explain_snapshot_is_stable ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/capture_capsule_cli.rs (target/debug/deps/capture_capsule_cli-7e383b1bb2635ff9)
+
+running 1 test
+test capture_capsule_cli_outputs_capsule_json ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.44s
+
+     Running tests/capture_capsule_save_cli_json.rs (target/debug/deps/capture_capsule_save_cli_json-6f70d821666a0dc5)
+
+running 1 test
+test capture_capsule_save_json_reports_saved_capsule ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests/cli_json_contract.rs (target/debug/deps/cli_json_contract-13c3624c28d9bea8)
+
+running 1 test
+test integrity_json_emits_valid_cli_json_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/compare_capsules_cli.rs (target/debug/deps/compare_capsules_cli-a3d1f487c6bd11e6)
+
+running 1 test
+test compare_capsules_cli_reports_identical_for_same_task_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests/compare_capsules_cli_divergent.rs (target/debug/deps/compare_capsules_cli_divergent-98cd3de9a960d3d4)
+
+running 1 test
+test compare_capsules_cli_reports_divergent_for_different_task_states ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests/compare_capsules_cli_explain_divergent.rs (target/debug/deps/compare_capsules_cli_explain_divergent-9ab946f29dc604bc)
+
+running 1 test
+test compare_capsules_explain_reports_divergent_reason ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests/compare_capsules_cli_explain_identical.rs (target/debug/deps/compare_capsules_cli_explain_identical-7b9bbdb587481835)
+
+running 1 test
+test compare_capsules_explain_reports_identical_reason ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests/compare_capsules_cli_explain_invalid.rs (target/debug/deps/compare_capsules_cli_explain_invalid-dfe42757137c61d8)

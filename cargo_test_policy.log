@@ -1,0 +1,620 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.40
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling deterministic_ai_kernel v0.1.0 (/Users/denissmoliakov/deterministic_ai_kernel)
+warning: struct `ModelSelectionPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:15:12
+   |
+15 | pub struct ModelSelectionPolicy {
+   |            ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ModelRolePolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:20:12
+   |
+20 | pub struct ModelRolePolicy {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `RamGatingPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:29:12
+   |
+29 | pub struct RamGatingPolicy {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `RamThresholdPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:34:12
+   |
+34 | pub struct RamThresholdPolicy {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerHeuristicsPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:40:12
+   |
+40 | pub struct PlannerHeuristicsPolicy {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EnvSyncPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:45:12
+   |
+45 | pub struct EnvSyncPolicy {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `EnvRolePolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:50:12
+   |
+50 | pub struct EnvRolePolicy {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `PolicyState` is never constructed
+  --> src/lm_policy_layer/mod.rs:56:12
+   |
+56 | pub struct PolicyState {
+   |            ^^^^^^^^^^^
+
+warning: struct `PolicyContext` is never constructed
+  --> src/lm_policy_layer/mod.rs:64:12
+   |
+64 | pub struct PolicyContext {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `PolicyUpdate` is never constructed
+  --> src/lm_policy_layer/mod.rs:72:12
+   |
+72 | pub struct PolicyUpdate {
+   |            ^^^^^^^^^^^^
+
+warning: struct `PolicyUpdateEnvelope` is never constructed
+  --> src/lm_policy_layer/mod.rs:81:12
+   |
+81 | pub struct PolicyUpdateEnvelope {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PolicyVersionRecord` is never constructed
+  --> src/lm_policy_layer/mod.rs:87:12
+   |
+87 | pub struct PolicyVersionRecord {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_policy_state` is never used
+  --> src/lm_policy_layer/mod.rs:96:8
+   |
+96 | pub fn collect_policy_state() -> Result<PolicyState> {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_policy_context` is never used
+   --> src/lm_policy_layer/mod.rs:141:8
+    |
+141 | pub fn build_policy_context() -> Result<PolicyContext> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `version_dir` is never used
+   --> src/lm_policy_layer/mod.rs:162:8
+    |
+162 | pub fn version_dir() -> PathBuf {
+    |        ^^^^^^^^^^^
+
+warning: function `write_policy_version` is never used
+   --> src/lm_policy_layer/mod.rs:166:8
+    |
+166 | pub fn write_policy_version(record: &PolicyVersionRecord) -> Result<PathBuf> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `latest_policy_version` is never used
+   --> src/lm_policy_layer/mod.rs:174:8
+    |
+174 | pub fn latest_policy_version() -> Result<Option<PolicyVersionRecord>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `new_version_id` is never used
+   --> src/lm_policy_layer/mod.rs:194:8
+    |
+194 | pub fn new_version_id() -> Result<String> {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `ensure_surface_is_allowed` is never used
+   --> src/lm_policy_layer/mod.rs:202:8
+    |
+202 | pub fn ensure_surface_is_allowed(surface: &str) -> Result<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `policy_file_exists` is never used
+   --> src/lm_policy_layer/mod.rs:209:8
+    |
+209 | pub fn policy_file_exists(path: &Path) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `send_policy_context` is never used
+ --> src/lm_policy_layer/lm_studio_client.rs:6:8
+  |
+6 | pub fn send_policy_context(context: &PolicyContext) -> Result<String> {
+  |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `receive_policy_update` is never used
+  --> src/lm_policy_layer/lm_studio_client.rs:10:8
+   |
+10 | pub fn receive_policy_update(raw: &str) -> Result<PolicyUpdateEnvelope> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_policy_output` is never used
+  --> src/lm_policy_layer/lm_studio_client.rs:14:8
+   |
+14 | pub fn validate_policy_output(raw: &str, min_confidence: f64) -> Result<PolicyUpdateEnvelope> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `normalize_value` is never used
+  --> src/lm_policy_layer/lm_studio_client.rs:38:8
+   |
+38 | pub fn normalize_value(value: &Value) -> Value {
+   |        ^^^^^^^^^^^^^^^
+
+warning: constant `MIN_CONFIDENCE` is never used
+  --> src/lm_policy_layer/policy_applier.rs:10:7
+   |
+10 | const MIN_CONFIDENCE: f64 = 0.7;
+   |       ^^^^^^^^^^^^^^
+
+warning: function `apply_policy_update` is never used
+  --> src/lm_policy_layer/policy_applier.rs:12:8
+   |
+12 | pub fn apply_policy_update(envelope: &PolicyUpdateEnvelope) -> Result<PolicyVersionRecord> {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `apply_single_update` is never used
+  --> src/lm_policy_layer/policy_applier.rs:39:4
+   |
+39 | fn apply_single_update(snapshot: &mut PolicyState, update: &PolicyUpdate) -> Result<()> {
+   |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_f64_value` is never used
+  --> src/lm_policy_layer/policy_applier.rs:88:4
+   |
+88 | fn parse_f64_value(value: &Value) -> Result<f64> {
+   |    ^^^^^^^^^^^^^^^
+
+warning: function `parse_string_value` is never used
+  --> src/lm_policy_layer/policy_applier.rs:94:4
+   |
+94 | fn parse_string_value(value: &Value) -> Result<String> {
+   |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `unix_now` is never used
+   --> src/lm_policy_layer/policy_applier.rs:101:4
+    |
+101 | fn unix_now() -> Result<u64> {
+    |    ^^^^^^^^
+
+warning: function `append_apply_log` is never used
+   --> src/lm_policy_layer/policy_applier.rs:108:4
+    |
+108 | fn append_apply_log(record: &PolicyVersionRecord) -> Result<()> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: `deterministic_ai_kernel` (bin "deterministic_ai_kernel") generated 31 warnings
+warning: struct `PolicyContext` is never constructed
+  --> src/lm_policy_layer/mod.rs:64:12
+   |
+64 | pub struct PolicyContext {
+   |            ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `deterministic_ai_kernel` (bin "deterministic_ai_kernel" test) generated 6 warnings (5 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.64s
+     Running unittests src/lib.rs (target/debug/deps/deterministic_ai_kernel-dd57cabaf9b7a27d)
+
+running 56 tests
+test model_manifest::tests::threshold_mapping_is_stable ... ok
+test model_registry::tests::coding_assistant_uses_default_model_when_specific_key_missing ... ok
+test model_registry::tests::coding_assistant_prefers_purpose_specific_model ... ok
+test model_manifest::tests::manifest_loads ... ok
+test model_registry::tests::missing_base_url_is_an_error ... ok
+test cli_json::tests::capsule_summary_report_has_expected_shape ... ok
+test model_manifest::tests::task_planning_model_is_present ... ok
+test model_manifest::tests::embedding_model_is_not_marked_as_chat_role ... ok
+test model_registry::tests::missing_default_model_is_an_error ... ok
+test cli_json::tests::print_json_report_emits_pretty_json ... ok
+test model_manifest::tests::best_enabled_task_planning_model_prefers_priority_one ... ok
+test model_registry::tests::resolves_coding_assistant_purpose ... ok
+test model_registry::tests::resolves_task_planning_purpose ... ok
+test cli_json::tests::comparison_report_has_expected_shape_and_diff_payloads ... ok
+test model_registry::tests::task_planning_prefers_purpose_specific_model ... ok
+test model_registry::tests::task_planning_uses_default_model_when_specific_key_missing ... ok
+test workflow::compiler::tests::all_codefix_failure_signals_converge_to_same_canonical_flow ... ok
+test workflow::compiler::tests::codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::codefix_input_uses_canonical_codefix_flow ... ok
+test workflow::compiler::tests::generic_task_uses_default_execution_flow ... ok
+test workflow::compiler::tests::lint_report_codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::llm_planning_task_uses_canonical_ir_steps ... ok
+test workflow::compiler::tests::planner_hardening_input_maps_to_planner_hardening_task_class ... ok
+test workflow::contract::tests::analyze_and_plan_steps_require_planner_capability ... ok
+test model_manifest::tests::current_models_reports_known_roles ... ok
+test workflow::contract::tests::codefix_steps_require_expected_capabilities ... ok
+test workflow::contract::tests::codefix_task_class_maps_to_canonical_codefix_flow ... ok
+test workflow::contract::tests::contract_v1_metadata_is_stable ... ok
+test workflow::contract::tests::event_type_names_match_execution_event_v1_contract ... ok
+test workflow::contract::tests::every_step_kind_is_present_in_exactly_one_canonical_flow ... ok
+test workflow::contract::tests::every_task_class_has_a_non_empty_canonical_flow ... ok
+test workflow::contract::tests::execute_changes_requires_executor_capability ... ok
+test workflow::contract::tests::generic_task_class_maps_to_default_execution_flow ... ok
+test workflow::contract::tests::planner_hardening_task_class_maps_to_canonical_planner_flow ... ok
+test workflow::contract::tests::retryable_failure_and_blocked_are_not_terminal_outcomes ... ok
+test workflow::contract::tests::step_specs_can_be_lowered_to_steps_with_detail ... ok
+test workflow::contract::tests::success_and_terminal_failure_are_terminal_outcomes ... ok
+test workflow::contract::tests::validate_planner_output_requires_verifier_capability ... ok
+test workflow::planner::tests::apply_semantic_bias_none_is_noop ... ok
+test workflow::planner::tests::apply_semantic_bias_stably_orders_by_weight ... ok
+test workflow::planner::tests::normalize_step_maps_fallback_language ... ok
+test workflow::planner::tests::normalize_step_maps_test_language ... ok
+test workflow::planner::tests::normalize_step_rejects_deployment_language ... ok
+test workflow::planner::tests::parse_steps_extracts_unique_kinds_in_order ... ok
+test workflow::planner::tests::seed_to_bias_replay_safe ... ok
+test workflow::planner::tests::semantic_bias_none_preserves_identity_for_all_known_permutations ... ok
+test workflow::planner::tests::semantic_bias_is_deterministic_across_seed_and_input_matrix ... ok
+test workflow::planner::tests::semantic_bias_preserves_canonical_validation_result ... ok
+test workflow::planner::tests::validate_steps_dedupes_and_orders_canonical_steps ... ok
+test workflow::planner::tests::semantic_bias_preserves_permutation_closure_across_seed_matrix ... ok
+test workflow::planner::tests::validate_steps_ignores_duplicate_permutations ... ok
+test workflow::planner::tests::validate_steps_is_invariant_under_input_permutation ... ok
+test workflow::planner::tests::semantic_bias_none_is_identity_for_generated_inputs ... ok
+test lm_control::tests::parse_gb_helper_works ... ok
+test workflow::planner::tests::semantic_bias_preserves_membership_and_length_for_generated_inputs ... ok
+test lm_control::tests::doctor_json_report_has_expected_shape ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/main.rs (target/debug/deps/deterministic_ai_kernel-b5a06a044dd565bd)
+
+running 66 tests
+test lm_policy_layer::tests::allowed_surfaces_are_strict ... ok
+test lm_policy_layer::policy_applier::tests::rejects_low_confidence_update ... ok
+test model_manifest::tests::embedding_model_is_not_marked_as_chat_role ... ok
+test lm_policy_layer::lm_studio_client::tests::rejects_unknown_surface ... ok
+test model_manifest::tests::best_enabled_task_planning_model_prefers_priority_one ... ok
+test cli_json::tests::capsule_summary_report_has_expected_shape ... ok
+test cli_json::tests::print_json_report_emits_pretty_json ... ok
+test lm_policy_layer::lm_studio_client::tests::rejects_low_confidence ... ok
+test model_manifest::tests::manifest_loads ... ok
+test model_manifest::tests::threshold_mapping_is_stable ... ok
+test cli_json::tests::comparison_report_has_expected_shape_and_diff_payloads ... ok
+test lm_policy_layer::tests::policy_state_has_four_surfaces ... ok
+test model_manifest::tests::task_planning_model_is_present ... ok
+test model_registry::tests::coding_assistant_prefers_purpose_specific_model ... ok
+test model_registry::tests::coding_assistant_uses_default_model_when_specific_key_missing ... ok
+test model_registry::tests::missing_base_url_is_an_error ... ok
+test model_manifest::tests::current_models_reports_known_roles ... ok
+test model_registry::tests::missing_default_model_is_an_error ... ok
+test model_registry::tests::resolves_coding_assistant_purpose ... ok
+test model_registry::tests::resolves_task_planning_purpose ... ok
+test model_registry::tests::task_planning_prefers_purpose_specific_model ... ok
+test model_registry::tests::task_planning_uses_default_model_when_specific_key_missing ... ok
+test worker::tests::classify_failure_outcome_defaults_to_terminal_failure ... ok
+test worker::tests::classify_failure_outcome_maps_blocked_prefixes ... ok
+test worker::tests::classify_failure_outcome_maps_retry_prefixes ... ok
+test worker::tests::outcome_to_event_type_maps_success_and_blocked ... ok
+test workflow::compiler::tests::all_codefix_failure_signals_converge_to_same_canonical_flow ... ok
+test workflow::compiler::tests::codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::codefix_input_uses_canonical_codefix_flow ... ok
+test workflow::compiler::tests::generic_task_uses_default_execution_flow ... ok
+test workflow::compiler::tests::lint_report_codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::llm_planning_task_uses_canonical_ir_steps ... ok
+test workflow::compiler::tests::planner_hardening_input_maps_to_planner_hardening_task_class ... ok
+test workflow::contract::tests::analyze_and_plan_steps_require_planner_capability ... ok
+test workflow::contract::tests::codefix_steps_require_expected_capabilities ... ok
+test workflow::contract::tests::codefix_task_class_maps_to_canonical_codefix_flow ... ok
+test workflow::contract::tests::contract_v1_metadata_is_stable ... ok
+test workflow::contract::tests::event_type_names_match_execution_event_v1_contract ... ok
+test workflow::contract::tests::every_step_kind_is_present_in_exactly_one_canonical_flow ... ok
+test workflow::contract::tests::every_task_class_has_a_non_empty_canonical_flow ... ok
+test workflow::contract::tests::execute_changes_requires_executor_capability ... ok
+test workflow::contract::tests::generic_task_class_maps_to_default_execution_flow ... ok
+test workflow::contract::tests::planner_hardening_task_class_maps_to_canonical_planner_flow ... ok
+test workflow::contract::tests::retryable_failure_and_blocked_are_not_terminal_outcomes ... ok
+test workflow::contract::tests::step_specs_can_be_lowered_to_steps_with_detail ... ok
+test workflow::contract::tests::success_and_terminal_failure_are_terminal_outcomes ... ok
+test workflow::contract::tests::validate_planner_output_requires_verifier_capability ... ok
+test workflow::planner::tests::apply_semantic_bias_none_is_noop ... ok
+test workflow::planner::tests::apply_semantic_bias_stably_orders_by_weight ... ok
+test workflow::planner::tests::normalize_step_maps_fallback_language ... ok
+test workflow::planner::tests::normalize_step_maps_test_language ... ok
+test workflow::planner::tests::normalize_step_rejects_deployment_language ... ok
+test workflow::planner::tests::parse_steps_extracts_unique_kinds_in_order ... ok
+test workflow::planner::tests::seed_to_bias_replay_safe ... ok
+test workflow::planner::tests::semantic_bias_none_preserves_identity_for_all_known_permutations ... ok
+test workflow::planner::tests::semantic_bias_is_deterministic_across_seed_and_input_matrix ... ok
+test workflow::planner::tests::semantic_bias_preserves_canonical_validation_result ... ok
+test workflow::planner::tests::semantic_bias_preserves_permutation_closure_across_seed_matrix ... ok
+test workflow::planner::tests::validate_steps_ignores_duplicate_permutations ... ok
+test workflow::planner::tests::validate_steps_dedupes_and_orders_canonical_steps ... ok
+test workflow::planner::tests::validate_steps_is_invariant_under_input_permutation ... ok
+test integrity_json_tests::integrity_json_report_has_expected_shape ... ok
+test lm_control::tests::parse_gb_helper_works ... ok
+test workflow::planner::tests::semantic_bias_none_is_identity_for_generated_inputs ... ok
+test workflow::planner::tests::semantic_bias_preserves_membership_and_length_for_generated_inputs ... ok
+test lm_control::tests::doctor_json_report_has_expected_shape ... ok
+
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/architecture.rs (target/debug/deps/architecture-b4987ed4a0d98b29)
+
+running 5 tests
+test execution_is_execution_only ... ok
+test llm_and_embeddings_are_external_only ... ok
+test worker_is_ownership_only ... ok
+test event_bus_is_persistence_only ... ok
+test scheduler_is_selection_only ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bias_artifact_cli.rs (target/debug/deps/bias_artifact_cli-334683611c305dc9)
+
+running 1 test
+test emit_bias_artifact_persists_semantic_bias_v1 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests/bias_explain_cli.rs (target/debug/deps/bias_explain_cli-379838991cd93a82)
+
+running 1 test
+test bias_explain_cli_prints_stable_lines ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_explain_help_cli.rs (target/debug/deps/bias_explain_help_cli-23229479638e419e)
+
+running 1 test
+test help_lists_bias_explain_command ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_explain_invalid_cli.rs (target/debug/deps/bias_explain_invalid_cli-9f95ef08d6f6050a)
+
+running 1 test
+test bias_explain_cli_rejects_unknown_step_kind ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_v1_snapshot.rs (target/debug/deps/bias_v1_snapshot-cab38f5c314491f5)
+
+running 2 tests
+test bias_v1_explain_snapshot_is_stable ... ok
+test bias_v1_weight_lines_are_stably_sorted ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/capture_capsule_cli.rs (target/debug/deps/capture_capsule_cli-7e383b1bb2635ff9)
+
+running 1 test
+test capture_capsule_cli_outputs_capsule_json ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.48s
+
+     Running tests/capture_capsule_save_cli_json.rs (target/debug/deps/capture_capsule_save_cli_json-6f70d821666a0dc5)
+
+running 1 test
+test capture_capsule_save_json_reports_saved_capsule ... FAILED
+
+failures:
+
+---- capture_capsule_save_json_reports_saved_capsule stdout ----
+
+thread 'capture_capsule_save_json_reports_saved_capsule' (1941253) panicked at tests/capture_capsule_save_cli_json.rs:51:52:
+{
+  "command": "capture-capsule-save",
+  "ok": true,
+  "report": {
+    "capsule_id": "capsule-task-capture-json",
+    "command": "capture-capsule-save",
+    "edges": 1,
+    "events": 2,
+    "execution_id": "task-capture-json",
+    "nodes": 2,
+    "ok": true,
+    "schema_version": "cli-json-v1",
+    "task_id": "task-capture-json",
+    "valid": true
+  },
+  "schema_version": "cli-json-v1",
+  "task_id": "task-capture-json"
+}
+warning: struct `ModelSelectionPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:15:12
+   |
+15 | pub struct ModelSelectionPolicy {
+   |            ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ModelRolePolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:20:12
+   |
+20 | pub struct ModelRolePolicy {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `RamGatingPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:29:12
+   |
+29 | pub struct RamGatingPolicy {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `RamThresholdPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:34:12
+   |
+34 | pub struct RamThresholdPolicy {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerHeuristicsPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:40:12
+   |
+40 | pub struct PlannerHeuristicsPolicy {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EnvSyncPolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:45:12
+   |
+45 | pub struct EnvSyncPolicy {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `EnvRolePolicy` is never constructed
+  --> src/lm_policy_layer/mod.rs:50:12
+   |
+50 | pub struct EnvRolePolicy {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `PolicyState` is never constructed
+  --> src/lm_policy_layer/mod.rs:56:12
+   |
+56 | pub struct PolicyState {
+   |            ^^^^^^^^^^^
+
+warning: struct `PolicyContext` is never constructed
+  --> src/lm_policy_layer/mod.rs:64:12
+   |
+64 | pub struct PolicyContext {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `PolicyUpdate` is never constructed
+  --> src/lm_policy_layer/mod.rs:72:12
+   |
+72 | pub struct PolicyUpdate {
+   |            ^^^^^^^^^^^^
+
+warning: struct `PolicyUpdateEnvelope` is never constructed
+  --> src/lm_policy_layer/mod.rs:81:12
+   |
+81 | pub struct PolicyUpdateEnvelope {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PolicyVersionRecord` is never constructed
+  --> src/lm_policy_layer/mod.rs:87:12
+   |
+87 | pub struct PolicyVersionRecord {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_policy_state` is never used
+  --> src/lm_policy_layer/mod.rs:96:8
+   |
+96 | pub fn collect_policy_state() -> Result<PolicyState> {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_policy_context` is never used
+   --> src/lm_policy_layer/mod.rs:141:8
+    |
+141 | pub fn build_policy_context() -> Result<PolicyContext> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `version_dir` is never used
+   --> src/lm_policy_layer/mod.rs:162:8
+    |
+162 | pub fn version_dir() -> PathBuf {
+    |        ^^^^^^^^^^^
+
+warning: function `write_policy_version` is never used
+   --> src/lm_policy_layer/mod.rs:166:8
+    |
+166 | pub fn write_policy_version(record: &PolicyVersionRecord) -> Result<PathBuf> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `latest_policy_version` is never used
+   --> src/lm_policy_layer/mod.rs:174:8
+    |
+174 | pub fn latest_policy_version() -> Result<Option<PolicyVersionRecord>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `new_version_id` is never used
+   --> src/lm_policy_layer/mod.rs:194:8
+    |
+194 | pub fn new_version_id() -> Result<String> {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `ensure_surface_is_allowed` is never used
+   --> src/lm_policy_layer/mod.rs:202:8
+    |
+202 | pub fn ensure_surface_is_allowed(surface: &str) -> Result<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `policy_file_exists` is never used
+   --> src/lm_policy_layer/mod.rs:209:8
+    |
+209 | pub fn policy_file_exists(path: &Path) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `send_policy_context` is never used
+ --> src/lm_policy_layer/lm_studio_client.rs:6:8
+  |
+6 | pub fn send_policy_context(context: &PolicyContext) -> Result<String> {
+  |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `receive_policy_update` is never used
+  --> src/lm_policy_layer/lm_studio_client.rs:10:8
+   |
+10 | pub fn receive_policy_update(raw: &str) -> Result<PolicyUpdateEnvelope> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_policy_output` is never used
+  --> src/lm_policy_layer/lm_studio_client.rs:14:8
+   |
+14 | pub fn validate_policy_output(raw: &str, min_confidence: f64) -> Result<PolicyUpdateEnvelope> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `normalize_value` is never used
+  --> src/lm_policy_layer/lm_studio_client.rs:38:8
+   |
+38 | pub fn normalize_value(value: &Value) -> Value {
+   |        ^^^^^^^^^^^^^^^
+
+warning: constant `MIN_CONFIDENCE` is never used
+  --> src/lm_policy_layer/policy_applier.rs:10:7
+   |
+10 | const MIN_CONFIDENCE: f64 = 0.7;
+   |       ^^^^^^^^^^^^^^
+
+warning: function `apply_policy_update` is never used
+  --> src/lm_policy_layer/policy_applier.rs:12:8
+   |
+12 | pub fn apply_policy_update(envelope: &PolicyUpdateEnvelope) -> Result<PolicyVersionRecord> {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `apply_single_update` is never used
+  --> src/lm_policy_layer/policy_applier.rs:39:4
+   |
+39 | fn apply_single_update(snapshot: &mut PolicyState, update: &PolicyUpdate) -> Result<()> {
+   |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_f64_value` is never used
+  --> src/lm_policy_layer/policy_applier.rs:88:4
+   |
+88 | fn parse_f64_value(value: &Value) -> Result<f64> {
+   |    ^^^^^^^^^^^^^^^
+
+warning: function `parse_string_value` is never used
+  --> src/lm_policy_layer/policy_applier.rs:94:4
+   |
+94 | fn parse_string_value(value: &Value) -> Result<String> {
+   |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `unix_now` is never used
+   --> src/lm_policy_layer/policy_applier.rs:101:4
+    |
+101 | fn unix_now() -> Result<u64> {
+    |    ^^^^^^^^
+
+warning: function `append_apply_log` is never used
+   --> src/lm_policy_layer/policy_applier.rs:108:4
+    |
+108 | fn append_apply_log(record: &PolicyVersionRecord) -> Result<()> {
+    |    ^^^^^^^^^^^^^^^^
+
+: Error("trailing characters", line: 19, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    capture_capsule_save_json_reports_saved_capsule
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+error: test failed, to rerun pass `--test capture_capsule_save_cli_json`

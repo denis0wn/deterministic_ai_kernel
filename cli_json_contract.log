@@ -1,0 +1,15 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.40
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling deterministic_ai_kernel v0.1.0 (/Users/denissmoliakov/deterministic_ai_kernel)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.80s
+     Running tests/cli_json_contract.rs (target/debug/deps/cli_json_contract-13c3624c28d9bea8)
+
+running 1 test
+test integrity_json_emits_valid_cli_json_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+

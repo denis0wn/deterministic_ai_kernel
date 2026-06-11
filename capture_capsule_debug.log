@@ -1,0 +1,15 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.40
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling deterministic_ai_kernel v0.1.0 (/Users/denissmoliakov/deterministic_ai_kernel)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.68s
+     Running tests/capture_capsule_save_cli_json.rs (target/debug/deps/capture_capsule_save_cli_json-6f70d821666a0dc5)
+
+running 1 test
+test capture_capsule_save_json_reports_saved_capsule ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.15s
+
