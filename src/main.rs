@@ -1,3 +1,4 @@
+mod api;
 mod cli_json;
 mod effects;
 mod embeddings;
@@ -15,7 +16,7 @@ mod snapshot;
 mod worker;
 mod workflow;
 
-use cli_json::{capsule_summary_report, comparison_report, print_json_report};
+use cli_json::print_json_report;
 use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
@@ -178,8 +179,7 @@ fn run_integrity(db: &str) {
 }
 
 fn run_integrity_json(db: &str) {
-    let report = integrity_json_report(db);
-    let envelope = cli_json::command_report("integrity-json", report);
+    let envelope = crate::api::integrity_json_envelope(db);
     cli_json::print_json_report(&envelope);
 }
 
@@ -277,10 +277,13 @@ async fn main() {
                     bus.save_replay_capsule(&capsule).unwrap();
 
                     if json_output {
-                        let report =
-                            capsule_summary_report("capture-capsule-save", &task_id, &capsule, true);
-                        let envelope = cli_json::command_report("capture-capsule-save", report);
-                        print_json_report(&envelope);
+                        match crate::api::capture_capsule_save_json_envelope(db, &task_id) {
+                            Ok(envelope) => print_json_report(&envelope),
+                            Err(e) => {
+                                eprintln!("capture-capsule-save failed: {e}");
+                                std::process::exit(1);
+                            }
+                        }
                     } else {
                         println!(
                             "CAPTURE_CAPSULE_SAVE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}",
@@ -395,112 +398,14 @@ async fn main() {
                 _ => "unknown comparison state".to_string(),
             };
 
-            let left_only_events: Vec<_> = left_capsule
-                .event_ids
-                .iter()
-                .filter(|id| !right_capsule.event_ids.contains(id))
-                .cloned()
-                .collect();
-            let right_only_events: Vec<_> = right_capsule
-                .event_ids
-                .iter()
-                .filter(|id| !left_capsule.event_ids.contains(id))
-                .cloned()
-                .collect();
-
-            let left_node_pairs: Vec<(String, serde_json::Value)> = left_capsule
-                .state_graph
-                .nodes
-                .iter()
-                .map(|n| {
-                    let v = serde_json::to_value(n).unwrap();
-                    let key = serde_json::to_string(&v).unwrap();
-                    (key, v)
-                })
-                .collect();
-            let right_node_pairs: Vec<(String, serde_json::Value)> = right_capsule
-                .state_graph
-                .nodes
-                .iter()
-                .map(|n| {
-                    let v = serde_json::to_value(n).unwrap();
-                    let key = serde_json::to_string(&v).unwrap();
-                    (key, v)
-                })
-                .collect();
-
-            let left_node_keys: std::collections::BTreeSet<_> =
-                left_node_pairs.iter().map(|(k, _)| k.clone()).collect();
-            let right_node_keys: std::collections::BTreeSet<_> =
-                right_node_pairs.iter().map(|(k, _)| k.clone()).collect();
-
-            let left_only_nodes: Vec<_> = left_node_pairs
-                .iter()
-                .filter(|(k, _)| !right_node_keys.contains(k))
-                .map(|(_, v)| v.clone())
-                .collect();
-            let right_only_nodes: Vec<_> = right_node_pairs
-                .iter()
-                .filter(|(k, _)| !left_node_keys.contains(k))
-                .map(|(_, v)| v.clone())
-                .collect();
-
-            let left_edge_pairs: Vec<(String, serde_json::Value)> = left_capsule
-                .state_graph
-                .edges
-                .iter()
-                .map(|e| {
-                    let v = serde_json::to_value(e).unwrap();
-                    let key = serde_json::to_string(&v).unwrap();
-                    (key, v)
-                })
-                .collect();
-            let right_edge_pairs: Vec<(String, serde_json::Value)> = right_capsule
-                .state_graph
-                .edges
-                .iter()
-                .map(|e| {
-                    let v = serde_json::to_value(e).unwrap();
-                    let key = serde_json::to_string(&v).unwrap();
-                    (key, v)
-                })
-                .collect();
-
-            let left_edge_keys: std::collections::BTreeSet<_> =
-                left_edge_pairs.iter().map(|(k, _)| k.clone()).collect();
-            let right_edge_keys: std::collections::BTreeSet<_> =
-                right_edge_pairs.iter().map(|(k, _)| k.clone()).collect();
-
-            let left_only_edges: Vec<_> = left_edge_pairs
-                .iter()
-                .filter(|(k, _)| !right_edge_keys.contains(k))
-                .map(|(_, v)| v.clone())
-                .collect();
-            let right_only_edges: Vec<_> = right_edge_pairs
-                .iter()
-                .filter(|(k, _)| !left_edge_keys.contains(k))
-                .map(|(_, v)| v.clone())
-                .collect();
-
             if json_output {
-                let report = comparison_report(cli_json::ComparisonReportInput {
-                    left_task_id: &left,
-                    right_task_id: &right,
-                    left_capsule: &left_capsule,
-                    right_capsule: &right_capsule,
-                    left_valid: left_valid.is_ok(),
-                    right_valid: right_valid.is_ok(),
-                    status,
-                    explanation: &explanation,
-                    left_only_events,
-                    right_only_events,
-                    left_only_nodes,
-                    right_only_nodes,
-                    left_only_edges,
-                    right_only_edges,
-                });
-                let envelope = cli_json::command_report("compare-capsules", report);
-                print_json_report(&envelope);
+                match crate::api::compare_capsules_json_envelope(db, &left, &right) {
+                    Ok(envelope) => print_json_report(&envelope),
+                    Err(e) => {
+                        eprintln!("compare-capsules failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
             } else if explain {
                 println!(
                     "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}\texplanation={}",
@@ -534,10 +439,13 @@ async fn main() {
                     let valid = capsule.validate().is_ok();
 
                     if json_output {
-                        let report =
-                            capsule_summary_report("replay-capsule", &task_id, &capsule, valid);
-                        let envelope = cli_json::command_report("replay-capsule", report);
-                        print_json_report(&envelope);
+                        match crate::api::replay_capsule_json_envelope(db, &task_id) {
+                            Ok(envelope) => print_json_report(&envelope),
+                            Err(e) => {
+                                eprintln!("replay-capsule failed: {e}");
+                                std::process::exit(1);
+                            }
+                        }
                     } else {
                         println!(
                             "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",
@@ -914,8 +822,8 @@ async fn main() {
             return;
         }
         Some("doctor-json") => {
-            match lm_control::print_doctor_json() {
-                Ok(()) => {}
+            match crate::api::doctor_json_envelope() {
+                Ok(envelope) => print_json_report(&envelope),
                 Err(e) => {
                     eprintln!("doctor-json failed: {e}");
                     std::process::exit(1);

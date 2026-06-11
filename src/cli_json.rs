@@ -20,6 +20,7 @@ pub fn command_report(command: &str, report: Value) -> Value {
 }
 
 
+#[allow(dead_code)]
 pub fn capsule_summary_report(
     command: &str,
     task_id: &str,

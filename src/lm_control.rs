@@ -241,6 +241,7 @@ pub fn doctor_json_report() -> Result<serde_json::Value> {
     Ok(serde_json::to_value(report)?)
 }
 
+#[allow(dead_code)]
 pub fn print_doctor_json() -> Result<()> {
     let report = doctor_json_report()?;
     let envelope = crate::cli_json::command_report("doctor-json", report);
