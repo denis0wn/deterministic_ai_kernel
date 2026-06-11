@@ -11,12 +11,22 @@ pub fn print_json_report(report: &Value) {
 
 
 pub fn command_report(command: &str, report: Value) -> Value {
-    serde_json::json!({
+    let mut envelope = serde_json::json!({
         "ok": true,
         "schema_version": cli_json_schema_version(),
         "command": command,
         "report": report,
-    })
+    });
+
+    if let Some(task_id) = envelope
+        .get("report")
+        .and_then(|report| report.get("task_id"))
+        .cloned()
+    {
+        envelope["task_id"] = task_id;
+    }
+
+    envelope
 }
 
 

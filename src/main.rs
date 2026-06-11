@@ -7,6 +7,7 @@ mod leases;
 mod llm;
 mod kernel_types;
 mod lm_control;
+mod lm_policy_layer;
 mod model_manifest;
 mod model_registry;
 mod replay;
@@ -15,7 +16,7 @@ mod snapshot;
 mod worker;
 mod workflow;
 
-use cli_json::{capsule_summary_report, comparison_report, print_json_report};
+use cli_json::{capsule_summary_report, comparison_report};
 use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
@@ -25,6 +26,7 @@ use rusqlite::Connection;
 use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
 use snapshot::{rebuild_snapshot, restore_snapshot};
 use std::fs;
+use std::io::Write;
 use workflow::compiler::Workflow;
 
 fn print_stats(db: &str) {
@@ -60,6 +62,12 @@ fn print_stats(db: &str) {
     println!("CAUSAL_UNITS: {}", causal_units);
     println!("MAX_GENERATION: {}", max_generation);
     println!("TASKS: {}", tasks);
+}
+
+fn emit_json_mode_report(report: &serde_json::Value) {
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    writeln!(out, "{}", serde_json::to_string_pretty(report).unwrap()).unwrap();
+    out.flush().unwrap();
 }
 
 fn table_exists(db: &str, table: &str) -> bool {
@@ -180,7 +188,7 @@ fn run_integrity(db: &str) {
 fn run_integrity_json(db: &str) {
     let report = integrity_json_report(db);
     let envelope = cli_json::command_report("integrity-json", report);
-    cli_json::print_json_report(&envelope);
+    emit_json_mode_report(&envelope);
 }
 
 fn vacuum_db(db: &str) {
@@ -280,7 +288,7 @@ async fn main() {
                         let report =
                             capsule_summary_report("capture-capsule-save", &task_id, &capsule, true);
                         let envelope = cli_json::command_report("capture-capsule-save", report);
-                        print_json_report(&envelope);
+                        emit_json_mode_report(&envelope);
                     } else {
                         println!(
                             "CAPTURE_CAPSULE_SAVE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}",
@@ -500,7 +508,7 @@ async fn main() {
                     right_only_edges,
                 });
                 let envelope = cli_json::command_report("compare-capsules", report);
-                print_json_report(&envelope);
+                emit_json_mode_report(&envelope);
             } else if explain {
                 println!(
                     "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}\texplanation={}",
@@ -537,7 +545,7 @@ async fn main() {
                         let report =
                             capsule_summary_report("replay-capsule", &task_id, &capsule, valid);
                         let envelope = cli_json::command_report("replay-capsule", report);
-                        print_json_report(&envelope);
+                        emit_json_mode_report(&envelope);
                     } else {
                         println!(
                             "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",

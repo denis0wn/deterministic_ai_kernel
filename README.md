@@ -1,75 +1,52 @@
 # deterministic_ai_kernel
 
-A deterministic Rust kernel for task execution, replay, snapshotting, and local model control.
+Deterministic AI execution engine with replayable results.
 
-## Core concepts
+Run AI tasks that can be replayed with identical results every time.
 
-- `event_bus`: persistence layer for events and semantic artifacts.
-- `scheduler`: selection layer only.
-- `worker`: ownership and lease execution.
-- `execution`: execution-only runtime.
-- `workflow`: canonical task classes and step contracts.
+## Why it matters
+- deterministic execution of AI tasks
+- replay of executed workflows
+- structured JSON output contract
 
-## Semantic artifacts
-
-Supported artifact types are:
-
-- `analysis_seed`
-- `retrieval_result`
-- `classification`
-
-CLI commands:
-
-- `semantic-artifacts <task_id> [step_id]`
-- `latest-analysis-seed <task_id> [step_id]`
-
-## Demo workflow
-
-Example end-to-end walkthrough:
-
-1. Analyze a task:
-   - `cargo run -- analyze-task demo-task "Investigate scheduler retry semantics"`
-
-2. Read the latest semantic seed:
-   - `cargo run -- latest-analysis-seed demo-task analyze_task`
-
-3. List semantic artifacts for the task:
-   - `cargo run -- semantic-artifacts demo-task`
-
-4. Rebuild snapshot state:
-   - `cargo run -- snapshot demo-task`
-
-5. Replay persisted state:
-   - `cargo run -- replay demo-task`
-
-This demonstrates the intended loop: analyze -> persist semantic artifact -> inspect artifact state -> snapshot -> replay.
-
-## Live LM Studio test
-
-Обычный test suite использует mock LM backend.
-
-Для реальной проверки LM Studio:
+## Quick start
+Build the binary:
 
 ```bash
-DAK_RUN_LIVE_LM_TESTS=1 cargo test --test lm_control_live_lmstudio -- --nocapture
+cargo build
 ```
 
-## Useful tests
+Run the demo flow:
 
-- `cargo test --test replay_snapshot -- --nocapture`
-- `cargo test --test scheduler_integration -- --nocapture`
-- `cargo test --test semantic_artifacts -- --nocapture`
-- `cargo test --test semantic_artifacts_cli -- --nocapture`
-- `cargo test --test semantic_artifacts_list_cli -- --nocapture`
-- `cargo test --test semantic_artifact_contract -- --nocapture`
+```bash
+./target/debug/deterministic-ai-kernel replay-capsule task-replay-json --json
+```
 
-## Current status
+## Example output
 
-- Replay/snapshot on clean DB is stable.
-- Default DB path is absolute.
-- Semantic artifact contract is explicitly tested.
+```json
+{
+  "ok": true,
+  "schema_version": "cli-json-v1",
+  "command": "replay-capsule",
+  "report": {
+    "task_id": "task-replay-json",
+    "capsule_id": "<capsule_id>",
+    "valid": true,
+    "events": 2,
+    "nodes": 2,
+    "edges": 1
+  }
+}
+```
 
-## Semantic Bias V1 Rule
+## Replay command
 
-Semantic Bias V1 is a sealed contract.
-Any change requires version increment and explicit test updates.
+Replay the same task again:
+
+```bash
+./target/debug/deterministic-ai-kernel replay-capsule task-replay-json --json
+```
+
+## Determinism guarantee
+For the same saved task/capsule input, replay returns the same structured JSON result for task identity, capsule identity, validity, and graph/event counts.[cite:89][cite:90]

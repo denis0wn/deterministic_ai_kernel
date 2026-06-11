@@ -7,7 +7,7 @@
   "selected_pipeline": "fast",
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
-  "graph_seconds": 7.952,
+  "graph_seconds": 8.174,
   "node_count": 4,
   "environment": {
     "python": "3.14.3",
@@ -29,7 +29,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 0.451,
+      "seconds": 0.424,
       "priority": 10,
       "cost": 1,
       "depends_on": [],
@@ -45,7 +45,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 0.571,
+      "seconds": 0.489,
       "priority": 20,
       "cost": 2,
       "depends_on": [
@@ -63,7 +63,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 0.498,
+      "seconds": 0.545,
       "priority": 30,
       "cost": 2,
       "depends_on": [
@@ -81,7 +81,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 6.432,
+      "seconds": 6.716,
       "priority": 40,
       "cost": 12,
       "depends_on": [

@@ -17,7 +17,7 @@ pub struct ManifestModel {
     pub notes: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CurrentModelStatus {
     pub role: String,
     pub env_key: String,
