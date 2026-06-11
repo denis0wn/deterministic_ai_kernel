@@ -82,4 +82,26 @@ impl ReplayCapsule {
             && !self.execution_id.is_empty()
             && !self.created_at.is_empty()
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.execution_id.trim().is_empty() {
+            return Err("execution_id is empty".into());
+        }
+        if self.capsule_id.trim().is_empty() {
+            return Err("capsule_id is empty".into());
+        }
+        if self.created_at.trim().is_empty() {
+            return Err("created_at is empty".into());
+        }
+        if self.event_ids.is_empty() {
+            return Err("event_ids is empty".into());
+        }
+        if self.state_graph.nodes.is_empty() {
+            return Err("state_graph.nodes is empty".into());
+        }
+        if self.state_graph.nodes.len() < self.event_ids.len() {
+            return Err("state_graph.nodes smaller than event_ids".into());
+        }
+        Ok(())
+    }
 }

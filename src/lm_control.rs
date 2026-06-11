@@ -4,6 +4,10 @@ use std::process::Command;
 
 use crate::model_manifest;
 
+pub mod policy;
+
+use policy::switch_plan;
+
 #[derive(Debug, Deserialize)]
 struct ModelsResponse {
     data: Vec<ModelInfo>,
@@ -71,6 +75,18 @@ pub fn free_memory_gb_estimate() -> Result<f64> {
 }
 
 pub fn list_models() -> Result<Vec<String>> {
+    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        let manifest = model_manifest::load_manifest()?;
+        return Ok(
+            manifest
+                .models
+                .into_iter()
+                .filter(|m| m.enabled)
+                .map(|m| m.id)
+                .collect(),
+        );
+    }
+
     let output = Command::new("sh")
         .arg("-lc")
         .arg("curl -s http://127.0.0.1:1234/v1/models")
@@ -94,15 +110,14 @@ pub fn print_memory(threshold_gb: Option<f64>) -> Result<()> {
     Ok(())
 }
 
-fn switch_plan(role: &str) -> Result<(String, String, f64, f64)> {
-    let selected = model_manifest::best_enabled_model_for_role(role)?;
-    let threshold = model_manifest::threshold_gb_for_ram_class(&selected.ram_class)?;
-    let free = free_memory_gb_estimate()?;
-    Ok((selected.id, selected.ram_class, threshold, free))
-}
 
 pub fn safe_switch(role: &str) -> Result<()> {
-    let (model, ram_class, threshold, free) = switch_plan(role)?;
+    let free = free_memory_gb_estimate()?;
+    let plan = switch_plan(role, free)?;
+    let model = plan.model;
+    let ram_class = plan.ram_class;
+    let threshold = plan.threshold_gb;
+    let free = plan.free_gb;
 
     if free < threshold {
         return Err(anyhow!(
@@ -129,7 +144,12 @@ pub fn safe_switch(role: &str) -> Result<()> {
 }
 
 pub fn dry_run_switch(role: &str) -> Result<()> {
-    let (model, ram_class, threshold, free) = switch_plan(role)?;
+    let free = free_memory_gb_estimate()?;
+    let plan = switch_plan(role, free)?;
+    let model = plan.model;
+    let ram_class = plan.ram_class;
+    let threshold = plan.threshold_gb;
+    let free = plan.free_gb;
     let models = list_models()?;
     let available = models.iter().any(|m| m == &model);
     let would_write_env = format!(
@@ -216,9 +236,15 @@ pub fn auto_route(role: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn print_doctor_json() -> Result<()> {
+pub fn doctor_json_report() -> Result<serde_json::Value> {
     let report = doctor()?;
-    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(serde_json::to_value(report)?)
+}
+
+pub fn print_doctor_json() -> Result<()> {
+    let report = doctor_json_report()?;
+    let envelope = crate::cli_json::command_report("doctor-json", report);
+    crate::cli_json::print_json_report(&envelope);
     Ok(())
 }
 
@@ -249,5 +275,28 @@ mod tests {
     #[test]
     fn parse_gb_helper_works() {
         assert!(free_memory_gb_estimate().is_ok());
+    }
+
+    #[test]
+    fn doctor_json_report_has_expected_shape() {
+        let report = crate::cli_json::command_report("doctor-json", doctor_json_report().unwrap());
+
+        assert_eq!(report["ok"], true);
+        assert_eq!(report["schema_version"], "cli-json-v1");
+        assert_eq!(report["command"], "doctor-json");
+        assert!(report["report"].get("free_gb").is_some());
+        assert!(report["report"].get("lm_studio_models").is_some());
+        assert!(report["report"].get("roles").is_some());
+        assert!(report["report"]["roles"].is_array());
+
+        if let Some(first) = report["report"]["roles"].as_array().and_then(|rows| rows.first()) {
+            assert!(first.get("role").is_some());
+            assert!(first.get("manifest_model").is_some());
+            assert!(first.get("env_model").is_some());
+            assert!(first.get("in_sync").is_some());
+            assert!(first.get("model_available").is_some());
+            assert!(first.get("switch_ready").is_some());
+            assert!(first.get("threshold_gb").is_some());
+        }
     }
 }

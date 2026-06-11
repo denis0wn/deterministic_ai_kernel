@@ -1,0 +1,11 @@
+{
+  "name": "snapshot_mid_flight_restore",
+  "commands": [
+    ["replay", "empty-task"],
+    ["snapshot", "empty-task"],
+    ["restore", "empty-task"],
+    ["replay", "empty-task"]
+  ],
+  "expect_substrings": ["SNAPSHOT OK", "RESTORE OK", "REPLAY OK"],
+  "expected_artifact_refs": []
+}

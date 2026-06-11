@@ -1,0 +1,8 @@
+{
+  "name": "retryable_failure",
+  "commands": [
+    ["replay", "task_retry"]
+  ],
+  "expect_substrings": ["REPLAY"],
+  "expected_artifact_refs": []
+}

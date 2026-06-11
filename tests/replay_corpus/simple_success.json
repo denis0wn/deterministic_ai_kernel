@@ -1,0 +1,6 @@
+{
+  "name": "simple_success",
+  "commands": [["replay", "empty-task"]],
+  "expect_substrings": ["REPLAY OK", "true"],
+  "expected_artifact_refs": []
+}

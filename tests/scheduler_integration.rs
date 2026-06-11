@@ -138,6 +138,35 @@ fn setup_codefix_task(db: &Path, task_id: &str) {
 }
 
 #[test]
+fn retry_and_reclaim_preserve_ownership_invariants() {
+    let db = unique_db_path("retry_and_reclaim_preserve_ownership_invariants");
+    setup_task(&db, "task_invariants");
+
+    run(&db, &["schedule", "task_invariants"]);
+    run(&db, &["claim-worker", "task_invariants", "worker-A"]);
+    run(&db, &["start-step", "task_invariants", "worker-A", "00_analyze_task"]);
+
+    run(&db, &["expire-leases", "task_invariants"]);
+    run(&db, &["reconcile", "task_invariants"]);
+    run(&db, &["schedule", "task_invariants"]);
+    run(&db, &["claim-worker", "task_invariants", "worker-B"]);
+
+    let err = run_expect_fail(
+        &db,
+        &["complete-step", "task_invariants", "worker-A", "00_analyze_task"],
+    );
+    assert!(err.contains("no active lease owned by worker for step"), "{err}");
+
+    let out = run(&db, &["complete-step", "task_invariants", "worker-B", "00_analyze_task"]);
+    assert!(out.contains("COMPLETE"), "{out}");
+
+    run(&db, &["schedule", "task_invariants"]);
+    run(&db, &["claim-worker", "task_invariants", "worker-B"]);
+    let out = run(&db, &["start-step", "task_invariants", "worker-B", "01_plan_execution"]);
+    assert!(out.contains("STEP_RUNNING_OK"), "{out}");
+}
+
+#[test]
 fn happy_path_chain_completes() {
     let db = unique_db_path("happy_path_chain_completes");
     setup_task(&db, "task_test");
@@ -446,4 +475,52 @@ fn unknown_task_class_is_rejected() {
     );
 
     let _ = fs::remove_file(&db);
+}
+
+#[test]
+fn double_commit_is_rejected_after_lease_reclaim() {
+    let db = unique_db_path("double_commit_is_rejected_after_lease_reclaim");
+    setup_task(&db, "task_double_commit");
+
+    run(&db, &["schedule", "task_double_commit"]);
+    run(&db, &["claim-worker", "task_double_commit", "worker-A"]);
+    run(
+        &db,
+        &["start-step", "task_double_commit", "worker-A", "00_analyze_task"],
+    );
+
+    run(&db, &["expire-leases", "task_double_commit"]);
+    run(&db, &["reconcile", "task_double_commit"]);
+    run(&db, &["schedule", "task_double_commit"]);
+    run(&db, &["claim-worker", "task_double_commit", "worker-B"]);
+    run(
+        &db,
+        &["start-step", "task_double_commit", "worker-B", "00_analyze_task"],
+    );
+
+    let stale = run_expect_fail(
+        &db,
+        &["complete-step", "task_double_commit", "worker-A", "00_analyze_task"],
+    );
+    assert!(
+        stale.contains("no active lease owned by worker for step"),
+        "{stale}"
+    );
+
+    let fresh = run(
+        &db,
+        &["complete-step", "task_double_commit", "worker-B", "00_analyze_task"],
+    );
+    assert!(fresh.contains("COMPLETE"), "{fresh}");
+
+    let double = run_expect_fail(
+        &db,
+        &["complete-step", "task_double_commit", "worker-B", "00_analyze_task"],
+    );
+    assert!(
+        double.contains("no active lease owned by worker for step")
+            || double.contains("already")
+            || double.contains("committed"),
+        "{double}"
+    );
 }

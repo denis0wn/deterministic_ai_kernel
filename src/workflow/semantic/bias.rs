@@ -9,7 +9,7 @@ pub struct SemanticBias {
     pub version: u32,
     pub seed: u64,
     pub preferred: Vec<StepKind>,
-    pub weights: BTreeMap<StepKind, f64>,
+    pub weights: BTreeMap<String, f64>,
 }
 
 impl SemanticBias {
@@ -23,14 +23,19 @@ impl SemanticBias {
     }
 
     pub fn explain_lines(&self) -> Vec<String> {
+        let meta = self.metadata();
         let mut lines = vec![
             format!("bias.version={}", self.version),
             format!("bias.seed={}", self.seed),
             format!("bias.preferred={:?}", self.preferred),
+            format!("bias.meta.version={}", meta.version),
+            format!("bias.meta.seed={}", meta.seed),
+            format!("bias.meta.preferred_count={}", meta.preferred_count),
+            format!("bias.meta.weighted_count={}", meta.weighted_count),
         ];
 
         for (kind, weight) in &self.weights {
-            lines.push(format!("bias.weight.{kind:?}={weight:.6}"));
+            lines.push(format!("bias.weight.{kind}={weight:.6}"));
         }
 
         lines
@@ -49,7 +54,7 @@ pub struct BiasMetadata {
 impl SemanticBias {
     pub fn neutral_for(domain: &[StepKind]) -> Self {
         let preferred = domain.to_vec();
-        let weights = domain.iter().copied().map(|k| (k, 1.0)).collect();
+        let weights = domain.iter().map(|k| (format!("{:?}", k), 1.0)).collect();
         Self {
             version: BIAS_VERSION_V1,
             seed: 0,

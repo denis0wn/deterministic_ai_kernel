@@ -17,6 +17,6 @@ fn deterministic_core_commands_are_stable() {
     // даже если семантический слой (LLM/Embeddings) недоступен или не инициализирован.
     let (out, success) = run_kernel(&["--help"]);
     assert!(success, "kernel help failed: {}", out);
-    assert!(out.contains("semantic-artifacts"));
+    assert!(out.contains("latest-bias-artifact"));
     assert!(out.contains("analyze-task"));
 }

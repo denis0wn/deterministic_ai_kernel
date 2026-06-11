@@ -1,0 +1,67 @@
+{
+  "graph_schema_version": 2,
+  "default_pipeline": "fast",
+  "pipelines": {
+    "fast": ["preflight", "contract"],
+    "deep": ["preflight", "contract", "stress"]
+  },
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "entrypoint": "preflight",
+  "nodes": [
+    {
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "priority": 10,
+      "cost": 1,
+      "cmd": "cargo run -- integrity-json",
+      "depends_on": [],
+      "outputs": ["integrity_report"]
+    },
+    {
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "priority": 20,
+      "cost": 2,
+      "cmd": "cargo test --test snapshot_version_matrix -- --nocapture",
+      "depends_on": ["integrity@v1"],
+      "outputs": ["snapshot_policy_contract"]
+    },
+    {
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "priority": 30,
+      "cost": 2,
+      "cmd": "cargo test --test golden_replay_corpus -- --nocapture",
+      "depends_on": ["integrity@v1"],
+      "outputs": ["replay_corpus_contract"]
+    },
+    {
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "priority": 40,
+      "cost": 12,
+      "cmd": "cargo test --test scheduler_integration -- --nocapture",
+      "depends_on": ["integrity@v1"],
+      "outputs": ["lease_runtime_contract"]
+    },
+    {
+      "id": "event_ordering_fuzz",
+      "version": "v1",
+      "stage": "stress",
+      "pipeline": "deep",
+      "priority": 80,
+      "cost": 7,
+      "cmd": "cargo test --test event_ordering_fuzz -- --nocapture",
+      "depends_on": ["integrity@v1"],
+      "outputs": ["determinism_stress_contract"]
+    }
+  ]
+}

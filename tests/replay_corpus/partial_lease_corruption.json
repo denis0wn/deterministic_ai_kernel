@@ -1,0 +1,11 @@
+{
+  "name": "partial_lease_corruption_observed_via_replay",
+  "commands": [
+    ["replay", "task_reclaim"],
+    ["replay", "task_reclaim"]
+  ],
+  "expect_substrings": ["REPLAY OK", "true"],
+  "expected_artifact_refs": [],
+  "expect_failure": false,
+  "expect_failure_substrings": []
+}

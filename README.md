@@ -44,6 +44,16 @@ Example end-to-end walkthrough:
 
 This demonstrates the intended loop: analyze -> persist semantic artifact -> inspect artifact state -> snapshot -> replay.
 
+## Live LM Studio test
+
+Обычный test suite использует mock LM backend.
+
+Для реальной проверки LM Studio:
+
+```bash
+DAK_RUN_LIVE_LM_TESTS=1 cargo test --test lm_control_live_lmstudio -- --nocapture
+```
+
 ## Useful tests
 
 - `cargo test --test replay_snapshot -- --nocapture`
@@ -58,3 +68,8 @@ This demonstrates the intended loop: analyze -> persist semantic artifact -> ins
 - Replay/snapshot on clean DB is stable.
 - Default DB path is absolute.
 - Semantic artifact contract is explicitly tested.
+
+## Semantic Bias V1 Rule
+
+Semantic Bias V1 is a sealed contract.
+Any change requires version increment and explicit test updates.

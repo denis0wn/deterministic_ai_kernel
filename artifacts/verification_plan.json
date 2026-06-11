@@ -1,0 +1,88 @@
+{
+  "ok": true,
+  "plan_id": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
+  "plan_hash": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
+  "graph_schema_version": 2,
+  "default_pipeline": "fast",
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "manifest_path": "docs/verification_graph.json",
+  "plan_generated_at_epoch": 1781183582,
+  "environment": {
+    "python": "3.14.3",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
+    "environment_fingerprint": "f773e9518327880ce6490fd1c33c4b4224950048cbbbe6dba4467e01b2274a1d"
+  },
+  "ordered_nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "cmd": "cargo run -- integrity-json",
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "cmd": "cargo test --test snapshot_version_matrix -- --nocapture",
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "cmd": "cargo test --test golden_replay_corpus -- --nocapture",
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "cmd": "cargo test --test scheduler_integration -- --nocapture",
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ],
+  "total_cost": 17
+}

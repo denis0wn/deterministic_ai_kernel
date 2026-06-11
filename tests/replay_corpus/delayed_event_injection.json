@@ -1,0 +1,9 @@
+{
+  "name": "delayed_event_injection",
+  "commands": [
+    ["replay", "task_reclaim"],
+    ["replay", "task_reclaim"]
+  ],
+  "expect_substrings": ["REPLAY OK", "true"],
+  "expected_artifact_refs": []
+}

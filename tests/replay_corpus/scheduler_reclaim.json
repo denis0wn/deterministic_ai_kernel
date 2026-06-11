@@ -1,0 +1,8 @@
+{
+  "name": "scheduler_reclaim",
+  "commands": [
+    ["replay", "task_reclaim"]
+  ],
+  "expect_substrings": ["REPLAY"],
+  "expected_artifact_refs": []
+}

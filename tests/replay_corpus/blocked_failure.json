@@ -1,0 +1,8 @@
+{
+  "name": "blocked_failure",
+  "commands": [
+    ["replay", "task_blocked"]
+  ],
+  "expect_substrings": ["REPLAY"],
+  "expected_artifact_refs": []
+}

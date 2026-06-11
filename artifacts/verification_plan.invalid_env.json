@@ -1,0 +1,88 @@
+{
+  "default_pipeline": "fast",
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "environment": {
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
+    "environment_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "python": "3.14.3",
+    "release": "27.0.0",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "system": "Darwin"
+  },
+  "graph_schema_version": 2,
+  "manifest_path": "docs/verification_graph.json",
+  "ok": true,
+  "ordered_nodes": [
+    {
+      "cmd": "cargo run -- integrity-json",
+      "cost": 1,
+      "depends_on": [],
+      "id": "integrity",
+      "key": "integrity@v1",
+      "outputs": [
+        "integrity_report"
+      ],
+      "pipeline": "fast",
+      "priority": 10,
+      "stage": "preflight",
+      "version": "v1"
+    },
+    {
+      "cmd": "cargo test --test snapshot_version_matrix -- --nocapture",
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "id": "snapshot_version_matrix",
+      "key": "snapshot_version_matrix@v1",
+      "outputs": [
+        "snapshot_policy_contract"
+      ],
+      "pipeline": "fast",
+      "priority": 20,
+      "stage": "contract",
+      "version": "v1"
+    },
+    {
+      "cmd": "cargo test --test golden_replay_corpus -- --nocapture",
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "id": "golden_replay_corpus",
+      "key": "golden_replay_corpus@v1",
+      "outputs": [
+        "replay_corpus_contract"
+      ],
+      "pipeline": "fast",
+      "priority": 30,
+      "stage": "contract",
+      "version": "v1"
+    },
+    {
+      "cmd": "cargo test --test scheduler_integration -- --nocapture",
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "id": "scheduler_integration",
+      "key": "scheduler_integration@v1",
+      "outputs": [
+        "lease_runtime_contract"
+      ],
+      "pipeline": "fast",
+      "priority": 40,
+      "stage": "contract",
+      "version": "v1"
+    }
+  ],
+  "plan_generated_at_epoch": 1781183574,
+  "plan_hash": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
+  "plan_id": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
+  "selected_only": [],
+  "selected_pipeline": "fast",
+  "total_cost": 17
+}

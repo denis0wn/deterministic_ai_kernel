@@ -1,3 +1,4 @@
+mod cli_json;
 mod effects;
 mod embeddings;
 mod event_bus;
@@ -14,6 +15,7 @@ mod snapshot;
 mod worker;
 mod workflow;
 
+use cli_json::{capsule_summary_report, comparison_report, print_json_report};
 use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
@@ -108,7 +110,7 @@ fn reset_db(db: &str) {
 }
 
 
-fn collect_integrity_report(db: &str) -> serde_json::Value {
+fn integrity_json_report(db: &str) -> serde_json::Value {
     use serde_json::{json, Value};
     use std::fs;
 
@@ -148,7 +150,7 @@ fn collect_integrity_report(db: &str) -> serde_json::Value {
 }
 
 fn run_integrity(db: &str) {
-    let report = collect_integrity_report(db);
+    let report = integrity_json_report(db);
 
     assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
     assert_eq!(
@@ -176,8 +178,9 @@ fn run_integrity(db: &str) {
 }
 
 fn run_integrity_json(db: &str) {
-    let report = collect_integrity_report(db);
-    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    let report = integrity_json_report(db);
+    let envelope = cli_json::command_report("integrity-json", report);
+    cli_json::print_json_report(&envelope);
 }
 
 fn vacuum_db(db: &str) {
@@ -197,6 +200,9 @@ fn vacuum_db(db: &str) {
 
     println!("VACUUM OK");
 }
+
+
+
 
 #[tokio::main]
 async fn main() {
@@ -222,9 +228,12 @@ async fn main() {
         println!("  print-model-manifest");
         println!("  current-models");
         println!("  latest-bias-artifact <task_id> [step_id]");
+        println!("  semantic-artifacts <task_id> [step_id]");
         println!("  capture-capsule <task_id>");
-        println!("  capture-capsule-save <task_id>");
+        println!("  capture-capsule-save <task_id> [--json]");
         println!("  latest-capsule <task_id>");
+        println!("  replay-capsule <task_id> [--json]");
+        println!("  compare-capsules <task_id_a> <task_id_b> [--explain] [--json]");
         println!("  bias-explain <step_kind>...");
         println!("  analyze-task <task_id> <text>");
         println!("  doctor");
@@ -248,19 +257,305 @@ async fn main() {
 
         Some("capture-capsule-save") => {
             let task_id = args.get(2).cloned().unwrap_or_default();
+            let json_output = args.iter().any(|a| a == "--json");
             if task_id.trim().is_empty() {
-                eprintln!("usage: capture-capsule-save <task_id>");
+                eprintln!("usage: capture-capsule-save <task_id> [--json]");
                 std::process::exit(1);
             }
 
             let bus = event_bus::EventBus::new(db).unwrap();
             match build_replay_capsule(&bus, &task_id) {
                 Ok(capsule) => {
+                    if let Err(err) = capsule.validate() {
+                        eprintln!("capture-capsule-save invalid capsule: {}", err);
+                        std::process::exit(1);
+                    }
+
+                    let event_count = capsule.event_ids.len();
+                    let node_count = capsule.state_graph.nodes.len();
+                    let edge_count = capsule.state_graph.edges.len();
                     bus.save_replay_capsule(&capsule).unwrap();
-                    println!("CAPTURE_CAPSULE_SAVE_OK\t{}\t{}", capsule.execution_id, capsule.capsule_id);
+
+                    if json_output {
+                        let report =
+                            capsule_summary_report("capture-capsule-save", &task_id, &capsule, true);
+                        let envelope = cli_json::command_report("capture-capsule-save", report);
+                        print_json_report(&envelope);
+                    } else {
+                        println!(
+                            "CAPTURE_CAPSULE_SAVE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}",
+                            capsule.execution_id,
+                            capsule.capsule_id,
+                            event_count,
+                            node_count,
+                            edge_count
+                        );
+                    }
                 }
                 Err(e) => {
                     eprintln!("capture-capsule-save failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
+
+
+        Some("compare-capsules") => {
+            let left = args.get(2).cloned().unwrap_or_default();
+            let right = args.get(3).cloned().unwrap_or_default();
+            let explain = args.iter().any(|a| a == "--explain");
+            let json_output = args.iter().any(|a| a == "--json");
+
+            if left.trim().is_empty() || right.trim().is_empty() {
+                eprintln!("usage: compare-capsules <task_id_a> <task_id_b> [--explain] [--json]");
+                std::process::exit(1);
+            }
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            let left_capsule = match bus.latest_replay_capsule(&left) {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    eprintln!("no replay capsule found for task_id={}", left);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("compare-capsules failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let right_capsule = match bus.latest_replay_capsule(&right) {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    eprintln!("no replay capsule found for task_id={}", right);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("compare-capsules failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            let left_valid = left_capsule.validate();
+            let right_valid = right_capsule.validate();
+
+            let status = if left_valid.is_err() || right_valid.is_err() {
+                "structurally_invalid"
+            } else if left_capsule.event_ids == right_capsule.event_ids
+                && left_capsule.state_graph.nodes == right_capsule.state_graph.nodes
+                && left_capsule.state_graph.edges == right_capsule.state_graph.edges
+            {
+                "identical"
+            } else {
+                "divergent"
+            };
+
+            let explanation = match status {
+                "structurally_invalid" => {
+                    let mut reasons = Vec::new();
+                    if let Err(err) = &left_valid {
+                        reasons.push(format!("left invalid: {}", err));
+                    }
+                    if let Err(err) = &right_valid {
+                        reasons.push(format!("right invalid: {}", err));
+                    }
+                    reasons.join("; ")
+                }
+                "identical" => "event_ids, nodes, and edges match".to_string(),
+                "divergent" => {
+                    let mut reasons = Vec::new();
+                    if left_capsule.event_ids != right_capsule.event_ids {
+                        reasons.push(format!(
+                            "event_ids differ (left={}, right={})",
+                            left_capsule.event_ids.len(),
+                            right_capsule.event_ids.len()
+                        ));
+                    }
+                    if left_capsule.state_graph.nodes != right_capsule.state_graph.nodes {
+                        reasons.push(format!(
+                            "nodes differ (left={}, right={})",
+                            left_capsule.state_graph.nodes.len(),
+                            right_capsule.state_graph.nodes.len()
+                        ));
+                    }
+                    if left_capsule.state_graph.edges != right_capsule.state_graph.edges {
+                        reasons.push(format!(
+                            "edges differ (left={}, right={})",
+                            left_capsule.state_graph.edges.len(),
+                            right_capsule.state_graph.edges.len()
+                        ));
+                    }
+                    if reasons.is_empty() {
+                        "capsules differ".to_string()
+                    } else {
+                        reasons.join("; ")
+                    }
+                }
+                _ => "unknown comparison state".to_string(),
+            };
+
+            let left_only_events: Vec<_> = left_capsule
+                .event_ids
+                .iter()
+                .filter(|id| !right_capsule.event_ids.contains(id))
+                .cloned()
+                .collect();
+            let right_only_events: Vec<_> = right_capsule
+                .event_ids
+                .iter()
+                .filter(|id| !left_capsule.event_ids.contains(id))
+                .cloned()
+                .collect();
+
+            let left_node_pairs: Vec<(String, serde_json::Value)> = left_capsule
+                .state_graph
+                .nodes
+                .iter()
+                .map(|n| {
+                    let v = serde_json::to_value(n).unwrap();
+                    let key = serde_json::to_string(&v).unwrap();
+                    (key, v)
+                })
+                .collect();
+            let right_node_pairs: Vec<(String, serde_json::Value)> = right_capsule
+                .state_graph
+                .nodes
+                .iter()
+                .map(|n| {
+                    let v = serde_json::to_value(n).unwrap();
+                    let key = serde_json::to_string(&v).unwrap();
+                    (key, v)
+                })
+                .collect();
+
+            let left_node_keys: std::collections::BTreeSet<_> =
+                left_node_pairs.iter().map(|(k, _)| k.clone()).collect();
+            let right_node_keys: std::collections::BTreeSet<_> =
+                right_node_pairs.iter().map(|(k, _)| k.clone()).collect();
+
+            let left_only_nodes: Vec<_> = left_node_pairs
+                .iter()
+                .filter(|(k, _)| !right_node_keys.contains(k))
+                .map(|(_, v)| v.clone())
+                .collect();
+            let right_only_nodes: Vec<_> = right_node_pairs
+                .iter()
+                .filter(|(k, _)| !left_node_keys.contains(k))
+                .map(|(_, v)| v.clone())
+                .collect();
+
+            let left_edge_pairs: Vec<(String, serde_json::Value)> = left_capsule
+                .state_graph
+                .edges
+                .iter()
+                .map(|e| {
+                    let v = serde_json::to_value(e).unwrap();
+                    let key = serde_json::to_string(&v).unwrap();
+                    (key, v)
+                })
+                .collect();
+            let right_edge_pairs: Vec<(String, serde_json::Value)> = right_capsule
+                .state_graph
+                .edges
+                .iter()
+                .map(|e| {
+                    let v = serde_json::to_value(e).unwrap();
+                    let key = serde_json::to_string(&v).unwrap();
+                    (key, v)
+                })
+                .collect();
+
+            let left_edge_keys: std::collections::BTreeSet<_> =
+                left_edge_pairs.iter().map(|(k, _)| k.clone()).collect();
+            let right_edge_keys: std::collections::BTreeSet<_> =
+                right_edge_pairs.iter().map(|(k, _)| k.clone()).collect();
+
+            let left_only_edges: Vec<_> = left_edge_pairs
+                .iter()
+                .filter(|(k, _)| !right_edge_keys.contains(k))
+                .map(|(_, v)| v.clone())
+                .collect();
+            let right_only_edges: Vec<_> = right_edge_pairs
+                .iter()
+                .filter(|(k, _)| !left_edge_keys.contains(k))
+                .map(|(_, v)| v.clone())
+                .collect();
+
+            if json_output {
+                let report = comparison_report(cli_json::ComparisonReportInput {
+                    left_task_id: &left,
+                    right_task_id: &right,
+                    left_capsule: &left_capsule,
+                    right_capsule: &right_capsule,
+                    left_valid: left_valid.is_ok(),
+                    right_valid: right_valid.is_ok(),
+                    status,
+                    explanation: &explanation,
+                    left_only_events,
+                    right_only_events,
+                    left_only_nodes,
+                    right_only_nodes,
+                    left_only_edges,
+                    right_only_edges,
+                });
+                let envelope = cli_json::command_report("compare-capsules", report);
+                print_json_report(&envelope);
+            } else if explain {
+                println!(
+                    "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}\texplanation={}",
+                    left_capsule.capsule_id,
+                    right_capsule.capsule_id,
+                    status,
+                    explanation
+                );
+            } else {
+                println!(
+                    "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}",
+                    left_capsule.capsule_id,
+                    right_capsule.capsule_id,
+                    status
+                );
+            }
+            return;
+        }
+
+        Some("replay-capsule") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            let json_output = args.iter().any(|a| a == "--json");
+            if task_id.trim().is_empty() {
+                eprintln!("usage: replay-capsule <task_id> [--json]");
+                std::process::exit(1);
+            }
+
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match bus.latest_replay_capsule(&task_id) {
+                Ok(Some(capsule)) => {
+                    let valid = capsule.validate().is_ok();
+
+                    if json_output {
+                        let report =
+                            capsule_summary_report("replay-capsule", &task_id, &capsule, valid);
+                        let envelope = cli_json::command_report("replay-capsule", report);
+                        print_json_report(&envelope);
+                    } else {
+                        println!(
+                            "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",
+                            capsule.execution_id,
+                            capsule.capsule_id,
+                            capsule.event_ids.len(),
+                            capsule.state_graph.nodes.len(),
+                            capsule.state_graph.edges.len(),
+                            valid
+                        );
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("no replay capsule found for task_id={}", task_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("replay-capsule failed: {e}");
                     std::process::exit(1);
                 }
             }
@@ -502,6 +797,36 @@ async fn main() {
                 }
                 Err(e) => {
                     eprintln!("latest-bias-artifact failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            return;
+        }
+
+        Some("semantic-artifacts") => {
+            let task_id = args.get(2).cloned().unwrap_or_default();
+            if task_id.trim().is_empty() {
+                eprintln!("usage: cargo run -- semantic-artifacts <task_id> [step_id]");
+                std::process::exit(1);
+            }
+            let step_id = args.get(3).map(|s| s.as_str());
+            let bus = event_bus::EventBus::new(db).unwrap();
+            match bus.list_semantic_artifacts(&task_id, step_id) {
+                Ok(rows) => {
+                    for row in rows {
+                        println!(
+                            "{}\t{}\t{}\t{}\t{}\t{}",
+                            row.artifact_id,
+                            row.task_id,
+                            row.step_id,
+                            row.source_generation,
+                            row.artifact_type,
+                            row.payload
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!("semantic-artifacts failed: {e}");
                     std::process::exit(1);
                 }
             };
@@ -871,3 +1196,40 @@ async fn main() {
     eprintln!("run: cargo run -- --help");
     std::process::exit(1);
 }
+
+#[cfg(test)]
+mod integrity_json_tests {
+    use super::*;
+
+    #[test]
+    fn integrity_json_report_has_expected_shape() {
+        let db = std::env::temp_dir()
+            .join(format!(
+                "deterministic_ai_kernel_integrity_json_{}.db",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ))
+            .to_string_lossy()
+            .to_string();
+
+        let report = cli_json::command_report("integrity-json", integrity_json_report(&db));
+
+        assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(report.get("schema_version").and_then(|v| v.as_str()), Some("cli-json-v1"));
+        assert_eq!(report.get("command").and_then(|v| v.as_str()), Some("integrity-json"));
+        assert!(report.get("report").is_some());
+        assert!(report["report"].get("snapshot_version").is_some());
+        assert!(report["report"].get("schema_version").is_some());
+        assert!(report["report"].get("created_at_present").is_some());
+        assert!(report["report"].get("state_hash_present").is_some());
+        assert!(report["report"].get("state_present").is_some());
+        assert!(report["report"].get("task_id").is_some());
+
+        let _ = std::fs::remove_file(&db);
+        let _ = std::fs::remove_file(format!("{db}-wal"));
+        let _ = std::fs::remove_file(format!("{db}-shm"));
+    }
+}
+

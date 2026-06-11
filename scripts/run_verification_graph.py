@@ -183,6 +183,7 @@ def build_plan(ctx, args, environment):
 
     plan = {
         "ok": True,
+        "plan_id": plan_hash,
         "plan_hash": plan_hash,
         "graph_schema_version": ctx["graph_schema_version"],
         "default_pipeline": ctx["default_pipeline"],
@@ -237,6 +238,7 @@ def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
             "ok": False,
             "status": "invalid_reuse",
             "reason": "selected_pipeline differed for reuse-plan",
+            "plan_id": current_plan["plan_id"],
             "plan_hash": current_plan["plan_hash"],
             "expected_selected_pipeline": prior_pipeline,
             "actual_selected_pipeline": current_pipeline,
@@ -251,20 +253,18 @@ def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
         write_verdict(verdict, verdict_out)
         raise SystemExit(2)
 
-    same_plan_hash = prior.get("plan_hash") == current_plan.get("plan_hash")
-    same_env = (
-        prior.get("environment", {}).get("environment_fingerprint")
-        == current_plan.get("environment", {}).get("environment_fingerprint")
-    )
+    prior_env = prior.get("environment", {}).get("environment_fingerprint")
+    current_env = current_plan.get("environment", {}).get("environment_fingerprint")
 
-    if same_plan_hash and not same_env:
+    if prior_env != current_env:
         verdict = {
             "ok": False,
             "status": "invalid_reuse",
             "reason": "plan_hash matched but environment_fingerprint differed",
+            "plan_id": current_plan["plan_id"],
             "plan_hash": current_plan["plan_hash"],
-            "expected_environment_fingerprint": prior.get("environment", {}).get("environment_fingerprint"),
-            "actual_environment_fingerprint": current_plan.get("environment", {}).get("environment_fingerprint"),
+            "expected_environment_fingerprint": prior_env,
+            "actual_environment_fingerprint": current_env,
             "graph_schema_version": current_plan["graph_schema_version"],
             "selected_pipeline": current_plan["selected_pipeline"],
             "selected_only": current_plan["selected_only"],

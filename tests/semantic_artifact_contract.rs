@@ -11,7 +11,7 @@ fn semantic_artifact_type_contract_is_explicit() {
 
     let bus = EventBus::new(db).unwrap();
 
-    for artifact_type in ["analysis_seed", "retrieval_result", "classification"] {
+    for artifact_type in ["analysis_seed", "retrieval_result", "classification", "semantic_bias_v1"] {
         bus.append_semantic_artifact("task-1", "step-1", 1, artifact_type, &json!({"ok": true}))
             .unwrap();
     }

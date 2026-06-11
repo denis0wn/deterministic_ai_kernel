@@ -1,0 +1,9 @@
+{
+  "name": "snapshot_restore",
+  "commands": [
+    ["snapshot", "empty-task"],
+    ["restore", "empty-task"]
+  ],
+  "expect_substrings": ["RESTORE OK"],
+  "expected_artifact_refs": []
+}
