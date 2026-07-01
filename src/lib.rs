@@ -1,37 +1,69 @@
-pub mod api;
-pub(crate) mod cli_json;
-pub mod effects;
-pub mod event_bus;
+// ============================================================
+// Layer topology (PHASE B structural migration)
+//
+// kernel/
+//   core/       — data primitives (types, effects, snapshot)
+//   invariant/  — deterministic reconstruction (replay)
+//               NOTE: kernel/invariant → engine/event_bus is the
+//               only documented cross-layer upward reference.
+// engine/       — event_bus (execution layer, steps 4+ will add
+//                 leases, scheduler, worker, workflow, execution)
+// domain/       — (steps 4-5: llm, lm_control, model_*, embeddings)
+// interface/    — (step 5: api, cli_json)
+//
+// Old flat paths are preserved as #[deprecated] compatibility
+// re-exports and will be removed in the final cleanup commit.
+// ============================================================
+
+// ── New canonical module tree ────────────────────────────────
+pub mod kernel;
+pub mod engine;
+
+// ── Flat modules not yet migrated (steps 4-5) ───────────────
 pub mod execution;
 pub mod leases;
-pub mod llm;
-pub mod model_registry;
-pub mod replay;
 pub mod scheduler;
-pub mod snapshot;
 pub mod workflow;
+pub mod worker;
 
+pub mod llm;
 pub mod model_manifest;
+pub mod model_registry;
+pub mod embeddings;
 
 pub(crate) mod lm_control;
 
-pub mod embeddings;
-pub mod kernel_types;
+pub mod api;
+pub(crate) mod cli_json;
 
-// ============================================================
-// PHASE B structural layer — kernel/core introduced in step-1
-// Old flat paths preserved as deprecated bridges until step-8
-// ============================================================
-pub mod kernel;
+// ── Deprecated compatibility re-exports (remove in cleanup commit) ──
 
-#[deprecated(note = "phase-B migration bridge (step-1): use crate::kernel::core::types — remove in step-8")]
-#[allow(unused_imports)]
-pub use kernel::core::types as kernel_types_new;
+#[deprecated(
+    since = "phase-2b",
+    note = "Use crate::kernel::core::types instead — bridge removed in cleanup commit"
+)]
+pub use kernel::core::types as kernel_types;
 
-#[deprecated(note = "phase-B migration bridge (step-1): use crate::kernel::core::snapshot — remove in step-8")]
-#[allow(unused_imports)]
-pub use kernel::core::snapshot as snapshot_new;
+#[deprecated(
+    since = "phase-2b",
+    note = "Use crate::kernel::core::snapshot instead — bridge removed in cleanup commit"
+)]
+pub use kernel::core::snapshot;
 
-#[deprecated(note = "phase-B migration bridge (step-1): use crate::kernel::core::effects — remove in step-8")]
-#[allow(unused_imports)]
-pub use kernel::core::effects as effects_new;
+#[deprecated(
+    since = "phase-2b",
+    note = "Use crate::kernel::core::effects instead — bridge removed in cleanup commit"
+)]
+pub use kernel::core::effects;
+
+#[deprecated(
+    since = "phase-2b",
+    note = "Use crate::engine::event_bus instead — bridge removed in cleanup commit"
+)]
+pub use engine::event_bus;
+
+#[deprecated(
+    since = "phase-2b",
+    note = "Use crate::kernel::invariant::replay instead — bridge removed in cleanup commit"
+)]
+pub use kernel::invariant::replay;
