@@ -1,5 +1,5 @@
 pub mod api;
-pub mod cli_json;
+pub(crate) mod cli_json;
 pub mod effects;
 pub mod event_bus;
 pub mod execution;
@@ -13,7 +13,7 @@ pub mod workflow;
 
 pub mod model_manifest;
 
-pub mod lm_control;
+pub(crate) mod lm_control;
 
 pub mod embeddings;
 pub mod kernel_types;
