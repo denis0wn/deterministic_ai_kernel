@@ -13,6 +13,8 @@ fn has_import(content: &str, module: &str) -> bool {
         || content.contains(&format!("use crate::{}::", module))
 }
 
+// ── existing boundary tests (preserved) ──────────────────────────────────────
+
 #[test]
 fn scheduler_is_selection_only() {
     let content = read_file("src/scheduler.rs");
@@ -142,4 +144,96 @@ fn event_bus_is_persistence_only() {
         !has_import(&content, "workflow"),
         "event_bus must not import workflow"
     );
+}
+
+// ── Phase 2 #6: domain→interface boundary (new) ──────────────────────────────
+//
+// Rule: domain layer (lm_control, embeddings, model_registry, model_manifest,
+// llm) MUST NOT import interface layer (cli_json, api).
+// Violation found in lm_control.rs before this PR: crate::cli_json calls
+// inside print_doctor_json() — now removed.
+
+#[test]
+fn domain_must_not_import_cli_json() {
+    let domain_files = [
+        "src/lm_control.rs",
+        "src/embeddings.rs",
+        "src/model_registry.rs",
+        "src/model_manifest.rs",
+        "src/llm.rs",
+    ];
+    for file in domain_files {
+        let content = read_file(file);
+        assert!(
+            !has_import(&content, "cli_json"),
+            "{} must not import cli_json (domain→interface violation)",
+            file
+        );
+    }
+}
+
+#[test]
+fn domain_must_not_import_api() {
+    let domain_files = [
+        "src/lm_control.rs",
+        "src/embeddings.rs",
+        "src/model_registry.rs",
+        "src/model_manifest.rs",
+        "src/llm.rs",
+    ];
+    for file in domain_files {
+        let content = read_file(file);
+        assert!(
+            !has_import(&content, "api"),
+            "{} must not import api (domain→interface violation)",
+            file
+        );
+    }
+}
+
+#[test]
+fn kernel_must_not_import_interface() {
+    let kernel_files = [
+        "src/kernel_types.rs",
+        "src/snapshot.rs",
+    ];
+    for file in kernel_files {
+        let content = read_file(file);
+        assert!(
+            !has_import(&content, "cli_json"),
+            "{} must not import cli_json (kernel→interface violation)",
+            file
+        );
+        assert!(
+            !has_import(&content, "api"),
+            "{} must not import api (kernel→interface violation)",
+            file
+        );
+    }
+}
+
+#[test]
+fn kernel_must_not_import_domain() {
+    let kernel_files = [
+        "src/kernel_types.rs",
+        "src/snapshot.rs",
+    ];
+    for file in kernel_files {
+        let content = read_file(file);
+        assert!(
+            !has_import(&content, "lm_control"),
+            "{} must not import lm_control (kernel→domain violation)",
+            file
+        );
+        assert!(
+            !has_import(&content, "model_registry"),
+            "{} must not import model_registry (kernel→domain violation)",
+            file
+        );
+        assert!(
+            !has_import(&content, "embeddings"),
+            "{} must not import embeddings (kernel→domain violation)",
+            file
+        );
+    }
 }

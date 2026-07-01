@@ -233,17 +233,11 @@ pub fn auto_route(role: &str) -> Result<()> {
     Ok(())
 }
 
+/// Returns the doctor report as a JSON Value.
+/// Formatting (CLI envelope) must be done by the interface layer (main.rs), not here.
 pub fn doctor_json_report() -> Result<serde_json::Value> {
     let report = doctor()?;
     Ok(serde_json::to_value(report)?)
-}
-
-#[allow(dead_code)]
-pub fn print_doctor_json() -> Result<()> {
-    let report = doctor_json_report()?;
-    let envelope = crate::cli_json::command_report("doctor-json", report);
-    crate::cli_json::print_json_report(&envelope);
-    Ok(())
 }
 
 pub fn print_doctor_text() -> Result<()> {
@@ -277,20 +271,15 @@ mod tests {
 
     #[test]
     fn doctor_json_report_has_expected_shape() {
-        let report = crate::cli_json::command_report("doctor-json", doctor_json_report().unwrap());
+        // doctor_json_report() must return raw Value — no CLI envelope here.
+        // The interface layer (main.rs / cli_json) is responsible for wrapping.
+        let raw = doctor_json_report().unwrap();
+        assert!(raw.get("free_gb").is_some());
+        assert!(raw.get("lm_studio_models").is_some());
+        assert!(raw.get("roles").is_some());
+        assert!(raw["roles"].is_array());
 
-        assert_eq!(report["ok"], true);
-        assert_eq!(report["schema_version"], "cli-json-v1");
-        assert_eq!(report["command"], "doctor-json");
-        assert!(report["report"].get("free_gb").is_some());
-        assert!(report["report"].get("lm_studio_models").is_some());
-        assert!(report["report"].get("roles").is_some());
-        assert!(report["report"]["roles"].is_array());
-
-        if let Some(first) = report["report"]["roles"]
-            .as_array()
-            .and_then(|rows| rows.first())
-        {
+        if let Some(first) = raw["roles"].as_array().and_then(|rows| rows.first()) {
             assert!(first.get("role").is_some());
             assert!(first.get("manifest_model").is_some());
             assert!(first.get("env_model").is_some());
