@@ -10,7 +10,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 #[test]
@@ -25,7 +28,8 @@ fn latest_replay_capsule_returns_most_recent_capsule_for_same_task() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let first = build_replay_capsule(&bus, "task-multi-save").unwrap();
     bus.save_replay_capsule(&first).unwrap();
@@ -35,7 +39,8 @@ fn latest_replay_capsule_returns_most_recent_capsule_for_same_task() {
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let second = build_replay_capsule(&bus, "task-multi-save").unwrap();
     bus.save_replay_capsule(&second).unwrap();

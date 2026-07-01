@@ -24,9 +24,11 @@ fn replay_capsule_v0_is_serializable_and_minimally_valid() {
     };
 
     let graph = StateGraph {
-        nodes: vec![
-            StateGraphNode { id: "n1".into(), kind: "event".into(), ref_id: event.id.clone() }
-        ],
+        nodes: vec![StateGraphNode {
+            id: "n1".into(),
+            kind: "event".into(),
+            ref_id: event.id.clone(),
+        }],
         edges: vec![],
     };
 

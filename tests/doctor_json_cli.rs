@@ -26,7 +26,10 @@ fn doctor_json_cli_emits_valid_json_report() {
     assert!(parsed["report"].get("roles").is_some());
     assert!(parsed["report"]["roles"].is_array());
 
-    if let Some(first) = parsed["report"]["roles"].as_array().and_then(|rows| rows.first()) {
+    if let Some(first) = parsed["report"]["roles"]
+        .as_array()
+        .and_then(|rows| rows.first())
+    {
         assert!(first.get("role").is_some());
         assert!(first.get("manifest_model").is_some());
         assert!(first.get("env_model").is_some());

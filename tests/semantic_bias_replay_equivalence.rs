@@ -73,7 +73,10 @@ fn semantic_bias_v1_is_identical_across_repeat_emits() {
     let first_payload: Value = serde_json::from_str(first_cols[5]).unwrap();
     let second_payload: Value = serde_json::from_str(second_cols[5]).unwrap();
 
-    assert_eq!(first_payload, second_payload, "payload drift detected between identical runs");
+    assert_eq!(
+        first_payload, second_payload,
+        "payload drift detected between identical runs"
+    );
     assert_eq!(first_payload["version"], 1);
     assert_eq!(first_payload["seed"], 0);
     assert_eq!(

@@ -121,10 +121,7 @@ pub fn seed_to_bias(seed: u64) -> SemanticBias {
 /// - membership and cardinality are preserved exactly.
 /// - canonical planner meaning is not enforced here; that is the job of
 ///   `validate_steps`.
-pub fn apply_semantic_bias_from_seed(
-    steps: Vec<StepKind>,
-    seed: Option<u64>,
-) -> Vec<StepKind> {
+pub fn apply_semantic_bias_from_seed(steps: Vec<StepKind>, seed: Option<u64>) -> Vec<StepKind> {
     let bias = seed.map(seed_to_bias);
     apply_semantic_bias(steps, bias)
 }

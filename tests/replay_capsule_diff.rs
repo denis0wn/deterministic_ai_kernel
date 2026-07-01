@@ -10,7 +10,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 #[test]
@@ -25,13 +28,15 @@ fn replay_capsule_diff_detects_identical_capsules() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
     bus.append_event(
         "task-diff",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let left = build_replay_capsule(&bus, "task-diff").unwrap();
     let right = build_replay_capsule(&bus, "task-diff").unwrap();

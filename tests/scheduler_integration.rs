@@ -144,7 +144,15 @@ fn retry_and_reclaim_preserve_ownership_invariants() {
 
     run(&db, &["schedule", "task_invariants"]);
     run(&db, &["claim-worker", "task_invariants", "worker-A"]);
-    run(&db, &["start-step", "task_invariants", "worker-A", "00_analyze_task"]);
+    run(
+        &db,
+        &[
+            "start-step",
+            "task_invariants",
+            "worker-A",
+            "00_analyze_task",
+        ],
+    );
 
     run(&db, &["expire-leases", "task_invariants"]);
     run(&db, &["reconcile", "task_invariants"]);
@@ -153,16 +161,40 @@ fn retry_and_reclaim_preserve_ownership_invariants() {
 
     let err = run_expect_fail(
         &db,
-        &["complete-step", "task_invariants", "worker-A", "00_analyze_task"],
+        &[
+            "complete-step",
+            "task_invariants",
+            "worker-A",
+            "00_analyze_task",
+        ],
     );
-    assert!(err.contains("no active lease owned by worker for step"), "{err}");
+    assert!(
+        err.contains("no active lease owned by worker for step"),
+        "{err}"
+    );
 
-    let out = run(&db, &["complete-step", "task_invariants", "worker-B", "00_analyze_task"]);
+    let out = run(
+        &db,
+        &[
+            "complete-step",
+            "task_invariants",
+            "worker-B",
+            "00_analyze_task",
+        ],
+    );
     assert!(out.contains("COMPLETE"), "{out}");
 
     run(&db, &["schedule", "task_invariants"]);
     run(&db, &["claim-worker", "task_invariants", "worker-B"]);
-    let out = run(&db, &["start-step", "task_invariants", "worker-B", "01_plan_execution"]);
+    let out = run(
+        &db,
+        &[
+            "start-step",
+            "task_invariants",
+            "worker-B",
+            "01_plan_execution",
+        ],
+    );
     assert!(out.contains("STEP_RUNNING_OK"), "{out}");
 }
 
@@ -486,7 +518,12 @@ fn double_commit_is_rejected_after_lease_reclaim() {
     run(&db, &["claim-worker", "task_double_commit", "worker-A"]);
     run(
         &db,
-        &["start-step", "task_double_commit", "worker-A", "00_analyze_task"],
+        &[
+            "start-step",
+            "task_double_commit",
+            "worker-A",
+            "00_analyze_task",
+        ],
     );
 
     run(&db, &["expire-leases", "task_double_commit"]);
@@ -495,12 +532,22 @@ fn double_commit_is_rejected_after_lease_reclaim() {
     run(&db, &["claim-worker", "task_double_commit", "worker-B"]);
     run(
         &db,
-        &["start-step", "task_double_commit", "worker-B", "00_analyze_task"],
+        &[
+            "start-step",
+            "task_double_commit",
+            "worker-B",
+            "00_analyze_task",
+        ],
     );
 
     let stale = run_expect_fail(
         &db,
-        &["complete-step", "task_double_commit", "worker-A", "00_analyze_task"],
+        &[
+            "complete-step",
+            "task_double_commit",
+            "worker-A",
+            "00_analyze_task",
+        ],
     );
     assert!(
         stale.contains("no active lease owned by worker for step"),
@@ -509,13 +556,23 @@ fn double_commit_is_rejected_after_lease_reclaim() {
 
     let fresh = run(
         &db,
-        &["complete-step", "task_double_commit", "worker-B", "00_analyze_task"],
+        &[
+            "complete-step",
+            "task_double_commit",
+            "worker-B",
+            "00_analyze_task",
+        ],
     );
     assert!(fresh.contains("COMPLETE"), "{fresh}");
 
     let double = run_expect_fail(
         &db,
-        &["complete-step", "task_double_commit", "worker-B", "00_analyze_task"],
+        &[
+            "complete-step",
+            "task_double_commit",
+            "worker-B",
+            "00_analyze_task",
+        ],
     );
     assert!(
         double.contains("no active lease owned by worker for step")

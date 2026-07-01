@@ -9,6 +9,10 @@ pub fn print_json_report(report: &Value) {
     println!("{}", serde_json::to_string_pretty(report).unwrap());
 }
 
+pub fn emit_json(command: &str, report: Value) {
+    let envelope = command_report(command, report);
+    print_json_report(&envelope);
+}
 
 pub fn command_report(command: &str, report: Value) -> Value {
     serde_json::json!({
@@ -18,7 +22,6 @@ pub fn command_report(command: &str, report: Value) -> Value {
         "report": report,
     })
 }
-
 
 #[allow(dead_code)]
 pub fn capsule_summary_report(
@@ -100,7 +103,9 @@ pub fn comparison_report(input: ComparisonReportInput<'_>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel_types::{ReplayCapsule, StateGraph, StateGraphEdge, StateGraphNode, TrustContext, TrustLevel};
+    use crate::kernel_types::{
+        ReplayCapsule, StateGraph, StateGraphEdge, StateGraphNode, TrustContext, TrustLevel,
+    };
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -264,7 +269,12 @@ mod tests {
         let mut buffer = Vec::new();
         {
             let mut writer = std::io::Cursor::new(&mut buffer);
-            write!(&mut writer, "{}", serde_json::to_string_pretty(&report).unwrap()).unwrap();
+            write!(
+                &mut writer,
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap()
+            )
+            .unwrap();
             writeln!(&mut writer).unwrap();
         }
 

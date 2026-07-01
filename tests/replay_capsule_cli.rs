@@ -11,7 +11,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
@@ -39,14 +42,16 @@ fn replay_capsule_cli_reports_saved_capsule_summary() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     bus.append_event(
         "task-replay-cli",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let capsule = build_replay_capsule(&bus, "task-replay-cli").unwrap();
     bus.save_replay_capsule(&capsule).unwrap();

@@ -109,14 +109,16 @@ pub fn rebuild_snapshot(db: &str, task_id: &str, quiet: bool) -> Result<()> {
         let mut stmt2 = conn2.prepare(
             "SELECT artifact_type, artifact_id FROM semantic_artifacts
              WHERE task_id = ?1
-             ORDER BY artifact_id DESC"
+             ORDER BY artifact_id DESC",
         )?;
         let rows2 = stmt2.query_map([task_id], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
         })?;
         for row in rows2 {
             let (artifact_type, artifact_id) = row?;
-            artifact_refs.entry(artifact_type).or_insert_with(|| json!(artifact_id));
+            artifact_refs
+                .entry(artifact_type)
+                .or_insert_with(|| json!(artifact_id));
         }
     }
 
@@ -187,10 +189,16 @@ pub fn restore_snapshot(db: &str, task_id: &str, quiet: bool) -> Result<()> {
         .unwrap_or(1);
 
     if snapshot_version > 1 {
-        return Err(anyhow!("unsupported future snapshot_version: {}", snapshot_version));
+        return Err(anyhow!(
+            "unsupported future snapshot_version: {}",
+            snapshot_version
+        ));
     }
     if schema_version > 1 {
-        return Err(anyhow!("unsupported future schema_version: {}", schema_version));
+        return Err(anyhow!(
+            "unsupported future schema_version: {}",
+            schema_version
+        ));
     }
 
     if !quiet {

@@ -50,7 +50,6 @@ pub struct BiasMetadata {
     pub weighted_count: usize,
 }
 
-
 impl SemanticBias {
     pub fn neutral_for(domain: &[StepKind]) -> Self {
         let preferred = domain.to_vec();

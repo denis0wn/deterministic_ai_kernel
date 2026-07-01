@@ -77,14 +77,12 @@ pub fn free_memory_gb_estimate() -> Result<f64> {
 pub fn list_models() -> Result<Vec<String>> {
     if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
         let manifest = model_manifest::load_manifest()?;
-        return Ok(
-            manifest
-                .models
-                .into_iter()
-                .filter(|m| m.enabled)
-                .map(|m| m.id)
-                .collect(),
-        );
+        return Ok(manifest
+            .models
+            .into_iter()
+            .filter(|m| m.enabled)
+            .map(|m| m.id)
+            .collect());
     }
 
     let output = Command::new("sh")
@@ -109,7 +107,6 @@ pub fn print_memory(threshold_gb: Option<f64>) -> Result<()> {
     println!("\n{}", memory_snapshot()?);
     Ok(())
 }
-
 
 pub fn safe_switch(role: &str) -> Result<()> {
     let free = free_memory_gb_estimate()?;
@@ -290,7 +287,10 @@ mod tests {
         assert!(report["report"].get("roles").is_some());
         assert!(report["report"]["roles"].is_array());
 
-        if let Some(first) = report["report"]["roles"].as_array().and_then(|rows| rows.first()) {
+        if let Some(first) = report["report"]["roles"]
+            .as_array()
+            .and_then(|rows| rows.first())
+        {
             assert!(first.get("role").is_some());
             assert!(first.get("manifest_model").is_some());
             assert!(first.get("env_model").is_some());

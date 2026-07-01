@@ -21,7 +21,11 @@ fn latest_bias_artifact_cli_prints_latest_bias_row() {
         .output()
         .unwrap();
 
-    assert!(emit.status.success(), "stderr=\n{}", String::from_utf8_lossy(&emit.stderr));
+    assert!(
+        emit.status.success(),
+        "stderr=\n{}",
+        String::from_utf8_lossy(&emit.stderr)
+    );
 
     let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db)
@@ -41,7 +45,10 @@ fn latest_bias_artifact_cli_prints_latest_bias_row() {
 
     let payload: Value = serde_json::from_str(cols[5]).unwrap();
     assert_eq!(payload["version"], 1);
-    assert_eq!(payload["preferred"], serde_json::json!(["AnalyzeTask", "ExecuteChanges"]));
+    assert_eq!(
+        payload["preferred"],
+        serde_json::json!(["AnalyzeTask", "ExecuteChanges"])
+    );
 
     let _ = fs::remove_file(db);
     let _ = fs::remove_file(format!("{db}-wal"));

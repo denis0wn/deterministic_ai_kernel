@@ -78,9 +78,7 @@ pub struct ReplayCapsule {
 impl ReplayCapsule {
     #[allow(dead_code)]
     pub fn is_minimally_valid(&self) -> bool {
-        !self.capsule_id.is_empty()
-            && !self.execution_id.is_empty()
-            && !self.created_at.is_empty()
+        !self.capsule_id.is_empty() && !self.execution_id.is_empty() && !self.created_at.is_empty()
     }
 
     pub fn validate(&self) -> Result<(), String> {

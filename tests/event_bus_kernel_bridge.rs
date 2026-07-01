@@ -9,7 +9,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 #[test]
@@ -24,14 +27,16 @@ fn event_bus_exposes_execution_events_and_state_graph() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     bus.append_event(
         "task-bridge",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let events = bus.list_execution_events("task-bridge").unwrap();
     assert_eq!(events.len(), 2);

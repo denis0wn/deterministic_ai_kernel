@@ -1,3 +1,4 @@
+pub mod api;
 pub mod cli_json;
 pub mod effects;
 pub mod event_bus;

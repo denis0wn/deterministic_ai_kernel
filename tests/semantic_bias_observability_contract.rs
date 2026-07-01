@@ -23,17 +23,28 @@ fn semantic_bias_observability_contract_is_consistent() {
         ])
         .output()
         .unwrap();
-    assert!(emit.status.success(), "emit stderr=\n{}", String::from_utf8_lossy(&emit.stderr));
+    assert!(
+        emit.status.success(),
+        "emit stderr=\n{}",
+        String::from_utf8_lossy(&emit.stderr)
+    );
 
     let latest = Command::new(bin)
         .env("KERNEL_DB_PATH", db)
         .args(["latest-bias-artifact", "task-observe", "step-observe"])
         .output()
         .unwrap();
-    assert!(latest.status.success(), "latest stderr=\n{}", String::from_utf8_lossy(&latest.stderr));
+    assert!(
+        latest.status.success(),
+        "latest stderr=\n{}",
+        String::from_utf8_lossy(&latest.stderr)
+    );
 
     let latest_stdout = String::from_utf8(latest.stdout).unwrap();
-    let latest_line = latest_stdout.lines().next().expect("expected latest bias row");
+    let latest_line = latest_stdout
+        .lines()
+        .next()
+        .expect("expected latest bias row");
     let latest_cols: Vec<&str> = latest_line.splitn(6, '\t').collect();
     assert_eq!(latest_cols[1], "task-observe");
     assert_eq!(latest_cols[2], "step-observe");
@@ -46,7 +57,11 @@ fn semantic_bias_observability_contract_is_consistent() {
         .args(["snapshot", "task-observe"])
         .output()
         .unwrap();
-    assert!(snapshot.status.success(), "snapshot stderr=\n{}", String::from_utf8_lossy(&snapshot.stderr));
+    assert!(
+        snapshot.status.success(),
+        "snapshot stderr=\n{}",
+        String::from_utf8_lossy(&snapshot.stderr)
+    );
 
     let snapshot_artifacts = Command::new(bin)
         .env("KERNEL_DB_PATH", db)
@@ -67,7 +82,11 @@ fn semantic_bias_observability_contract_is_consistent() {
         .args(["restore", "task-observe"])
         .output()
         .unwrap();
-    assert!(restore.status.success(), "restore stderr=\n{}", String::from_utf8_lossy(&restore.stderr));
+    assert!(
+        restore.status.success(),
+        "restore stderr=\n{}",
+        String::from_utf8_lossy(&restore.stderr)
+    );
 
     let restore_stdout = String::from_utf8(restore.stdout).unwrap();
     assert!(restore_stdout.contains("ARTIFACT_REF\tsemantic_bias_v1\t"));
@@ -89,7 +108,9 @@ fn semantic_bias_observability_contract_is_consistent() {
         serde_json::json!(["AnalyzeTask", "ExecuteChanges", "RunTests"])
     );
 
-    let lines = latest_payload["lines"].as_array().expect("lines must be an array");
+    let lines = latest_payload["lines"]
+        .as_array()
+        .expect("lines must be an array");
     let rendered: Vec<&str> = lines.iter().map(|v| v.as_str().unwrap()).collect();
     assert!(rendered.contains(&"bias.version=1"));
     assert!(rendered.contains(&"bias.meta.preferred_count=3"));

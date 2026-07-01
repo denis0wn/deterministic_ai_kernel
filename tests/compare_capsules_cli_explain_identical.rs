@@ -11,7 +11,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
@@ -39,21 +42,35 @@ fn compare_capsules_explain_reports_identical_reason() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
     bus.append_event(
         "task-identical",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let capsule = build_replay_capsule(&bus, "task-identical").unwrap();
     bus.save_replay_capsule(&capsule).unwrap();
 
-    let (out, success) = run_kernel(&db, &["compare-capsules", "task-identical", "task-identical", "--explain"]);
+    let (out, success) = run_kernel(
+        &db,
+        &[
+            "compare-capsules",
+            "task-identical",
+            "task-identical",
+            "--explain",
+        ],
+    );
     assert!(success, "compare-capsules failed: {}", out);
     assert!(out.contains("status=identical"), "{}", out);
-    assert!(out.contains("explanation=event_ids, nodes, and edges match"), "{}", out);
+    assert!(
+        out.contains("explanation=event_ids, nodes, and edges match"),
+        "{}",
+        out
+    );
 
     let _ = fs::remove_file(&db);
     let _ = fs::remove_file(format!("{}-wal", db.display()));

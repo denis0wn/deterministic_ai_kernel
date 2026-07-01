@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
-use crate::cli_json::{comparison_report, command_report};
+use crate::cli_json::comparison_report;
 use crate::event_bus;
 use crate::kernel_types::ReplayCapsule;
 use crate::lm_control;
@@ -19,7 +19,8 @@ pub fn integrity_json_report(db: &str) -> Value {
     }
 
     let conn = Connection::open(db).unwrap();
-    conn.execute_batch(include_str!("../event_bus/schema.sql")).unwrap();
+    conn.execute_batch(include_str!("../event_bus/schema.sql"))
+        .unwrap();
     drop(conn);
 
     snapshot::rebuild_snapshot(db, "integrity-task", true).unwrap();
@@ -47,53 +48,92 @@ pub fn integrity_json_report(db: &str) -> Value {
     })
 }
 
-pub fn integrity_json_envelope(db: &str) -> Value {
-    command_report("integrity-json", integrity_json_report(db))
+pub fn doctor_json() -> Result<Value> {
+    lm_control::doctor_json_report()
 }
 
-pub fn doctor_json_envelope() -> Result<Value> {
-    let report = lm_control::doctor_json_report()?;
-    Ok(command_report("doctor-json", report))
+pub fn capture_capsule_save_json(db: &str, task_id: &str) -> Result<Value> {
+    let report = capture_capsule_save_text(db, task_id)?;
+    Ok(serde_json::json!({
+        "task_id": task_id,
+        "execution_id": report.execution_id,
+        "capsule_id": report.capsule_id,
+        "valid": true,
+        "events": report.events,
+        "nodes": report.nodes,
+        "edges": report.edges,
+    }))
 }
 
-pub fn capture_capsule_save_json_envelope(db: &str, task_id: &str) -> Result<Value> {
+pub struct ReplayCapsuleSummary {
+    pub execution_id: String,
+    pub capsule_id: String,
+    pub events: usize,
+    pub nodes: usize,
+    pub edges: usize,
+    pub valid: bool,
+}
+
+pub struct CaptureCapsuleSaveSummary {
+    pub execution_id: String,
+    pub capsule_id: String,
+    pub events: usize,
+    pub nodes: usize,
+    pub edges: usize,
+}
+
+pub struct CompareCapsulesSummary {
+    pub left_capsule_id: String,
+    pub right_capsule_id: String,
+    pub status: String,
+    pub explanation: String,
+}
+
+pub fn capture_capsule_save_text(db: &str, task_id: &str) -> Result<CaptureCapsuleSaveSummary> {
     let bus = event_bus::EventBus::new(db).unwrap();
     let capsule = build_replay_capsule(&bus, task_id)?;
     capsule
         .validate()
         .map_err(|e| anyhow!("capture-capsule-save invalid capsule: {}", e))?;
     bus.save_replay_capsule(&capsule).unwrap();
-    let report = serde_json::json!({
-        "task_id": task_id,
-        "execution_id": capsule.execution_id,
-        "capsule_id": capsule.capsule_id,
-        "valid": true,
-        "events": capsule.event_ids.len(),
-        "nodes": capsule.state_graph.nodes.len(),
-        "edges": capsule.state_graph.edges.len(),
-    });
-    Ok(command_report("capture-capsule-save", report))
+    Ok(CaptureCapsuleSaveSummary {
+        execution_id: capsule.execution_id.clone(),
+        capsule_id: capsule.capsule_id.clone(),
+        events: capsule.event_ids.len(),
+        nodes: capsule.state_graph.nodes.len(),
+        edges: capsule.state_graph.edges.len(),
+    })
 }
 
-pub fn replay_capsule_json_envelope(db: &str, task_id: &str) -> Result<Value> {
+pub fn replay_capsule_text(db: &str, task_id: &str) -> Result<ReplayCapsuleSummary> {
     let bus = event_bus::EventBus::new(db).unwrap();
     let capsule = bus
         .latest_replay_capsule(task_id)?
         .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", task_id))?;
-    let valid = capsule.validate().is_ok();
-    let report = serde_json::json!({
-        "task_id": task_id,
-        "execution_id": capsule.execution_id,
-        "capsule_id": capsule.capsule_id,
-        "valid": valid,
-        "events": capsule.event_ids.len(),
-        "nodes": capsule.state_graph.nodes.len(),
-        "edges": capsule.state_graph.edges.len(),
-    });
-    Ok(command_report("replay-capsule", report))
+    Ok(ReplayCapsuleSummary {
+        execution_id: capsule.execution_id.clone(),
+        capsule_id: capsule.capsule_id.clone(),
+        events: capsule.event_ids.len(),
+        nodes: capsule.state_graph.nodes.len(),
+        edges: capsule.state_graph.edges.len(),
+        valid: capsule.validate().is_ok(),
+    })
 }
 
-pub fn compare_capsules_json_envelope(db: &str, left: &str, right: &str) -> Result<Value> {
+pub fn replay_capsule_json(db: &str, task_id: &str) -> Result<Value> {
+    let report = replay_capsule_text(db, task_id)?;
+    Ok(serde_json::json!({
+        "task_id": task_id,
+        "execution_id": report.execution_id,
+        "capsule_id": report.capsule_id,
+        "valid": report.valid,
+        "events": report.events,
+        "nodes": report.nodes,
+        "edges": report.edges,
+    }))
+}
+
+pub fn compare_capsules_text(db: &str, left: &str, right: &str) -> Result<CompareCapsulesSummary> {
     let bus = event_bus::EventBus::new(db).unwrap();
     let left_capsule = bus
         .latest_replay_capsule(left)?
@@ -102,8 +142,87 @@ pub fn compare_capsules_json_envelope(db: &str, left: &str, right: &str) -> Resu
         .latest_replay_capsule(right)?
         .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", right))?;
 
-    let report = build_compare_report(&left_capsule, &right_capsule, left, right);
-    Ok(command_report("compare-capsules", report))
+    let left_valid = left_capsule.validate();
+    let right_valid = right_capsule.validate();
+
+    let status = if left_valid.is_err() || right_valid.is_err() {
+        "structurally_invalid"
+    } else if left_capsule.event_ids == right_capsule.event_ids
+        && left_capsule.state_graph.nodes == right_capsule.state_graph.nodes
+        && left_capsule.state_graph.edges == right_capsule.state_graph.edges
+    {
+        "identical"
+    } else {
+        "divergent"
+    };
+
+    let explanation = match status {
+        "structurally_invalid" => {
+            let mut reasons = Vec::new();
+            if let Err(err) = &left_valid {
+                reasons.push(format!("left invalid: {}", err));
+            }
+            if let Err(err) = &right_valid {
+                reasons.push(format!("right invalid: {}", err));
+            }
+            reasons.join("; ")
+        }
+        "identical" => "event_ids, nodes, and edges match".to_string(),
+        "divergent" => {
+            let mut reasons = Vec::new();
+            if left_capsule.event_ids != right_capsule.event_ids {
+                reasons.push(format!(
+                    "event_ids differ (left={}, right={})",
+                    left_capsule.event_ids.len(),
+                    right_capsule.event_ids.len()
+                ));
+            }
+            if left_capsule.state_graph.nodes != right_capsule.state_graph.nodes {
+                reasons.push(format!(
+                    "nodes differ (left={}, right={})",
+                    left_capsule.state_graph.nodes.len(),
+                    right_capsule.state_graph.nodes.len()
+                ));
+            }
+            if left_capsule.state_graph.edges != right_capsule.state_graph.edges {
+                reasons.push(format!(
+                    "edges differ (left={}, right={})",
+                    left_capsule.state_graph.edges.len(),
+                    right_capsule.state_graph.edges.len()
+                ));
+            }
+            if reasons.is_empty() {
+                "capsules differ".to_string()
+            } else {
+                reasons.join("; ")
+            }
+        }
+        _ => "unknown comparison state".to_string(),
+    };
+
+    Ok(CompareCapsulesSummary {
+        left_capsule_id: left_capsule.capsule_id.clone(),
+        right_capsule_id: right_capsule.capsule_id.clone(),
+        status: status.to_string(),
+        explanation,
+    })
+}
+
+pub fn compare_capsules_json(db: &str, left: &str, right: &str) -> Result<Value> {
+    let bus = event_bus::EventBus::new(db).unwrap();
+    let left_capsule = bus
+        .latest_replay_capsule(left)?
+        .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", left))?;
+    let right_capsule = bus
+        .latest_replay_capsule(right)?
+        .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", right))?;
+
+    Ok(build_compare_report(
+        &left_capsule,
+        &right_capsule,
+        left,
+        right,
+    ))
 }
 
 fn build_compare_report(
@@ -207,8 +326,10 @@ fn build_compare_report(
             (key, v)
         })
         .collect();
-    let right_node_keys: std::collections::HashSet<_> =
-        right_node_pairs.iter().map(|(key, _)| key.clone()).collect();
+    let right_node_keys: std::collections::HashSet<_> = right_node_pairs
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect();
 
     let left_only_nodes: Vec<_> = left_node_pairs
         .iter()
@@ -243,8 +364,10 @@ fn build_compare_report(
             (key, v)
         })
         .collect();
-    let right_edge_keys: std::collections::HashSet<_> =
-        right_edge_pairs.iter().map(|(key, _)| key.clone()).collect();
+    let right_edge_keys: std::collections::HashSet<_> = right_edge_pairs
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect();
 
     let left_only_edges: Vec<_> = left_edge_pairs
         .iter()

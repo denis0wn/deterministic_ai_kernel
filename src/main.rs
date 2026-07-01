@@ -4,9 +4,9 @@ mod effects;
 mod embeddings;
 mod event_bus;
 mod execution;
+mod kernel_types;
 mod leases;
 mod llm;
-mod kernel_types;
 mod lm_control;
 mod model_manifest;
 mod model_registry;
@@ -16,12 +16,12 @@ mod snapshot;
 mod worker;
 mod workflow;
 
-use cli_json::print_json_report;
+use cli_json::emit_json;
 use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
-use replay::engine::replay_validate;
 use replay::capsule::build_replay_capsule;
+use replay::engine::replay_validate;
 use rusqlite::Connection;
 use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
 use snapshot::{rebuild_snapshot, restore_snapshot};
@@ -110,7 +110,6 @@ fn reset_db(db: &str) {
     println!("RESET OK");
 }
 
-
 fn integrity_json_report(db: &str) -> serde_json::Value {
     use serde_json::{json, Value};
     use std::fs;
@@ -122,7 +121,8 @@ fn integrity_json_report(db: &str) -> serde_json::Value {
     }
 
     let conn = Connection::open(db).unwrap();
-    conn.execute_batch(include_str!("../event_bus/schema.sql")).unwrap();
+    conn.execute_batch(include_str!("../event_bus/schema.sql"))
+        .unwrap();
     drop(conn);
 
     snapshot::rebuild_snapshot(db, "integrity-task", true).unwrap();
@@ -179,8 +179,8 @@ fn run_integrity(db: &str) {
 }
 
 fn run_integrity_json(db: &str) {
-    let envelope = crate::api::integrity_json_envelope(db);
-    cli_json::print_json_report(&envelope);
+    let report = crate::api::integrity_json_report(db);
+    emit_json("integrity-json", report);
 }
 
 fn vacuum_db(db: &str) {
@@ -200,9 +200,6 @@ fn vacuum_db(db: &str) {
 
     println!("VACUUM OK");
 }
-
-
-
 
 #[tokio::main]
 async fn main() {
@@ -253,8 +250,6 @@ async fn main() {
     }
 
     match args.get(1).map(|s| s.as_str()) {
-
-
         Some("capture-capsule-save") => {
             let task_id = args.get(2).cloned().unwrap_or_default();
             let json_output = args.iter().any(|a| a == "--json");
@@ -263,47 +258,34 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let bus = event_bus::EventBus::new(db).unwrap();
-            match build_replay_capsule(&bus, &task_id) {
-                Ok(capsule) => {
-                    if let Err(err) = capsule.validate() {
-                        eprintln!("capture-capsule-save invalid capsule: {}", err);
+            if json_output {
+                match crate::api::capture_capsule_save_json(db, &task_id) {
+                    Ok(report) => emit_json("capture-capsule-save", report),
+                    Err(e) => {
+                        eprintln!("capture-capsule-save failed: {e}");
                         std::process::exit(1);
                     }
-
-                    let event_count = capsule.event_ids.len();
-                    let node_count = capsule.state_graph.nodes.len();
-                    let edge_count = capsule.state_graph.edges.len();
-                    bus.save_replay_capsule(&capsule).unwrap();
-
-                    if json_output {
-                        match crate::api::capture_capsule_save_json_envelope(db, &task_id) {
-                            Ok(envelope) => print_json_report(&envelope),
-                            Err(e) => {
-                                eprintln!("capture-capsule-save failed: {e}");
-                                std::process::exit(1);
-                            }
-                        }
-                    } else {
+                }
+            } else {
+                match crate::api::capture_capsule_save_text(db, &task_id) {
+                    Ok(report) => {
                         println!(
                             "CAPTURE_CAPSULE_SAVE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}",
-                            capsule.execution_id,
-                            capsule.capsule_id,
-                            event_count,
-                            node_count,
-                            edge_count
+                            report.execution_id,
+                            report.capsule_id,
+                            report.events,
+                            report.nodes,
+                            report.edges
                         );
                     }
-                }
-                Err(e) => {
-                    eprintln!("capture-capsule-save failed: {e}");
-                    std::process::exit(1);
+                    Err(e) => {
+                        eprintln!("capture-capsule-save failed: {e}");
+                        std::process::exit(1);
+                    }
                 }
             }
             return;
         }
-
-
 
         Some("compare-capsules") => {
             let left = args.get(2).cloned().unwrap_or_default();
@@ -316,111 +298,37 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let bus = event_bus::EventBus::new(db).unwrap();
-            let left_capsule = match bus.latest_replay_capsule(&left) {
-                Ok(Some(c)) => c,
-                Ok(None) => {
-                    eprintln!("no replay capsule found for task_id={}", left);
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("compare-capsules failed: {e}");
-                    std::process::exit(1);
-                }
-            };
-            let right_capsule = match bus.latest_replay_capsule(&right) {
-                Ok(Some(c)) => c,
-                Ok(None) => {
-                    eprintln!("no replay capsule found for task_id={}", right);
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("compare-capsules failed: {e}");
-                    std::process::exit(1);
-                }
-            };
-
-            let left_valid = left_capsule.validate();
-            let right_valid = right_capsule.validate();
-
-            let status = if left_valid.is_err() || right_valid.is_err() {
-                "structurally_invalid"
-            } else if left_capsule.event_ids == right_capsule.event_ids
-                && left_capsule.state_graph.nodes == right_capsule.state_graph.nodes
-                && left_capsule.state_graph.edges == right_capsule.state_graph.edges
-            {
-                "identical"
-            } else {
-                "divergent"
-            };
-
-            let explanation = match status {
-                "structurally_invalid" => {
-                    let mut reasons = Vec::new();
-                    if let Err(err) = &left_valid {
-                        reasons.push(format!("left invalid: {}", err));
-                    }
-                    if let Err(err) = &right_valid {
-                        reasons.push(format!("right invalid: {}", err));
-                    }
-                    reasons.join("; ")
-                }
-                "identical" => "event_ids, nodes, and edges match".to_string(),
-                "divergent" => {
-                    let mut reasons = Vec::new();
-                    if left_capsule.event_ids != right_capsule.event_ids {
-                        reasons.push(format!(
-                            "event_ids differ (left={}, right={})",
-                            left_capsule.event_ids.len(),
-                            right_capsule.event_ids.len()
-                        ));
-                    }
-                    if left_capsule.state_graph.nodes != right_capsule.state_graph.nodes {
-                        reasons.push(format!(
-                            "nodes differ (left={}, right={})",
-                            left_capsule.state_graph.nodes.len(),
-                            right_capsule.state_graph.nodes.len()
-                        ));
-                    }
-                    if left_capsule.state_graph.edges != right_capsule.state_graph.edges {
-                        reasons.push(format!(
-                            "edges differ (left={}, right={})",
-                            left_capsule.state_graph.edges.len(),
-                            right_capsule.state_graph.edges.len()
-                        ));
-                    }
-                    if reasons.is_empty() {
-                        "capsules differ".to_string()
-                    } else {
-                        reasons.join("; ")
-                    }
-                }
-                _ => "unknown comparison state".to_string(),
-            };
-
             if json_output {
-                match crate::api::compare_capsules_json_envelope(db, &left, &right) {
-                    Ok(envelope) => print_json_report(&envelope),
+                match crate::api::compare_capsules_json(db, &left, &right) {
+                    Ok(report) => emit_json("compare-capsules", report),
                     Err(e) => {
                         eprintln!("compare-capsules failed: {e}");
                         std::process::exit(1);
                     }
                 }
-            } else if explain {
-                println!(
-                    "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}\texplanation={}",
-                    left_capsule.capsule_id,
-                    right_capsule.capsule_id,
-                    status,
-                    explanation
-                );
             } else {
-                println!(
-                    "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}",
-                    left_capsule.capsule_id,
-                    right_capsule.capsule_id,
-                    status
-                );
+                match crate::api::compare_capsules_text(db, &left, &right) {
+                    Ok(report) => {
+                        if explain {
+                            println!(
+                                "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}\texplanation={}",
+                                report.left_capsule_id,
+                                report.right_capsule_id,
+                                report.status,
+                                report.explanation
+                            );
+                        } else {
+                            println!(
+                                "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}",
+                                report.left_capsule_id, report.right_capsule_id, report.status
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("compare-capsules failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
             }
             return;
         }
@@ -433,38 +341,31 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let bus = event_bus::EventBus::new(db).unwrap();
-            match bus.latest_replay_capsule(&task_id) {
-                Ok(Some(capsule)) => {
-                    let valid = capsule.validate().is_ok();
-
-                    if json_output {
-                        match crate::api::replay_capsule_json_envelope(db, &task_id) {
-                            Ok(envelope) => print_json_report(&envelope),
-                            Err(e) => {
-                                eprintln!("replay-capsule failed: {e}");
-                                std::process::exit(1);
-                            }
-                        }
-                    } else {
-                        println!(
-                            "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",
-                            capsule.execution_id,
-                            capsule.capsule_id,
-                            capsule.event_ids.len(),
-                            capsule.state_graph.nodes.len(),
-                            capsule.state_graph.edges.len(),
-                            valid
-                        );
+            if json_output {
+                match crate::api::replay_capsule_json(db, &task_id) {
+                    Ok(report) => emit_json("replay-capsule", report),
+                    Err(e) => {
+                        eprintln!("replay-capsule failed: {e}");
+                        std::process::exit(1);
                     }
                 }
-                Ok(None) => {
-                    eprintln!("no replay capsule found for task_id={}", task_id);
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("replay-capsule failed: {e}");
-                    std::process::exit(1);
+            } else {
+                match crate::api::replay_capsule_text(db, &task_id) {
+                    Ok(report) => {
+                        println!(
+                            "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",
+                            report.execution_id,
+                            report.capsule_id,
+                            report.events,
+                            report.nodes,
+                            report.edges,
+                            report.valid
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("replay-capsule failed: {e}");
+                        std::process::exit(1);
+                    }
                 }
             }
             return;
@@ -572,7 +473,8 @@ async fn main() {
             });
 
             let bus = event_bus::EventBus::new(db).unwrap();
-            match bus.append_semantic_artifact(&task_id, &step_id, 0, "semantic_bias_v1", &payload) {
+            match bus.append_semantic_artifact(&task_id, &step_id, 0, "semantic_bias_v1", &payload)
+            {
                 Ok(()) => {
                     println!("EMIT_BIAS_ARTIFACT_OK\t{}\t{}", task_id, step_id);
                 }
@@ -691,7 +593,10 @@ async fn main() {
             let bus = event_bus::EventBus::new(db).unwrap();
             match bus.list_semantic_artifacts(&task_id, step_id) {
                 Ok(rows) => {
-                    if let Some(row) = rows.into_iter().find(|r| r.artifact_type == "semantic_bias_v1") {
+                    if let Some(row) = rows
+                        .into_iter()
+                        .find(|r| r.artifact_type == "semantic_bias_v1")
+                    {
                         println!(
                             "{}	{}	{}	{}	{}	{}",
                             row.artifact_id,
@@ -822,8 +727,8 @@ async fn main() {
             return;
         }
         Some("doctor-json") => {
-            match crate::api::doctor_json_envelope() {
-                Ok(envelope) => print_json_report(&envelope),
+            match crate::api::doctor_json() {
+                Ok(report) => emit_json("doctor-json", report),
                 Err(e) => {
                     eprintln!("doctor-json failed: {e}");
                     std::process::exit(1);
@@ -1125,8 +1030,14 @@ mod integrity_json_tests {
         let report = cli_json::command_report("integrity-json", integrity_json_report(&db));
 
         assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
-        assert_eq!(report.get("schema_version").and_then(|v| v.as_str()), Some("cli-json-v1"));
-        assert_eq!(report.get("command").and_then(|v| v.as_str()), Some("integrity-json"));
+        assert_eq!(
+            report.get("schema_version").and_then(|v| v.as_str()),
+            Some("cli-json-v1")
+        );
+        assert_eq!(
+            report.get("command").and_then(|v| v.as_str()),
+            Some("integrity-json")
+        );
         assert!(report.get("report").is_some());
         assert!(report["report"].get("snapshot_version").is_some());
         assert!(report["report"].get("schema_version").is_some());
@@ -1140,4 +1051,3 @@ mod integrity_json_tests {
         let _ = std::fs::remove_file(format!("{db}-shm"));
     }
 }
-

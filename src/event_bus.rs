@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::kernel_types::{ExecutionEvent, StateGraph, StateGraphEdge, StateGraphNode, TrustContext, TrustLevel};
+use crate::kernel_types::{
+    ExecutionEvent, StateGraph, StateGraphEdge, StateGraphNode, TrustContext, TrustLevel,
+};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -283,7 +285,6 @@ impl EventBus {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-
     pub fn list_execution_events(&self, task_id: &str) -> Result<Vec<ExecutionEvent>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -295,7 +296,8 @@ impl EventBus {
             let task_id: String = r.get(1)?;
             let event_type: String = r.get(2)?;
             let payload_raw: String = r.get(3)?;
-            let payload: Value = serde_json::from_str(&payload_raw).unwrap_or(Value::String(payload_raw));
+            let payload: Value =
+                serde_json::from_str(&payload_raw).unwrap_or(Value::String(payload_raw));
 
             Ok(ExecutionEvent {
                 id: format!("evt-{}", id),
@@ -351,7 +353,6 @@ impl EventBus {
         Ok(())
     }
 
-    
     pub fn latest_replay_capsule(
         &self,
         task_id: &str,
@@ -362,7 +363,7 @@ impl EventBus {
              FROM replay_capsules
              WHERE task_id = ?1
              ORDER BY created_at DESC, capsule_id DESC
-             LIMIT 1"
+             LIMIT 1",
         )?;
 
         let row: Option<String> = stmt

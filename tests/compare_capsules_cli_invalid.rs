@@ -13,7 +13,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
@@ -41,13 +44,15 @@ fn compare_capsules_cli_reports_structurally_invalid_when_one_capsule_is_invalid
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
     bus.append_event(
         "task-valid",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let valid_capsule = build_replay_capsule(&bus, "task-valid").unwrap();
     bus.save_replay_capsule(&valid_capsule).unwrap();
@@ -56,7 +61,10 @@ fn compare_capsules_cli_reports_structurally_invalid_when_one_capsule_is_invalid
         capsule_id: "capsule-task-invalid".into(),
         execution_id: "task-invalid".into(),
         created_at: "now".into(),
-        state_graph: StateGraph { nodes: vec![], edges: vec![] },
+        state_graph: StateGraph {
+            nodes: vec![],
+            edges: vec![],
+        },
         event_ids: vec![],
         artifacts: vec![],
         environment: BTreeMap::from([("source".into(), "event_bus".into())]),
