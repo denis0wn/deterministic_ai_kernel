@@ -1,20 +1,21 @@
 mod api;
 mod cli_json;
-mod effects;
 mod embeddings;
-mod event_bus;
 mod execution;
-mod kernel_types;
 mod leases;
 mod llm;
 mod lm_control;
 mod model_manifest;
 mod model_registry;
-mod replay;
 mod scheduler;
-mod snapshot;
 mod worker;
 mod workflow;
+
+// Migrated modules — accessed via lib re-exports
+use deterministic_ai_kernel::effects;
+use deterministic_ai_kernel::event_bus;
+use deterministic_ai_kernel::replay;
+use deterministic_ai_kernel::snapshot;
 
 use cli_json::emit_json;
 use effects::execute_effects;
@@ -598,7 +599,7 @@ async fn main() {
                         .find(|r| r.artifact_type == "semantic_bias_v1")
                     {
                         println!(
-                            "{}	{}	{}	{}	{}	{}",
+                            "{}\t{}\t{}\t{}\t{}\t{}",
                             row.artifact_id,
                             row.task_id,
                             row.step_id,
@@ -657,7 +658,7 @@ async fn main() {
             match bus.latest_analysis_seed(&task_id, step_id) {
                 Ok(Some(row)) => {
                     println!(
-                        "{}	{}	{}	{}	{}	{}",
+                        "{}\t{}\t{}\t{}\t{}\t{}",
                         row.artifact_id,
                         row.task_id,
                         row.step_id,
