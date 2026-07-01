@@ -1,24 +1,30 @@
 {
   "ok": true,
   "status": "ok",
-  "plan_hash": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
-  "environment_fingerprint": "f773e9518327880ce6490fd1c33c4b4224950048cbbbe6dba4467e01b2274a1d",
+  "plan_id": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
+  "plan_hash": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
+  "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
   "graph_schema_version": 2,
   "selected_pipeline": "fast",
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
-  "graph_seconds": 7.952,
+  "graph_seconds": 9.873,
   "node_count": 4,
   "environment": {
-    "python": "3.14.3",
+    "python": "3.14.5",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
     "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+    "environment_fingerprint": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3"
+  },
+  "environment_debug": {
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
     "system": "Darwin",
     "release": "27.0.0",
     "machine": "arm64",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
-    "environment_fingerprint": "f773e9518327880ce6490fd1c33c4b4224950048cbbbe6dba4467e01b2274a1d"
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
   },
   "nodes": [
     {
@@ -29,7 +35,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 0.451,
+      "seconds": 0.627,
       "priority": 10,
       "cost": 1,
       "depends_on": [],
@@ -45,7 +51,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 0.571,
+      "seconds": 0.587,
       "priority": 20,
       "cost": 2,
       "depends_on": [
@@ -63,7 +69,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 0.498,
+      "seconds": 0.636,
       "priority": 30,
       "cost": 2,
       "depends_on": [
@@ -81,7 +87,7 @@
       "pipeline": "fast",
       "status": "passed",
       "exit_code": 0,
-      "seconds": 6.432,
+      "seconds": 8.023,
       "priority": 40,
       "cost": 12,
       "depends_on": [

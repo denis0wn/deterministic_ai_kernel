@@ -18,7 +18,10 @@ fn verification_graph_rejects_invalid_reuse_when_environment_fingerprint_differs
         .status()
         .expect("failed to run verification graph warmup");
 
-    assert!(warmup.success(), "warmup run failed with status: {warmup:?}");
+    assert!(
+        warmup.success(),
+        "warmup run failed with status: {warmup:?}"
+    );
 
     let plan_text = fs::read_to_string(&plan_path).expect("failed to read verification_plan.json");
     let mut plan_json: serde_json::Value =

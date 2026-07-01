@@ -29,18 +29,45 @@ fn verification_plan_exposes_identity_inputs() {
     let plan = read_json(plan_path);
 
     assert_eq!(plan["selected_pipeline"], "fast");
+    assert!(plan.get("plan_id").is_some(), "plan_id must exist");
     assert!(
         plan.get("plan_hash").is_some(),
         "transitional identity field plan_hash must exist"
+    );
+    assert_eq!(
+        plan["plan_id"], plan["plan_hash"],
+        "plan_hash should remain a transitional alias for plan_id"
+    );
+    assert!(
+        plan.get("environment_id").is_some(),
+        "environment_id must exist"
+    );
+    assert!(
+        plan.get("execution_order_id").is_some(),
+        "execution_order_id must exist"
+    );
+    assert!(
+        plan.get("execution_order").is_some(),
+        "execution_order must exist"
     );
 
     let env = &plan["environment"];
     assert!(
         env.get("environment_fingerprint").is_some(),
-        "environment.environment_fingerprint must exist as current strict identity input"
+        "environment.environment_fingerprint must exist as a transitional alias"
+    );
+    assert_eq!(
+        plan["environment_id"], env["environment_fingerprint"],
+        "environment_fingerprint should remain a transitional alias for environment_id"
+    );
+    assert!(
+        plan.get("environment_debug").is_some(),
+        "environment_debug must exist for loose metadata"
     );
 
-    let nodes = plan["ordered_nodes"].as_array().expect("ordered_nodes array");
+    let nodes = plan["ordered_nodes"]
+        .as_array()
+        .expect("ordered_nodes array");
     assert!(!nodes.is_empty(), "plan must contain nodes");
 
     for node in nodes {

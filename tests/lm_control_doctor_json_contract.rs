@@ -8,14 +8,21 @@ fn doctor_json_contract_is_stable() {
         .output()
         .unwrap();
 
-    assert!(out.status.success(), "stderr=\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr=\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("\"free_gb\""), "{stdout}");
     assert!(stdout.contains("\"lm_studio_models\""), "{stdout}");
     assert!(stdout.contains("\"roles\""), "{stdout}");
     assert!(stdout.contains("\"task_planning\""), "{stdout}");
-    assert!(stdout.contains("\"manifest_model\": \"huihui-gemma-4-e2b-it-abliterated-mlx\""), "{stdout}");
+    assert!(
+        stdout.contains("\"manifest_model\": \"huihui-gemma-4-e2b-it-abliterated-mlx\""),
+        "{stdout}"
+    );
     assert!(stdout.contains("\"threshold_gb\": 6.0"), "{stdout}");
     assert!(stdout.contains("\"model_available\": true"), "{stdout}");
     assert!(stdout.contains("\"switch_ready\": true"), "{stdout}");

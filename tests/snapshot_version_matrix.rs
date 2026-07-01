@@ -69,7 +69,9 @@ fn restore_payload(db: &PathBuf, task_id: &str) -> Value {
 }
 
 fn assert_snapshot_compatible(snapshot_version: &str, restore_version: &str) {
-    let db = unique_db(&format!("snapshot_matrix_{snapshot_version}_{restore_version}"));
+    let db = unique_db(&format!(
+        "snapshot_matrix_{snapshot_version}_{restore_version}"
+    ));
     cleanup(&db);
 
     let _ = run_ok(
@@ -174,7 +176,11 @@ fn restore_future_version_rejected() {
         .arg(&sql)
         .output()
         .expect("failed to mutate snapshot payload");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let err = run_fail(&db, &["restore", "future-task"]);
     assert!(err.contains("unsupported future snapshot_version"), "{err}");

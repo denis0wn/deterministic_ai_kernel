@@ -26,9 +26,13 @@ jobs:
           with open("integrity-report.json") as f:
               data = json.load(f)
           assert data["ok"] is True
-          assert data["snapshot_version"] == 1
-          assert data["schema_version"] == 1
-          assert data["created_at_present"] is True
-          assert data["state_hash_present"] is True
-          assert data["state_present"] is True
+          assert data["schema_version"] == "cli-json-v1"
+          assert data["command"] == "integrity-json"
+          report = data["report"]
+          assert report["ok"] is True
+          assert report["snapshot_version"] == 1
+          assert report["schema_version"] == 1
+          assert report["created_at_present"] is True
+          assert report["state_hash_present"] is True
+          assert report["state_present"] is True
           PY

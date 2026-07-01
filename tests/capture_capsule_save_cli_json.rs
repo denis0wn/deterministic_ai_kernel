@@ -10,7 +10,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
@@ -37,15 +40,20 @@ fn capture_capsule_save_json_reports_saved_capsule() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
     bus.append_event(
         "task-capture-json",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
-    let (out, success) = run_kernel(&db, &["capture-capsule-save", "task-capture-json", "--json"]);
+    let (out, success) = run_kernel(
+        &db,
+        &["capture-capsule-save", "task-capture-json", "--json"],
+    );
     assert!(success, "capture-capsule-save failed: {}", out);
 
     let parsed: Value = serde_json::from_str(&out).expect(&out);
@@ -55,7 +63,10 @@ fn capture_capsule_save_json_reports_saved_capsule() {
     assert_eq!(parsed["report"]["task_id"], "task-capture-json");
     assert_eq!(parsed["report"]["valid"], true);
     assert_eq!(parsed["report"]["events"], 2);
-    assert!(parsed["report"]["capsule_id"].as_str().unwrap().starts_with("capsule-"));
+    assert!(parsed["report"]["capsule_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("capsule-"));
 
     let _ = fs::remove_file(&db);
     let _ = fs::remove_file(format!("{}-wal", db.display()));

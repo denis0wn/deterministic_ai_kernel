@@ -20,7 +20,11 @@ fn artifacts_dir() -> PathBuf {
     repo_root().join("artifacts")
 }
 
-fn run_graph(pipeline: &str, reuse_plan: Option<&Path>, verdict_out: &Path) -> std::process::ExitStatus {
+fn run_graph(
+    pipeline: &str,
+    reuse_plan: Option<&Path>,
+    verdict_out: &Path,
+) -> std::process::ExitStatus {
     let mut cmd = Command::new("./scripts/run_verification_graph.sh");
     cmd.current_dir(repo_root())
         .arg("--pipeline")
@@ -37,11 +41,25 @@ fn run_graph(pipeline: &str, reuse_plan: Option<&Path>, verdict_out: &Path) -> s
 
 fn mutate_plan_fingerprint(src: &Path, dst: &Path) {
     let text = fs::read_to_string(src).expect("failed to read plan");
-    let mut json: serde_json::Value = serde_json::from_str(&text).expect("failed to parse plan json");
+    let mut json: serde_json::Value =
+        serde_json::from_str(&text).expect("failed to parse plan json");
+    json["environment_id"] = serde_json::Value::String(
+        "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+    );
     json["environment"]["environment_fingerprint"] = serde_json::Value::String(
         "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
     );
-    fs::write(dst, serde_json::to_string_pretty(&json).unwrap() + "\n").expect("failed to write mutated plan");
+    json["environment"]["environment_id"] = serde_json::Value::String(
+        "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+    );
+    json["plan_id"] = serde_json::Value::String(
+        "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+    );
+    json["plan_hash"] = serde_json::Value::String(
+        "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+    );
+    fs::write(dst, serde_json::to_string_pretty(&json).unwrap() + "\n")
+        .expect("failed to write mutated plan");
 }
 
 #[test]
@@ -92,8 +110,12 @@ fn reuse_policy_matrix() {
     fs::create_dir_all(artifacts_dir()).unwrap();
 
     for case in cases {
-        let base_plan = artifacts_dir().join(format!("verification_plan.{}.json", case.reuse_pipeline));
-        let fake_plan = artifacts_dir().join(format!("verification_plan.{}.invalid_env.json", case.reuse_pipeline));
+        let base_plan =
+            artifacts_dir().join(format!("verification_plan.{}.json", case.reuse_pipeline));
+        let fake_plan = artifacts_dir().join(format!(
+            "verification_plan.{}.invalid_env.json",
+            case.reuse_pipeline
+        ));
         let verdict = artifacts_dir().join(format!("verification_verdict.{}.json", case.name));
 
         let warmup = Command::new("./scripts/run_verification_graph.sh")
@@ -103,7 +125,10 @@ fn reuse_policy_matrix() {
             .arg("--plan-out")
             .arg(&base_plan)
             .arg("--out")
-            .arg(artifacts_dir().join(format!("verification_verdict.{}.warmup.json", case.reuse_pipeline)))
+            .arg(artifacts_dir().join(format!(
+                "verification_verdict.{}.warmup.json",
+                case.reuse_pipeline
+            )))
             .status()
             .expect("failed to create baseline plan");
 
@@ -136,25 +161,47 @@ fn reuse_policy_matrix() {
             .unwrap_or_else(|e| panic!("failed to parse verdict for case {}: {e}", case.name));
 
         assert_eq!(
-            verdict_json["status"],
-            case.expect_status,
+            verdict_json["status"], case.expect_status,
             "unexpected status for case {}",
             case.name
         );
 
         if case.expect_status == "ok" {
-            assert_eq!(verdict_json["ok"], true, "expected ok=true for case {}", case.name);
-            assert!(verdict_json["plan_hash"].is_string(), "missing plan_hash for case {}", case.name);
+            assert_eq!(
+                verdict_json["ok"], true,
+                "expected ok=true for case {}",
+                case.name
+            );
             assert!(
-                verdict_json["environment_fingerprint"].is_string(),
-                "missing environment_fingerprint for case {}",
+                verdict_json["plan_id"].is_string(),
+                "missing plan_id for case {}",
+                case.name
+            );
+            assert!(
+                verdict_json["plan_hash"].is_string(),
+                "missing plan_hash for case {}",
+                case.name
+            );
+            assert!(
+                verdict_json["environment_id"].is_string(),
+                "missing environment_id for case {}",
+                case.name
+            );
+            assert!(
+                verdict_json["execution_order_id"].is_string(),
+                "missing execution_order_id for case {}",
                 case.name
             );
         } else if case.expect_status == "invalid_reuse" {
-            assert_eq!(verdict_json["ok"], false, "expected ok=false for case {}", case.name);
+            assert_eq!(
+                verdict_json["ok"], false,
+                "expected ok=false for case {}",
+                case.name
+            );
             assert!(
-                verdict_json["reason"] == "plan_hash matched but environment_fingerprint differed"
-                    || verdict_json["reason"] == "selected_pipeline differed for reuse-plan",
+                verdict_json["reason"] == "plan_id differed: environment_id differed"
+                    || verdict_json["reason"]
+                        == "plan_id differed: selected_pipeline differed for reuse-plan",
                 "unexpected reason for case {}: {:?}",
                 case.name,
                 verdict_json["reason"]

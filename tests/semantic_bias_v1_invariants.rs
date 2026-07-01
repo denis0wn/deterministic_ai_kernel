@@ -23,7 +23,11 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .output()
         .unwrap();
 
-    assert!(emit.status.success(), "emit stderr=\n{}", String::from_utf8_lossy(&emit.stderr));
+    assert!(
+        emit.status.success(),
+        "emit stderr=\n{}",
+        String::from_utf8_lossy(&emit.stderr)
+    );
 
     let latest = Command::new(bin)
         .env("KERNEL_DB_PATH", db)
@@ -31,7 +35,11 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .output()
         .unwrap();
 
-    assert!(latest.status.success(), "latest stderr=\n{}", String::from_utf8_lossy(&latest.stderr));
+    assert!(
+        latest.status.success(),
+        "latest stderr=\n{}",
+        String::from_utf8_lossy(&latest.stderr)
+    );
 
     let latest_stdout = String::from_utf8(latest.stdout).unwrap();
     let line = latest_stdout.lines().next().expect("expected a row");
@@ -39,7 +47,12 @@ fn semantic_bias_v1_contract_remains_sealed() {
     let payload: Value = serde_json::from_str(cols[5]).unwrap();
 
     let expected_keys = ["version", "seed", "preferred", "weights", "lines"];
-    let mut keys: Vec<&str> = payload.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let mut keys: Vec<&str> = payload
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
     let mut expected = expected_keys.to_vec();
     keys.sort_unstable();
     expected.sort_unstable();
@@ -51,7 +64,11 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .output()
         .unwrap();
 
-    assert!(snapshot.status.success(), "snapshot stderr=\n{}", String::from_utf8_lossy(&snapshot.stderr));
+    assert!(
+        snapshot.status.success(),
+        "snapshot stderr=\n{}",
+        String::from_utf8_lossy(&snapshot.stderr)
+    );
 
     let restore = Command::new(bin)
         .env("KERNEL_DB_PATH", db)
@@ -59,7 +76,11 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .output()
         .unwrap();
 
-    assert!(restore.status.success(), "restore stderr=\n{}", String::from_utf8_lossy(&restore.stderr));
+    assert!(
+        restore.status.success(),
+        "restore stderr=\n{}",
+        String::from_utf8_lossy(&restore.stderr)
+    );
 
     let restore_stdout = String::from_utf8(restore.stdout).unwrap();
     let json_line = restore_stdout

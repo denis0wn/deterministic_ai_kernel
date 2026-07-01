@@ -11,7 +11,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
@@ -39,27 +42,33 @@ fn compare_capsules_explain_reports_divergent_reason() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
     bus.append_event(
         "task-left",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     bus.append_event(
         "task-right",
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let left_capsule = build_replay_capsule(&bus, "task-left").unwrap();
     let right_capsule = build_replay_capsule(&bus, "task-right").unwrap();
     bus.save_replay_capsule(&left_capsule).unwrap();
     bus.save_replay_capsule(&right_capsule).unwrap();
 
-    let (out, success) = run_kernel(&db, &["compare-capsules", "task-left", "task-right", "--explain"]);
+    let (out, success) = run_kernel(
+        &db,
+        &["compare-capsules", "task-left", "task-right", "--explain"],
+    );
     assert!(success, "compare-capsules failed: {}", out);
     assert!(out.contains("status=divergent"), "{}", out);
     assert!(out.contains("explanation="), "{}", out);

@@ -1,26 +1,31 @@
 {
   "ok": false,
   "status": "invalid_reuse",
-  "reason": "plan_hash matched but environment_fingerprint differed",
-  "plan_id": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
-  "plan_hash": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
-  "expected_environment_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
-  "actual_environment_fingerprint": "f773e9518327880ce6490fd1c33c4b4224950048cbbbe6dba4467e01b2274a1d",
+  "reason": "plan_id differed: environment_id differed",
+  "plan_id": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
+  "plan_hash": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
+  "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "expected_environment_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "actual_environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
   "graph_schema_version": 2,
   "selected_pipeline": "fast",
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
   "node_count": 0,
   "environment": {
-    "python": "3.14.3",
+    "python": "3.14.5",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
     "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+    "environment_fingerprint": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3"
+  },
+  "environment_debug": {
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
     "system": "Darwin",
     "release": "27.0.0",
     "machine": "arm64",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
-    "environment_fingerprint": "f773e9518327880ce6490fd1c33c4b4224950048cbbbe6dba4467e01b2274a1d"
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
   },
   "nodes": []
 }

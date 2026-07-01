@@ -1,6 +1,4 @@
-use deterministic_ai_kernel::kernel_types::{
-    ReplayCapsule, StateGraph, TrustContext, TrustLevel,
-};
+use deterministic_ai_kernel::kernel_types::{ReplayCapsule, StateGraph, TrustContext, TrustLevel};
 use serde_json::json;
 use std::collections::BTreeMap;
 

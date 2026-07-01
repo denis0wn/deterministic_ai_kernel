@@ -86,7 +86,10 @@ fn replay_long_chain_matches_after_snapshot_restore() {
         let _ = run(&db, &["restore", task]);
         let after_restore = latest_payload(&db, task, step);
 
-        assert_eq!(direct, after_restore, "replay drift for task={task} step={step}");
+        assert_eq!(
+            direct, after_restore,
+            "replay drift for task={task} step={step}"
+        );
         assert_eq!(direct["version"], 1);
         assert_eq!(direct["seed"], 0);
 

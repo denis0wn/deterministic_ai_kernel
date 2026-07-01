@@ -13,7 +13,10 @@ fn live_lmstudio_is_reachable_when_explicitly_enabled() {
     assert!(!models.is_empty(), "LM Studio returned no models");
 
     let report = doctor().expect("doctor() should succeed against live LM Studio");
-    assert!(report.lm_studio_models >= 1, "expected at least one live model");
+    assert!(
+        report.lm_studio_models >= 1,
+        "expected at least one live model"
+    );
     assert!(
         report.roles.iter().any(|r| r.role == "task_planning"),
         "task_planning role missing from doctor report"

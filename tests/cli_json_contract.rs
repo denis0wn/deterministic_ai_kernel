@@ -71,10 +71,7 @@ fn integrity_json_emits_valid_cli_json_contract() {
         .and_then(|v| v.as_object())
         .expect("report must be an object");
 
-    assert_eq!(
-        report.get("ok").and_then(|v| v.as_bool()),
-        Some(true)
-    );
+    assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
     assert_eq!(
         report.get("schema_version").and_then(|v| v.as_u64()),
         Some(1)

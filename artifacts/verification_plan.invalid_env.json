@@ -3,15 +3,26 @@
   "deterministic_order": "topological_then_priority_then_id_version",
   "environment": {
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
     "environment_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+    "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+    "python": "3.14.5",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)"
+  },
+  "environment_debug": {
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
     "machine": "arm64",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
-    "python": "3.14.3",
     "release": "27.0.0",
-    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
     "system": "Darwin"
   },
+  "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+  "execution_order": [
+    "integrity@v1",
+    "snapshot_version_matrix@v1",
+    "golden_replay_corpus@v1",
+    "scheduler_integration@v1"
+  ],
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
   "graph_schema_version": 2,
   "manifest_path": "docs/verification_graph.json",
   "ok": true,
@@ -79,10 +90,11 @@
       "version": "v1"
     }
   ],
-  "plan_generated_at_epoch": 1781183574,
-  "plan_hash": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
-  "plan_id": "2a9975d850d503233c649fe0b03748c7a2300358f4f0e45cb84b837f223e285d",
+  "plan_generated_at_epoch": 1782891319,
+  "plan_hash": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
+  "plan_id": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
   "selected_only": [],
   "selected_pipeline": "fast",
+  "spec_hash": "c24e1c5168616c6c45378a667bdfb10fed38498783565800b809f892d750d545",
   "total_cost": 17
 }

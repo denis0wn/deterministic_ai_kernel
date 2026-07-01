@@ -1,9 +1,11 @@
 {
   "ok": false,
   "status": "invalid_reuse",
-  "reason": "selected_pipeline differed for reuse-plan",
-  "plan_id": "54ff724ec42f9f6b458079b4c52a71621ea1ffb06598d822d33d91ee72bccf54",
-  "plan_hash": "54ff724ec42f9f6b458079b4c52a71621ea1ffb06598d822d33d91ee72bccf54",
+  "reason": "plan_id differed: selected_pipeline differed for reuse-plan",
+  "plan_id": "63fbd6d589956d53761d03079fec2553c71f6c4d04110fb9c0f6862746bea97b",
+  "plan_hash": "63fbd6d589956d53761d03079fec2553c71f6c4d04110fb9c0f6862746bea97b",
+  "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+  "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
   "expected_selected_pipeline": "fast",
   "actual_selected_pipeline": "deep",
   "graph_schema_version": 2,
@@ -12,15 +14,18 @@
   "deterministic_order": "topological_then_priority_then_id_version",
   "node_count": 0,
   "environment": {
-    "python": "3.14.3",
+    "python": "3.14.5",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
     "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+    "environment_fingerprint": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3"
+  },
+  "environment_debug": {
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
     "system": "Darwin",
     "release": "27.0.0",
     "machine": "arm64",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
-    "environment_fingerprint": "f773e9518327880ce6490fd1c33c4b4224950048cbbbe6dba4467e01b2274a1d"
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
   },
   "nodes": []
 }

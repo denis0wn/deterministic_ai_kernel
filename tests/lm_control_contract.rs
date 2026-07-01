@@ -27,7 +27,10 @@ fn dry_run_switch_output_schema_is_stable() {
     assert!(stdout.contains("DRY_RUN_THRESHOLD_GB="), "{stdout}");
     assert!(stdout.contains("DRY_RUN_FREE_GB="), "{stdout}");
     assert!(stdout.contains("DRY_RUN_MODEL_AVAILABLE="), "{stdout}");
-    assert!(stdout.contains("DRY_RUN_WOULD_WRITE=OPENAI_MODEL_TASK_PLANNING="), "{stdout}");
+    assert!(
+        stdout.contains("DRY_RUN_WOULD_WRITE=OPENAI_MODEL_TASK_PLANNING="),
+        "{stdout}"
+    );
     assert!(stdout.contains("DRY_RUN_OK_TO_SWITCH="), "{stdout}");
 }
 

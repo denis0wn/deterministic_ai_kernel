@@ -26,20 +26,28 @@ def command_output(argv):
     except Exception:
         return "unknown"
 
+def stable_hash(payload):
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
 def collect_environment():
-    env = {
+    strict = {
         "python": platform.python_version(),
         "cargo": command_output(["cargo", "--version"]),
         "rustc": command_output(["rustc", "--version"]),
+    }
+    debug = {
         "platform": platform.platform(),
         "system": platform.system(),
         "release": platform.release(),
         "machine": platform.machine(),
         "cwd": str(Path.cwd().resolve()),
     }
-    canonical = json.dumps(env, sort_keys=True, separators=(",", ":"))
-    env["environment_fingerprint"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    return env
+    environment_id = stable_hash(strict)
+    env = dict(strict)
+    env["environment_id"] = environment_id
+    env["environment_fingerprint"] = environment_id
+    return env, debug
 
 def load_manifest(path):
     with open(path) as f:
@@ -146,21 +154,30 @@ def canonical_order(selected_keys, by_key, versions_by_id):
         raise SystemExit("cycle detected during canonical ordering")
     return ordered
 
-def compute_plan_hash(ctx, args, ordered_keys, environment):
+def compute_spec_hash(ctx):
     manifest_canonical = json.dumps(ctx["manifest"], sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(manifest_canonical.encode("utf-8")).hexdigest()
+
+def compute_execution_order_id(ctx, ordered_keys):
+    return stable_hash({
+        "deterministic_order": ctx["deterministic_order"],
+        "ordered_keys": ordered_keys,
+    })
+
+def compute_plan_hash(ctx, args, ordered_keys, environment_id):
+    spec_hash = compute_spec_hash(ctx)
     payload = {
-        "manifest": json.loads(manifest_canonical),
+        "spec_hash": spec_hash,
         "graph_schema_version": ctx["graph_schema_version"],
         "selected_pipeline": args.pipeline,
         "selected_only": [x.strip() for x in args.only.split(",") if x.strip()],
         "deterministic_order": ctx["deterministic_order"],
         "ordered_keys": ordered_keys,
-        "environment_fingerprint": environment["environment_fingerprint"],
+        "environment_id": environment_id,
     }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return stable_hash(payload)
 
-def build_plan(ctx, args, environment):
+def build_plan(ctx, args, environment, environment_debug):
     nodes = ctx["nodes"]
     by_key = ctx["by_key"]
     versions_by_id = ctx["versions_by_id"]
@@ -179,12 +196,18 @@ def build_plan(ctx, args, environment):
         initial_keys = dependency_closure(pipeline_keys, by_key, versions_by_id)
 
     ordered_keys = canonical_order(initial_keys, by_key, versions_by_id)
-    plan_hash = compute_plan_hash(ctx, args, ordered_keys, environment)
+    environment_id = environment["environment_id"]
+    execution_order_id = compute_execution_order_id(ctx, ordered_keys)
+    plan_hash = compute_plan_hash(ctx, args, ordered_keys, environment_id)
 
     plan = {
         "ok": True,
         "plan_id": plan_hash,
         "plan_hash": plan_hash,
+        "spec_hash": compute_spec_hash(ctx),
+        "environment_id": environment_id,
+        "execution_order": ordered_keys,
+        "execution_order_id": execution_order_id,
         "graph_schema_version": ctx["graph_schema_version"],
         "default_pipeline": ctx["default_pipeline"],
         "selected_pipeline": args.pipeline,
@@ -193,6 +216,7 @@ def build_plan(ctx, args, environment):
         "manifest_path": args.manifest,
         "plan_generated_at_epoch": int(time.time()),
         "environment": environment,
+        "environment_debug": environment_debug,
         "ordered_nodes": [],
     }
 
@@ -227,8 +251,50 @@ def write_verdict(verdict, verdict_out):
     print(f"verdict_file={verdict_path} bytes={verdict_path.stat().st_size}")
     print(json.dumps(verdict, indent=2))
 
+def plan_environment_id(plan):
+    return plan.get("environment_id") or plan.get("environment", {}).get("environment_id") or plan.get("environment", {}).get("environment_fingerprint")
+
+def plan_execution_order_id(plan):
+    return plan.get("execution_order_id")
+
 def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
     prior = load_json(reuse_plan_path)
+
+    prior_plan_id = prior.get("plan_id") or prior.get("plan_hash")
+    current_plan_id = current_plan.get("plan_id")
+
+    prior_plan_hash = prior.get("plan_hash") or prior.get("plan_id")
+    current_plan_hash = current_plan.get("plan_hash")
+
+    if prior_plan_hash == current_plan_hash:
+        prior_fp = prior.get("environment_fingerprint") or prior.get("environment", {}).get("environment_fingerprint")
+        current_fp = current_plan.get("environment_fingerprint") or current_plan.get("environment", {}).get("environment_fingerprint")
+        if prior_fp != current_fp:
+            verdict = {
+                "ok": False,
+                "status": "invalid_reuse",
+                "reason": "plan_hash matched but environment_fingerprint differed",
+                "plan_id": current_plan["plan_id"],
+                "plan_hash": current_plan["plan_hash"],
+                "environment_id": current_plan["environment_id"],
+                "execution_order_id": current_plan["execution_order_id"],
+                "expected_environment_fingerprint": prior_fp,
+                "actual_environment_fingerprint": current_fp,
+                "graph_schema_version": current_plan["graph_schema_version"],
+                "selected_pipeline": current_plan["selected_pipeline"],
+                "selected_only": current_plan["selected_only"],
+                "deterministic_order": current_plan["deterministic_order"],
+                "node_count": 0,
+                "environment": current_plan["environment"],
+                "environment_debug": current_plan["environment_debug"],
+                "nodes": [],
+            }
+            write_verdict(verdict, verdict_out)
+            raise SystemExit(2)
+        return
+
+    if prior_plan_id == current_plan_id:
+        return
 
     prior_pipeline = prior.get("selected_pipeline")
     current_pipeline = current_plan.get("selected_pipeline")
@@ -237,9 +303,11 @@ def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
         verdict = {
             "ok": False,
             "status": "invalid_reuse",
-            "reason": "selected_pipeline differed for reuse-plan",
+            "reason": "plan_id differed: selected_pipeline differed for reuse-plan",
             "plan_id": current_plan["plan_id"],
             "plan_hash": current_plan["plan_hash"],
+            "environment_id": current_plan["environment_id"],
+            "execution_order_id": current_plan["execution_order_id"],
             "expected_selected_pipeline": prior_pipeline,
             "actual_selected_pipeline": current_pipeline,
             "graph_schema_version": current_plan["graph_schema_version"],
@@ -248,33 +316,66 @@ def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
             "deterministic_order": current_plan["deterministic_order"],
             "node_count": 0,
             "environment": current_plan["environment"],
+            "environment_debug": current_plan["environment_debug"],
             "nodes": [],
         }
         write_verdict(verdict, verdict_out)
         raise SystemExit(2)
 
-    prior_env = prior.get("environment", {}).get("environment_fingerprint")
-    current_env = current_plan.get("environment", {}).get("environment_fingerprint")
+    prior_env = plan_environment_id(prior)
+    current_env = plan_environment_id(current_plan)
 
     if prior_env != current_env:
         verdict = {
             "ok": False,
             "status": "invalid_reuse",
-            "reason": "plan_hash matched but environment_fingerprint differed",
+            "reason": "plan_id differed: environment_id differed",
             "plan_id": current_plan["plan_id"],
             "plan_hash": current_plan["plan_hash"],
-            "expected_environment_fingerprint": prior_env,
-            "actual_environment_fingerprint": current_env,
+            "environment_id": current_plan["environment_id"],
+            "execution_order_id": current_plan["execution_order_id"],
+            "expected_environment_id": prior_env,
+            "actual_environment_id": current_env,
             "graph_schema_version": current_plan["graph_schema_version"],
             "selected_pipeline": current_plan["selected_pipeline"],
             "selected_only": current_plan["selected_only"],
             "deterministic_order": current_plan["deterministic_order"],
             "node_count": 0,
             "environment": current_plan["environment"],
+            "environment_debug": current_plan["environment_debug"],
             "nodes": [],
         }
         write_verdict(verdict, verdict_out)
         raise SystemExit(2)
+
+    prior_order = plan_execution_order_id(prior)
+    current_order = plan_execution_order_id(current_plan)
+    if prior_order != current_order:
+        reason = "plan_id differed: execution_order_id differed"
+    else:
+        reason = "plan_id differed"
+
+    verdict = {
+        "ok": False,
+        "status": "invalid_reuse",
+        "reason": reason,
+        "plan_id": current_plan["plan_id"],
+        "plan_hash": current_plan["plan_hash"],
+        "environment_id": current_plan["environment_id"],
+        "execution_order_id": current_plan["execution_order_id"],
+        "expected_plan_id": prior_plan_id,
+        "actual_plan_id": current_plan_id,
+        "graph_schema_version": current_plan["graph_schema_version"],
+        "selected_pipeline": current_plan["selected_pipeline"],
+        "selected_only": current_plan["selected_only"],
+        "deterministic_order": current_plan["deterministic_order"],
+        "node_count": 0,
+        "environment": current_plan["environment"],
+        "environment_debug": current_plan["environment_debug"],
+        "nodes": [],
+    }
+    write_verdict(verdict, verdict_out)
+    raise SystemExit(2)
 
 def run_plan(plan, by_key, verdict_out):
     start = time.time()
@@ -310,7 +411,10 @@ def run_plan(plan, by_key, verdict_out):
     verdict = {
         "ok": all(r["status"] == "passed" for r in results),
         "status": "ok" if all(r["status"] == "passed" for r in results) else "failed",
+        "plan_id": plan["plan_id"],
         "plan_hash": plan["plan_hash"],
+        "environment_id": plan["environment_id"],
+        "execution_order_id": plan["execution_order_id"],
         "environment_fingerprint": plan["environment"]["environment_fingerprint"],
         "graph_schema_version": plan["graph_schema_version"],
         "selected_pipeline": plan["selected_pipeline"],
@@ -319,6 +423,7 @@ def run_plan(plan, by_key, verdict_out):
         "graph_seconds": round(time.time() - start, 3),
         "node_count": len(results),
         "environment": plan["environment"],
+        "environment_debug": plan["environment_debug"],
         "nodes": results,
     }
 
@@ -339,8 +444,8 @@ def main():
     if args.pipeline is None:
         args.pipeline = ctx["default_pipeline"]
 
-    environment = collect_environment()
-    plan = build_plan(ctx, args, environment)
+    environment, environment_debug = collect_environment()
+    plan = build_plan(ctx, args, environment, environment_debug)
 
     plan_path = Path(args.plan_out)
     plan_path.parent.mkdir(parents=True, exist_ok=True)

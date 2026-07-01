@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS leases (
     worker_id TEXT NOT NULL,
     acquired_generation BIGINT NOT NULL,
     expires_at_generation BIGINT NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('active','expired','released'))
+    state TEXT NOT NULL CHECK(state IN ('active','expired','released','completed'))
 );
 
 CREATE TABLE IF NOT EXISTS state_snapshots (

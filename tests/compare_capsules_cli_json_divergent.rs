@@ -14,7 +14,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
@@ -42,34 +45,51 @@ fn compare_capsules_json_reports_divergent_with_diff_payload() {
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
     bus.append_event(
         "task-left-json",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     bus.append_event(
         "task-right-json",
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     let left_capsule = build_replay_capsule(&bus, "task-left-json").unwrap();
     let right_capsule = build_replay_capsule(&bus, "task-right-json").unwrap();
     bus.save_replay_capsule(&left_capsule).unwrap();
     bus.save_replay_capsule(&right_capsule).unwrap();
 
-    let (out, success) = run_kernel(&db, &["compare-capsules", "task-left-json", "task-right-json", "--json"]);
+    let (out, success) = run_kernel(
+        &db,
+        &[
+            "compare-capsules",
+            "task-left-json",
+            "task-right-json",
+            "--json",
+        ],
+    );
     assert!(success, "compare-capsules failed: {}", out);
 
     let parsed: Value = serde_json::from_str(&out).expect(&out);
     assert_cli_json_v1(&parsed, "compare-capsules");
     assert_eq!(parsed["report"]["status"], "divergent");
-    assert!(parsed["report"]["explanation"].as_str().unwrap().contains("event_ids differ"));
-    assert!(!parsed["report"]["diff"]["event_ids"]["left_only"].as_array().unwrap().is_empty());
+    assert!(parsed["report"]["explanation"]
+        .as_str()
+        .unwrap()
+        .contains("event_ids differ"));
+    assert!(!parsed["report"]["diff"]["event_ids"]["left_only"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     let _ = fs::remove_file(&db);
     let _ = fs::remove_file(format!("{}-wal", db.display()));

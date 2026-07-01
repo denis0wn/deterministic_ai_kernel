@@ -1,5 +1,5 @@
-use deterministic_ai_kernel::workflow::semantic::bias::{SemanticBias, BIAS_VERSION_V1};
 use deterministic_ai_kernel::workflow::contract::StepKind;
+use deterministic_ai_kernel::workflow::semantic::bias::{SemanticBias, BIAS_VERSION_V1};
 use std::collections::BTreeMap;
 
 #[test]
