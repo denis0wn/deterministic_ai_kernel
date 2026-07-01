@@ -2,9 +2,20 @@ use serde_json::Value;
 use std::fs;
 use std::process::Command;
 
+
+fn unique_db(label: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    std::env::temp_dir()
+        .join(format!("dak_{}_{}.db", label, nanos))
+        .display()
+        .to_string()
+}
+
 #[test]
 fn semantic_bias_v1_survives_replay_paths() {
-    let db = "semantic_bias_replay_test.db";
+    let db_s = unique_db("semantic_bias_replay");
+    let db = db_s.as_str();
     let _ = fs::remove_file(db);
     let _ = fs::remove_file(format!("{db}-wal"));
     let _ = fs::remove_file(format!("{db}-shm"));
