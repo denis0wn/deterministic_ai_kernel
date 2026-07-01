@@ -10,11 +10,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install SQLite
-        run: sudo apt-get update && sudo apt-get install -y sqlite3
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Run integration tests
-        run: cargo test --test scheduler_integration -- --nocapture
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+
+      - name: Run all tests
+        run: cargo test --all -- --nocapture
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-debug
+          path: |
+            artifacts/
+            *.json
+          if-no-files-found: ignore

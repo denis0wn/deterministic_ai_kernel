@@ -34,14 +34,29 @@ pub fn assert_cli_json_v1<T: CliJsonInput + ?Sized>(input: &T, expected_command:
     value
 }
 
+fn unique_db(label: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    std::env::temp_dir()
+        .join(format!("dak_cli_json_{}_{}.db", label, nanos))
+        .display()
+        .to_string()
+}
+
 #[test]
 fn integrity_json_emits_valid_cli_json_contract() {
     let bin = env!("CARGO_BIN_EXE_deterministic_ai_kernel");
+    let db = unique_db("integrity");
 
     let output = Command::new(bin)
         .arg("integrity-json")
+        .env("KERNEL_DB_PATH", &db)
         .output()
         .expect("failed to run integrity-json");
+
+    let _ = std::fs::remove_file(&db);
+    let _ = std::fs::remove_file(format!("{db}-wal"));
+    let _ = std::fs::remove_file(format!("{db}-shm"));
 
     assert!(
         output.status.success(),
