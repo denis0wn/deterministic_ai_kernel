@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "semantic_bias_v1.schema.json",
+  "title": "SemanticBiasV1",
+  "description": "Serialised form of a deterministic semantic step-ordering bias artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "seed", "preferred", "weights"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["v1"],
+      "description": "Schema version. Only 'v1' is accepted; unknown versions are hard-rejected."
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Replay seed used to derive the bias ordering."
+    },
+    "preferred": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "TightenPlannerPrompt",
+          "NormalizePlannerOutput",
+          "AddLlmFallbackHandling",
+          "AddPlannerTestCoverage",
+          "ValidatePlannerOutput",
+          "AnalyzeTask",
+          "PlanExecution",
+          "ExecuteChanges",
+          "ReadRepository",
+          "LocateBug",
+          "PatchCode",
+          "RunTests",
+          "ValidatePatch"
+        ]
+      },
+      "description": "Ordered list of StepKind names in preferred execution order."
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "TightenPlannerPrompt",
+        "NormalizePlannerOutput",
+        "AddLlmFallbackHandling",
+        "AddPlannerTestCoverage",
+        "ValidatePlannerOutput",
+        "AnalyzeTask",
+        "PlanExecution",
+        "ExecuteChanges",
+        "ReadRepository",
+        "LocateBug",
+        "PatchCode",
+        "RunTests",
+        "ValidatePatch"
+      ],
+      "properties": {
+        "TightenPlannerPrompt":  { "type": "number", "minimum": 0 },
+        "NormalizePlannerOutput": { "type": "number", "minimum": 0 },
+        "AddLlmFallbackHandling": { "type": "number", "minimum": 0 },
+        "AddPlannerTestCoverage": { "type": "number", "minimum": 0 },
+        "ValidatePlannerOutput":  { "type": "number", "minimum": 0 },
+        "AnalyzeTask":            { "type": "number", "minimum": 0 },
+        "PlanExecution":          { "type": "number", "minimum": 0 },
+        "ExecuteChanges":         { "type": "number", "minimum": 0 },
+        "ReadRepository":         { "type": "number", "minimum": 0 },
+        "LocateBug":              { "type": "number", "minimum": 0 },
+        "PatchCode":              { "type": "number", "minimum": 0 },
+        "RunTests":               { "type": "number", "minimum": 0 },
+        "ValidatePatch":          { "type": "number", "minimum": 0 }
+      },
+      "description": "Map of StepKind to weight. All 13 kinds required, all weights non-negative."
+    }
+  }
+}
