@@ -4,6 +4,7 @@ use std::process::Command;
 fn doctor_json_contract_is_stable() {
     let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("DAK_LM_BACKEND", "mock")
+        .env("DAK_FREE_GB_OVERRIDE", "64")
         .args(["doctor-json"])
         .output()
         .unwrap();
