@@ -3,6 +3,7 @@ use std::process::Command;
 fn run(args: &[&str]) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("DAK_LM_BACKEND", "mock")
+        .env("DAK_FREE_GB_OVERRIDE", "16.0")
         .args(args)
         .output()
         .unwrap();
