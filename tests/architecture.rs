@@ -97,7 +97,7 @@ fn event_bus_is_persistence_only() {
     }
 }
 
-// ── Phase 2 #6: domain→interface boundary ────────────────────────────────────
+// ── Phase 2 #6: domain→interface boundary ────────────────────────────────────────
 
 #[test]
 fn domain_must_not_import_cli_json() {
@@ -112,7 +112,7 @@ fn domain_must_not_import_cli_json() {
         let content = read_file(file);
         assert!(
             !has_import(&content, "cli_json"),
-            "{} must not import cli_json (domain\u2192interface violation)",
+            "{} must not import cli_json (domain→interface violation)",
             file
         );
     }
@@ -131,7 +131,7 @@ fn domain_must_not_import_api() {
         let content = read_file(file);
         assert!(
             !has_import(&content, "api"),
-            "{} must not import api (domain\u2192interface violation)",
+            "{} must not import api (domain→interface violation)",
             file
         );
     }
@@ -147,15 +147,15 @@ fn kernel_must_not_import_interface() {
         "src/kernel/core/effects.rs",
     ] {
         let content = read_file(file);
-        assert!(!has_import(&content, "cli_json"), "{} must not import cli_json (kernel\u2192interface)", file);
-        assert!(!has_import(&content, "api"),      "{} must not import api (kernel\u2192interface)", file);
+        assert!(!has_import(&content, "cli_json"), "{} must not import cli_json (kernel→interface)", file);
+        assert!(!has_import(&content, "api"),      "{} must not import api (kernel→interface)", file);
     }
 
     // Legacy locations: checked while they still exist
     for file in ["src/kernel_types.rs", "src/snapshot.rs"] {
         if let Some(content) = try_read_file(file) {
-            assert!(!has_import(&content, "cli_json"), "{} must not import cli_json (kernel\u2192interface)", file);
-            assert!(!has_import(&content, "api"),      "{} must not import api (kernel\u2192interface)", file);
+            assert!(!has_import(&content, "cli_json"), "{} must not import cli_json (kernel→interface)", file);
+            assert!(!has_import(&content, "api"),      "{} must not import api (kernel→interface)", file);
         }
     }
 }
@@ -169,22 +169,22 @@ fn kernel_must_not_import_domain() {
         "src/kernel/core/effects.rs",
     ] {
         let content = read_file(file);
-        assert!(!has_import(&content, "lm_control"),   "{} must not import lm_control (kernel\u2192domain)", file);
-        assert!(!has_import(&content, "model_registry"),"{} must not import model_registry (kernel\u2192domain)", file);
-        assert!(!has_import(&content, "embeddings"),   "{} must not import embeddings (kernel\u2192domain)", file);
+        assert!(!has_import(&content, "lm_control"),    "{} must not import lm_control (kernel→domain)", file);
+        assert!(!has_import(&content, "model_registry"),"{} must not import model_registry (kernel→domain)", file);
+        assert!(!has_import(&content, "embeddings"),    "{} must not import embeddings (kernel→domain)", file);
     }
 
     // Legacy locations
     for file in ["src/kernel_types.rs", "src/snapshot.rs"] {
         if let Some(content) = try_read_file(file) {
-            assert!(!has_import(&content, "lm_control"),   "{} must not import lm_control (kernel\u2192domain)", file);
-            assert!(!has_import(&content, "model_registry"),"{} must not import model_registry (kernel\u2192domain)", file);
-            assert!(!has_import(&content, "embeddings"),   "{} must not import embeddings (kernel\u2192domain)", file);
+            assert!(!has_import(&content, "lm_control"),    "{} must not import lm_control (kernel→domain)", file);
+            assert!(!has_import(&content, "model_registry"),"{} must not import model_registry (kernel→domain)", file);
+            assert!(!has_import(&content, "embeddings"),    "{} must not import embeddings (kernel→domain)", file);
         }
     }
 }
 
-// ── Phase 2B: invariant layer boundary ───────────────────────────────────────
+// ── Phase 2B: invariant layer boundary ──────────────────────────────────────
 //
 // kernel/invariant is allowed ONE upward reference: engine/event_bus.
 // It must not touch domain or interface.
@@ -197,15 +197,15 @@ fn invariant_layer_must_not_import_domain_or_interface() {
     }
     for entry in walkdir(invariant_dir) {
         let content = read_file(entry.to_str().unwrap());
-        assert!(!has_import(&content, "lm_control"),  "{:?} (invariant) must not import lm_control",  entry);
+        assert!(!has_import(&content, "lm_control"),   "{:?} (invariant) must not import lm_control",  entry);
         assert!(!has_import(&content, "model_registry"),"{:?} (invariant) must not import model_registry", entry);
-        assert!(!has_import(&content, "embeddings"),  "{:?} (invariant) must not import embeddings",  entry);
-        assert!(!has_import(&content, "cli_json"),    "{:?} (invariant) must not import cli_json",    entry);
-        assert!(!has_import(&content, "api"),         "{:?} (invariant) must not import api",         entry);
+        assert!(!has_import(&content, "embeddings"),   "{:?} (invariant) must not import embeddings",  entry);
+        assert!(!has_import(&content, "cli_json"),     "{:?} (invariant) must not import cli_json",    entry);
+        assert!(!has_import(&content, "api"),          "{:?} (invariant) must not import api",         entry);
     }
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────────
 
 fn walkdir(dir: &Path) -> Vec<std::path::PathBuf> {
     let mut out = vec![];
