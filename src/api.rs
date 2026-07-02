@@ -9,6 +9,48 @@ use crate::lm_control;
 use crate::replay::capsule::build_replay_capsule;
 use crate::snapshot;
 
+// ── CLI formatting facade (delegates to internal cli_json) ───────────────────
+
+/// Wrap a report in the standard CLI JSON envelope and print it.
+/// main.rs must use this instead of accessing cli_json directly.
+pub fn emit_json(command: &str, report: Value) {
+    crate::cli_json::emit_json(command, report);
+}
+
+/// Build the standard CLI JSON envelope without printing.
+pub fn command_report(command: &str, report: Value) -> Value {
+    crate::cli_json::command_report(command, report)
+}
+
+// ── lm_control facade ────────────────────────────────────────────────────────
+
+/// Print free memory stats to stdout.
+pub fn print_memory(threshold_gb: Option<f64>) -> Result<()> {
+    lm_control::print_memory(threshold_gb)
+}
+
+/// Print doctor report (text) to stdout.
+pub fn print_doctor_text() -> Result<()> {
+    lm_control::print_doctor_text()
+}
+
+/// Auto-route: verify role readiness and sync env.
+pub fn auto_route(role: &str) -> Result<()> {
+    lm_control::auto_route(role)
+}
+
+/// Switch model for role, with memory and availability checks.
+pub fn safe_switch(role: &str) -> Result<()> {
+    lm_control::safe_switch(role)
+}
+
+/// Dry-run switch: print what would happen without writing env.
+pub fn dry_run_switch(role: &str) -> Result<()> {
+    lm_control::dry_run_switch(role)
+}
+
+// ── Existing public API ──────────────────────────────────────────────────────
+
 pub fn integrity_json_report(db: &str) -> Value {
     use std::fs;
 

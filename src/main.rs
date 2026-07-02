@@ -1,23 +1,20 @@
-mod api;
-mod cli_json;
-mod embeddings;
-mod execution;
-mod leases;
-mod llm;
-mod lm_control;
-mod model_manifest;
-mod model_registry;
-mod scheduler;
-mod worker;
-mod workflow;
-
-// Migrated modules — accessed via lib re-exports
+// All modules are declared in src/lib.rs.
+// main.rs accesses them exclusively via the library's public API.
+use deterministic_ai_kernel::api;
 use deterministic_ai_kernel::effects;
+use deterministic_ai_kernel::embeddings;
 use deterministic_ai_kernel::event_bus;
+use deterministic_ai_kernel::execution;
+use deterministic_ai_kernel::leases;
+use deterministic_ai_kernel::llm;
+use deterministic_ai_kernel::model_manifest;
+use deterministic_ai_kernel::model_registry;
 use deterministic_ai_kernel::replay;
+use deterministic_ai_kernel::scheduler;
 use deterministic_ai_kernel::snapshot;
+use deterministic_ai_kernel::worker;
+use deterministic_ai_kernel::workflow;
 
-use cli_json::emit_json;
 use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
@@ -111,48 +108,8 @@ fn reset_db(db: &str) {
     println!("RESET OK");
 }
 
-fn integrity_json_report(db: &str) -> serde_json::Value {
-    use serde_json::{json, Value};
-    use std::fs;
-
-    if std::path::Path::new(db).exists() {
-        let _ = fs::remove_file(db);
-        let _ = fs::remove_file(format!("{db}-wal"));
-        let _ = fs::remove_file(format!("{db}-shm"));
-    }
-
-    let conn = Connection::open(db).unwrap();
-    conn.execute_batch(include_str!("../event_bus/schema.sql"))
-        .unwrap();
-    drop(conn);
-
-    snapshot::rebuild_snapshot(db, "integrity-task", true).unwrap();
-    snapshot::restore_snapshot(db, "integrity-task", true).unwrap();
-
-    let conn = Connection::open(db).unwrap();
-    let payload: String = conn
-        .query_row(
-            "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
-            ["integrity-task"],
-            |r| r.get(0),
-        )
-        .unwrap();
-
-    let parsed: Value = serde_json::from_str(&payload).unwrap();
-
-    json!({
-        "ok": true,
-        "snapshot_version": parsed.get("snapshot_version").and_then(|v| v.as_u64()).unwrap_or(0),
-        "schema_version": parsed.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(0),
-        "created_at_present": parsed.get("created_at").and_then(|v| v.as_u64()).is_some(),
-        "state_hash_present": parsed.get("state_hash").and_then(|v| v.as_u64()).is_some(),
-        "state_present": parsed.get("state").and_then(|v| v.as_object()).is_some(),
-        "task_id": parsed.get("task_id").cloned().unwrap_or(Value::Null)
-    })
-}
-
 fn run_integrity(db: &str) {
-    let report = integrity_json_report(db);
+    let report = api::integrity_json_report(db);
 
     assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
     assert_eq!(
@@ -180,8 +137,8 @@ fn run_integrity(db: &str) {
 }
 
 fn run_integrity_json(db: &str) {
-    let report = crate::api::integrity_json_report(db);
-    emit_json("integrity-json", report);
+    let report = api::integrity_json_report(db);
+    api::emit_json("integrity-json", report);
 }
 
 fn vacuum_db(db: &str) {
@@ -260,15 +217,15 @@ async fn main() {
             }
 
             if json_output {
-                match crate::api::capture_capsule_save_json(db, &task_id) {
-                    Ok(report) => emit_json("capture-capsule-save", report),
+                match api::capture_capsule_save_json(db, &task_id) {
+                    Ok(report) => api::emit_json("capture-capsule-save", report),
                     Err(e) => {
                         eprintln!("capture-capsule-save failed: {e}");
                         std::process::exit(1);
                     }
                 }
             } else {
-                match crate::api::capture_capsule_save_text(db, &task_id) {
+                match api::capture_capsule_save_text(db, &task_id) {
                     Ok(report) => {
                         println!(
                             "CAPTURE_CAPSULE_SAVE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}",
@@ -300,15 +257,15 @@ async fn main() {
             }
 
             if json_output {
-                match crate::api::compare_capsules_json(db, &left, &right) {
-                    Ok(report) => emit_json("compare-capsules", report),
+                match api::compare_capsules_json(db, &left, &right) {
+                    Ok(report) => api::emit_json("compare-capsules", report),
                     Err(e) => {
                         eprintln!("compare-capsules failed: {e}");
                         std::process::exit(1);
                     }
                 }
             } else {
-                match crate::api::compare_capsules_text(db, &left, &right) {
+                match api::compare_capsules_text(db, &left, &right) {
                     Ok(report) => {
                         if explain {
                             println!(
@@ -343,15 +300,15 @@ async fn main() {
             }
 
             if json_output {
-                match crate::api::replay_capsule_json(db, &task_id) {
-                    Ok(report) => emit_json("replay-capsule", report),
+                match api::replay_capsule_json(db, &task_id) {
+                    Ok(report) => api::emit_json("replay-capsule", report),
                     Err(e) => {
                         eprintln!("replay-capsule failed: {e}");
                         std::process::exit(1);
                     }
                 }
             } else {
-                match crate::api::replay_capsule_text(db, &task_id) {
+                match api::replay_capsule_text(db, &task_id) {
                     Ok(report) => {
                         println!(
                             "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",
@@ -710,7 +667,7 @@ async fn main() {
         }
 
         Some("doctor") => {
-            match lm_control::print_doctor_text() {
+            match api::print_doctor_text() {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("doctor failed: {e}");
@@ -728,8 +685,8 @@ async fn main() {
             return;
         }
         Some("doctor-json") => {
-            match crate::api::doctor_json() {
-                Ok(report) => emit_json("doctor-json", report),
+            match api::doctor_json() {
+                Ok(report) => api::emit_json("doctor-json", report),
                 Err(e) => {
                     eprintln!("doctor-json failed: {e}");
                     std::process::exit(1);
@@ -746,7 +703,7 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            match lm_control::auto_route(&role) {
+            match api::auto_route(&role) {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("auto-route failed: {e}");
@@ -767,7 +724,7 @@ async fn main() {
         }
         Some("memory") => {
             let threshold = args.get(2).and_then(|s| s.parse::<f64>().ok());
-            match lm_control::print_memory(threshold) {
+            match api::print_memory(threshold) {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("memory failed: {e}");
@@ -785,9 +742,9 @@ async fn main() {
 
             let dry_run = args.iter().any(|a| a == "--dry-run");
             let result = if dry_run {
-                lm_control::dry_run_switch(&role)
+                api::dry_run_switch(&role)
             } else {
-                lm_control::safe_switch(&role)
+                api::safe_switch(&role)
             };
 
             match result {
@@ -1013,7 +970,7 @@ async fn main() {
 
 #[cfg(test)]
 mod integrity_json_tests {
-    use super::*;
+    use deterministic_ai_kernel::api;
 
     #[test]
     fn integrity_json_report_has_expected_shape() {
@@ -1028,7 +985,8 @@ mod integrity_json_tests {
             .to_string_lossy()
             .to_string();
 
-        let report = cli_json::command_report("integrity-json", integrity_json_report(&db));
+        let raw = api::integrity_json_report(&db);
+        let report = api::command_report("integrity-json", raw);
 
         assert_eq!(report.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(
