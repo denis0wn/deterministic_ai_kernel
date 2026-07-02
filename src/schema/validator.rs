@@ -33,3 +33,72 @@ pub fn validate_semantic_bias_v1(value: &Value) -> Result<(), SchemaValidationEr
         Err(SchemaValidationError(errors.join("; ")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valid_bias() -> serde_json::Value {
+        json!({
+            "version": "v1",
+            "seed": 42,
+            "preferred": ["AnalyzeTask", "PlanExecution"],
+            "weights": {
+                "TightenPlannerPrompt": 1.0,
+                "NormalizePlannerOutput": 1.0,
+                "AddLlmFallbackHandling": 1.0,
+                "AddPlannerTestCoverage": 1.0,
+                "ValidatePlannerOutput": 1.0,
+                "AnalyzeTask": 1.0,
+                "PlanExecution": 1.0,
+                "ExecuteChanges": 1.0,
+                "ReadRepository": 1.0,
+                "LocateBug": 1.0,
+                "PatchCode": 1.0,
+                "RunTests": 1.0,
+                "ValidatePatch": 1.0
+            }
+        })
+    }
+
+    #[test]
+    fn accepts_valid_bias() {
+        assert!(validate_semantic_bias_v1(&valid_bias()).is_ok());
+    }
+
+    #[test]
+    fn rejects_unknown_weights_key() {
+        let mut v = valid_bias();
+        v["weights"]["banana"] = json!(1.0);
+        assert!(validate_semantic_bias_v1(&v).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_preferred_value() {
+        let mut v = valid_bias();
+        v["preferred"] = json!(["foobar"]);
+        assert!(validate_semantic_bias_v1(&v).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_version() {
+        let mut v = valid_bias();
+        v["version"] = json!("v2");
+        assert!(validate_semantic_bias_v1(&v).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_required_field() {
+        let mut v = valid_bias();
+        v.as_object_mut().unwrap().remove("seed");
+        assert!(validate_semantic_bias_v1(&v).is_err());
+    }
+
+    #[test]
+    fn rejects_additional_properties() {
+        let mut v = valid_bias();
+        v["unknown_field"] = json!("oops");
+        assert!(validate_semantic_bias_v1(&v).is_err());
+    }
+}

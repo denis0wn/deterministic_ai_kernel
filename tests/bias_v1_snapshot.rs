@@ -1,5 +1,5 @@
 use deterministic_ai_kernel::workflow::contract::StepKind;
-use deterministic_ai_kernel::workflow::semantic::bias::{SemanticBias, BIAS_VERSION_V1};
+use deterministic_ai_kernel::workflow::semantic::bias::{BiasVersion, SemanticBias};
 use std::collections::BTreeMap;
 
 #[test]
@@ -9,7 +9,7 @@ fn bias_v1_explain_snapshot_is_stable() {
     weights.insert("ExecuteChanges".to_string(), 0.42);
 
     let bias = SemanticBias {
-        version: BIAS_VERSION_V1,
+        version: BiasVersion::V1,
         seed: 123,
         preferred: vec![StepKind::AnalyzeTask],
         weights,
@@ -17,10 +17,10 @@ fn bias_v1_explain_snapshot_is_stable() {
 
     let rendered = bias.explain_lines().join("\n");
     let expected = [
-        "bias.version=1".to_string(),
+        "bias.version=v1".to_string(),
         "bias.seed=123".to_string(),
         "bias.preferred=[AnalyzeTask]".to_string(),
-        "bias.meta.version=1".to_string(),
+        "bias.meta.version=v1".to_string(),
         "bias.meta.seed=123".to_string(),
         "bias.meta.preferred_count=1".to_string(),
         "bias.meta.weighted_count=2".to_string(),
@@ -40,7 +40,7 @@ fn bias_v1_weight_lines_are_stably_sorted() {
     weights.insert("ExecuteChanges".to_string(), 0.40);
 
     let bias = SemanticBias {
-        version: BIAS_VERSION_V1,
+        version: BiasVersion::V1,
         seed: 7,
         preferred: vec![StepKind::AnalyzeTask],
         weights,
