@@ -3,6 +3,7 @@ use deterministic_ai_kernel::lm_control::doctor;
 #[test]
 fn doctor_contract_is_stable() {
     std::env::set_var("DAK_LM_BACKEND", "mock");
+    std::env::set_var("DAK_FREE_GB_OVERRIDE", "16.0");
     let report = doctor().unwrap();
 
     assert!(report.free_gb > 0.0);
