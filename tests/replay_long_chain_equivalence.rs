@@ -90,7 +90,7 @@ fn replay_long_chain_matches_after_snapshot_restore() {
             direct, after_restore,
             "replay drift for task={task} step={step}"
         );
-        assert_eq!(direct["version"], 1);
+        assert_eq!(direct["version"], "v1");
         assert_eq!(direct["seed"], 0);
 
         cleanup(&db);

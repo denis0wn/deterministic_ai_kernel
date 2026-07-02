@@ -55,7 +55,7 @@ fn latest_bias_artifact_cli_prints_latest_bias_row() {
     assert_eq!(cols[4], "semantic_bias_v1");
 
     let payload: Value = serde_json::from_str(cols[5]).unwrap();
-    assert_eq!(payload["version"], 1);
+    assert_eq!(payload["version"], "v1");
     assert_eq!(
         payload["preferred"],
         serde_json::json!(["AnalyzeTask", "ExecuteChanges"])

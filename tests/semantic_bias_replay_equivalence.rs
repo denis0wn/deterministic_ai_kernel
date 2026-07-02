@@ -77,7 +77,7 @@ fn semantic_bias_v1_is_identical_across_repeat_emits() {
         first_payload, second_payload,
         "payload drift detected between identical runs"
     );
-    assert_eq!(first_payload["version"], 1);
+    assert_eq!(first_payload["version"], "v1");
     assert_eq!(first_payload["seed"], 0);
     assert_eq!(
         first_payload["preferred"],

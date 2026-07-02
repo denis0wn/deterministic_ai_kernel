@@ -111,7 +111,7 @@ fn seed_matrix_replay_equivalence_matches_after_snapshot_restore() {
         let after_restore = latest_payload(&db, task, step);
 
         assert_eq!(direct, after_restore, "drift for task={task} step={step}");
-        assert_eq!(direct["version"], 1);
+        assert_eq!(direct["version"], "v1");
         assert_eq!(direct["seed"], 0);
 
         cleanup(&db);
@@ -141,7 +141,7 @@ fn seed_matrix_long_chain_replay_equivalence_matches_after_snapshot_restore() {
         let after_restore = latest_payload(&db, &task, &step);
 
         assert_eq!(direct, after_restore, "drift for task={task} step={step}");
-        assert_eq!(direct["version"], 1);
+        assert_eq!(direct["version"], "v1");
         assert_eq!(direct["seed"], 0);
 
         cleanup(&db);

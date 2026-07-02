@@ -74,7 +74,7 @@ fn semantic_bias_same_steps_same_payload_across_task_ids() {
         let p2 = emit_and_fetch(&db2, &task, &step, steps);
 
         assert_eq!(p1, p2, "drift detected for step_set={i} steps={steps:?}");
-        assert_eq!(p1["version"], 1, "version must be 1 for step_set={i}");
+        assert_eq!(p1["version"], "v1", "version must be v1 for step_set={i}");
 
         cleanup(&db1);
         cleanup(&db2);

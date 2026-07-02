@@ -56,7 +56,7 @@ fn semantic_bias_v1_survives_replay_paths() {
     assert_eq!(cols[4], "semantic_bias_v1");
 
     let payload: Value = serde_json::from_str(cols[5]).unwrap();
-    assert_eq!(payload["version"], 1);
+    assert_eq!(payload["version"], "v1");
     assert_eq!(payload["seed"], 0);
     assert_eq!(
         payload["preferred"],

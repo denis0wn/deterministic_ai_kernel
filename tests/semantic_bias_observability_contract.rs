@@ -112,7 +112,7 @@ fn semantic_bias_observability_contract_is_consistent() {
     assert_eq!(restore_payload["task_id"], "task-observe");
     assert!(restore_payload["artifacts"]["semantic_bias_v1"].is_number());
 
-    assert_eq!(latest_payload["version"], 1);
+    assert_eq!(latest_payload["version"], "v1");
     assert_eq!(latest_payload["seed"], 0);
     assert_eq!(
         latest_payload["preferred"],
@@ -123,7 +123,7 @@ fn semantic_bias_observability_contract_is_consistent() {
         .as_array()
         .expect("lines must be an array");
     let rendered: Vec<&str> = lines.iter().map(|v| v.as_str().unwrap()).collect();
-    assert!(rendered.contains(&"bias.version=1"));
+    assert!(rendered.contains(&"bias.version=v1"));
     assert!(rendered.contains(&"bias.meta.preferred_count=3"));
     assert!(rendered.contains(&"bias.weight.AnalyzeTask=1.000000"));
     assert!(rendered.contains(&"bias.weight.ExecuteChanges=1.000000"));

@@ -50,6 +50,9 @@ pub fn memory_snapshot() -> Result<String> {
 }
 
 pub fn free_memory_gb_estimate() -> Result<f64> {
+    if let Ok(val) = std::env::var("DAK_FREE_GB_OVERRIDE") {
+        return Ok(val.trim().parse::<f64>()?);
+    }
     let output = Command::new("sh")
         .arg("-lc")
         .arg(
