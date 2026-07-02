@@ -11,6 +11,7 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 dotenvy = "0.15"
+jsonschema = { version = "0.46.8", default-features = false, features = ["resolve-file"] }
 
 [[bin]]
 name = "deterministic_ai_kernel"
