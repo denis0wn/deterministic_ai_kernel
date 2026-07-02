@@ -37,24 +37,8 @@ pub mod api;
 pub(crate) mod cli_json;
 
 // ── Deprecated compatibility re-exports (remove in cleanup commit) ──
-
-#[deprecated(
-    since = "phase-2b",
-    note = "Use crate::kernel::core::types instead — bridge removed in cleanup commit"
-)]
-pub use kernel::core::types as kernel_types;
-
-#[deprecated(
-    since = "phase-2b",
-    note = "Use crate::kernel::core::snapshot instead — bridge removed in cleanup commit"
-)]
-pub use kernel::core::snapshot;
-
-#[deprecated(
-    since = "phase-2b",
-    note = "Use crate::kernel::core::effects instead — bridge removed in cleanup commit"
-)]
-pub use kernel::core::effects;
+// effects: REMOVED — zero users after api.rs migration (commit-F)
+// snapshot: REMOVED — zero users after api.rs migration (commit-F)
 
 #[deprecated(
     since = "phase-2b",
@@ -67,3 +51,9 @@ pub use engine::event_bus;
     note = "Use crate::kernel::invariant::replay instead — bridge removed in cleanup commit"
 )]
 pub use kernel::invariant::replay;
+
+#[deprecated(
+    since = "phase-2b",
+    note = "Use crate::kernel::core::types instead — bridge removed in cleanup commit"
+)]
+pub use kernel::core::types as kernel_types;

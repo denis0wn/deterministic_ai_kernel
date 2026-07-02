@@ -3,11 +3,11 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use crate::cli_json::comparison_report;
-use crate::event_bus;
-use crate::kernel_types::ReplayCapsule;
+use crate::engine::event_bus;
+use crate::kernel::core::snapshot;
+use crate::kernel::core::types::ReplayCapsule;
 use crate::lm_control;
 use crate::replay::capsule::build_replay_capsule;
-use crate::snapshot;
 
 // ── CLI formatting facade (delegates to internal cli_json) ───────────────────
 
