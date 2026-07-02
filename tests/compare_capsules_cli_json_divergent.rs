@@ -21,15 +21,19 @@ fn unique_db_path(test_name: &str) -> PathBuf {
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
-    let out = Command::new("cargo")
-        .args(["run", "--quiet", "--"])
+    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db.as_os_str())
         .args(args)
         .output()
         .expect("failed to run kernel");
 
-    let text =
-        String::from_utf8_lossy(&out.stdout).to_string();
+
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let text = if let Some(pos) = raw.find(|c| c == '{' || c == '[') {
+        raw[pos..].trim_end().to_string()
+    } else {
+        raw.trim().to_string()
+    };
     (text, out.status.success())
 }
 
@@ -67,6 +71,7 @@ fn compare_capsules_json_reports_divergent_with_diff_payload() {
     let right_capsule = build_replay_capsule(&bus, "task-right-json").unwrap();
     bus.save_replay_capsule(&left_capsule).unwrap();
     bus.save_replay_capsule(&right_capsule).unwrap();
+    drop(bus);
 
     let (out, success) = run_kernel(
         &db,
