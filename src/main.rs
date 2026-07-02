@@ -1,28 +1,26 @@
 // All modules are declared in src/lib.rs.
 // main.rs accesses them exclusively via the library's public API.
 use deterministic_ai_kernel::api;
-use deterministic_ai_kernel::effects;
 use deterministic_ai_kernel::embeddings;
-use deterministic_ai_kernel::event_bus;
+use deterministic_ai_kernel::engine::event_bus;
 use deterministic_ai_kernel::execution;
+use deterministic_ai_kernel::kernel::core::effects::execute_effects;
+use deterministic_ai_kernel::kernel::core::snapshot::{rebuild_snapshot, restore_snapshot};
 use deterministic_ai_kernel::leases;
 use deterministic_ai_kernel::llm;
 use deterministic_ai_kernel::model_manifest;
 use deterministic_ai_kernel::model_registry;
-use deterministic_ai_kernel::replay;
+use deterministic_ai_kernel::kernel::invariant::replay;
 use deterministic_ai_kernel::scheduler;
-use deterministic_ai_kernel::snapshot;
 use deterministic_ai_kernel::worker;
 use deterministic_ai_kernel::workflow;
 
-use effects::execute_effects;
 use execution::runtime::Runtime;
 use leases::{expire_leases, seed_demo_leases};
 use replay::capsule::build_replay_capsule;
 use replay::engine::replay_validate;
 use rusqlite::Connection;
 use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
-use snapshot::{rebuild_snapshot, restore_snapshot};
 use std::fs;
 use workflow::compiler::Workflow;
 
