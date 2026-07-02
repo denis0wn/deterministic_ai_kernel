@@ -12,7 +12,6 @@ use crate::replay::capsule::build_replay_capsule;
 // ── CLI formatting facade (delegates to internal cli_json) ───────────────────
 
 /// Wrap a report in the standard CLI JSON envelope and print it.
-/// main.rs must use this instead of accessing cli_json directly.
 pub fn emit_json(command: &str, report: Value) {
     crate::cli_json::emit_json(command, report);
 }
@@ -25,14 +24,32 @@ pub fn command_report(command: &str, report: Value) -> Value {
 // ── lm_control facade ────────────────────────────────────────────────────────
 
 /// Public mirror of lm_control::policy::SwitchPlan.
-/// Exposed so integration tests can inspect plan fields without
-/// touching the private lm_control module directly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchPlan {
     pub model: String,
     pub ram_class: String,
     pub threshold_gb: f64,
     pub free_gb: f64,
+}
+
+/// Public mirror of lm_control::DoctorRoleReport.
+#[derive(Debug, Clone)]
+pub struct DoctorRoleReport {
+    pub role: String,
+    pub manifest_model: String,
+    pub env_model: String,
+    pub in_sync: bool,
+    pub model_available: bool,
+    pub switch_ready: bool,
+    pub threshold_gb: f64,
+}
+
+/// Public mirror of lm_control::DoctorReport.
+#[derive(Debug, Clone)]
+pub struct DoctorReport {
+    pub free_gb: f64,
+    pub lm_studio_models: usize,
+    pub roles: Vec<DoctorRoleReport>,
 }
 
 /// Compute which model would be selected for a role given free_gb.
@@ -43,6 +60,33 @@ pub fn switch_plan(role: &str, free_gb: f64) -> Result<SwitchPlan> {
         ram_class: inner.ram_class,
         threshold_gb: inner.threshold_gb,
         free_gb: inner.free_gb,
+    })
+}
+
+/// List available models (mock or live LM Studio).
+pub fn list_models() -> Result<Vec<String>> {
+    lm_control::list_models()
+}
+
+/// Full doctor report with structured fields.
+pub fn doctor() -> Result<DoctorReport> {
+    let inner = lm_control::doctor()?;
+    Ok(DoctorReport {
+        free_gb: inner.free_gb,
+        lm_studio_models: inner.lm_studio_models,
+        roles: inner
+            .roles
+            .into_iter()
+            .map(|r| DoctorRoleReport {
+                role: r.role,
+                manifest_model: r.manifest_model,
+                env_model: r.env_model,
+                in_sync: r.in_sync,
+                model_available: r.model_available,
+                switch_ready: r.switch_ready,
+                threshold_gb: r.threshold_gb,
+            })
+            .collect(),
     })
 }
 
@@ -69,6 +113,11 @@ pub fn safe_switch(role: &str) -> Result<()> {
 /// Dry-run switch: print what would happen without writing env.
 pub fn dry_run_switch(role: &str) -> Result<()> {
     lm_control::dry_run_switch(role)
+}
+
+/// Doctor report as raw JSON Value (no CLI envelope).
+pub fn doctor_json() -> Result<Value> {
+    lm_control::doctor_json_report()
 }
 
 // ── Existing public API ──────────────────────────────────────────────────────
@@ -110,10 +159,6 @@ pub fn integrity_json_report(db: &str) -> Value {
         "state_present": parsed.get("state").and_then(|v| v.as_object()).is_some(),
         "task_id": parsed.get("task_id").cloned().unwrap_or(Value::Null)
     })
-}
-
-pub fn doctor_json() -> Result<Value> {
-    lm_control::doctor_json_report()
 }
 
 pub fn capture_capsule_save_json(db: &str, task_id: &str) -> Result<Value> {
