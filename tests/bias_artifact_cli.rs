@@ -60,13 +60,13 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
 
     let payload: Value = serde_json::from_str(cols[5]).unwrap();
 
-    assert_eq!(payload["version"], 1);
+    assert_eq!(payload["version"], "v1");
     assert_eq!(payload["seed"], 0);
     assert_eq!(payload["preferred"], serde_json::json!(["AnalyzeTask", "ExecuteChanges"]));
 
     let lines = payload["lines"].as_array().expect("lines must be an array");
     let rendered: Vec<&str> = lines.iter().map(|v| v.as_str().unwrap()).collect();
-    assert!(rendered.contains(&"bias.version=1"));
+    assert!(rendered.contains(&"bias.version=v1"));
     assert!(rendered.contains(&"bias.meta.weighted_count=2"));
     assert!(rendered.contains(&"bias.weight.AnalyzeTask=1.000000"));
     assert!(rendered.contains(&"bias.weight.ExecuteChanges=1.000000"));
