@@ -1,9 +1,25 @@
 {
   "name": "semantic_bias_v1",
   "commands": [
-    ["emit-bias-artifact", "task-replay", "step-replay", "AnalyzeTask", "ExecuteChanges", "RunTests"],
-    ["latest-bias-artifact", "task-replay", "step-replay"]
+    [
+      "emit-bias-artifact",
+      "task-replay",
+      "step-replay",
+      "AnalyzeTask",
+      "ExecuteChanges",
+      "RunTests"
+    ],
+    [
+      "latest-bias-artifact",
+      "task-replay",
+      "step-replay"
+    ]
   ],
-  "expect_substrings": ["semantic_bias_v1", "\"version\":1"],
-  "expected_artifact_refs": ["semantic_bias_v1"]
+  "expect_substrings": [
+    "semantic_bias_v1",
+    "\"version\":\"v1\""
+  ],
+  "expected_artifact_refs": [
+    "semantic_bias_v1"
+  ]
 }

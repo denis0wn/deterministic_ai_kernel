@@ -1,12 +1,36 @@
 {
   "name": "duplicated_events",
   "commands": [
-    ["emit-bias-artifact", "dup-task", "dup-step", "AnalyzeTask", "ExecuteChanges", "RunTests"],
-    ["emit-bias-artifact", "dup-task", "dup-step", "AnalyzeTask", "ExecuteChanges", "RunTests"],
-    ["latest-bias-artifact", "dup-task", "dup-step"]
+    [
+      "emit-bias-artifact",
+      "dup-task",
+      "dup-step",
+      "AnalyzeTask",
+      "ExecuteChanges",
+      "RunTests"
+    ],
+    [
+      "emit-bias-artifact",
+      "dup-task",
+      "dup-step",
+      "AnalyzeTask",
+      "ExecuteChanges",
+      "RunTests"
+    ],
+    [
+      "latest-bias-artifact",
+      "dup-task",
+      "dup-step"
+    ]
   ],
-  "expect_substrings": ["EMIT_BIAS_ARTIFACT_OK", "semantic_bias_v1", "\"version\":1"],
-  "expected_artifact_refs": ["semantic_bias_v1"],
+  "expect_substrings": [
+    "EMIT_BIAS_ARTIFACT_OK",
+    "semantic_bias_v1",
+    "\"version\":\"v1\""
+  ],
+  "expected_artifact_refs": [
+    "semantic_bias_v1"
+  ],
   "expect_failure": false,
   "expect_failure_substrings": []
 }
