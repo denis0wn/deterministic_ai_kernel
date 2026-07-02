@@ -1,4 +1,3 @@
-use jsonschema::JSONSchema;
 use serde_json::Value;
 use std::fmt;
 
@@ -20,14 +19,17 @@ pub fn validate_semantic_bias_v1(value: &Value) -> Result<(), SchemaValidationEr
     let schema: Value = serde_json::from_str(SEMANTIC_BIAS_V1_SCHEMA)
         .expect("semantic_bias_v1.schema.json is not valid JSON");
 
-    let compiled = JSONSchema::compile(&schema)
+    let compiled = jsonschema::validator_for(&schema)
         .expect("semantic_bias_v1.schema.json failed to compile");
 
-    let result = compiled.validate(value);
-    if let Err(errors) = result {
-        let messages: Vec<String> = errors.map(|e| e.to_string()).collect();
-        return Err(SchemaValidationError(messages.join("; ")));
-    }
+    let errors: Vec<String> = compiled
+        .iter_errors(value)
+        .map(|e| e.to_string())
+        .collect();
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(SchemaValidationError(errors.join("; ")))
+    }
 }

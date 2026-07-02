@@ -9,6 +9,7 @@ pub mod model_registry;
 pub mod replay;
 pub mod scheduler;
 pub mod snapshot;
+pub mod schema;
 pub mod workflow;
 
 pub mod model_manifest;

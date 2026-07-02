@@ -1,3 +1,4 @@
+mod schema;
 mod api;
 mod cli_json;
 mod effects;

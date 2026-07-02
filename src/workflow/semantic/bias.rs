@@ -16,7 +16,7 @@ impl std::fmt::Display for BiasVersion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SemanticBias {
     pub version: BiasVersion,
     pub seed: u64,
@@ -71,4 +71,16 @@ pub struct BiasMetadata {
     pub seed: u64,
     pub preferred_count: usize,
     pub weighted_count: usize,
+}
+
+impl SemanticBias {
+    pub fn to_json(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    pub fn from_json(value: &serde_json::Value) -> Result<Self, Box<dyn std::error::Error>> {
+        crate::schema::validator::validate_semantic_bias_v1(value)?;
+        let bias: Self = serde_json::from_value(value.clone())?;
+        Ok(bias)
+    }
 }
