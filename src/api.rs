@@ -24,6 +24,28 @@ pub fn command_report(command: &str, report: Value) -> Value {
 
 // ── lm_control facade ────────────────────────────────────────────────────────
 
+/// Public mirror of lm_control::policy::SwitchPlan.
+/// Exposed so integration tests can inspect plan fields without
+/// touching the private lm_control module directly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchPlan {
+    pub model: String,
+    pub ram_class: String,
+    pub threshold_gb: f64,
+    pub free_gb: f64,
+}
+
+/// Compute which model would be selected for a role given free_gb.
+pub fn switch_plan(role: &str, free_gb: f64) -> Result<SwitchPlan> {
+    let inner = lm_control::policy::switch_plan(role, free_gb)?;
+    Ok(SwitchPlan {
+        model: inner.model,
+        ram_class: inner.ram_class,
+        threshold_gb: inner.threshold_gb,
+        free_gb: inner.free_gb,
+    })
+}
+
 /// Print free memory stats to stdout.
 pub fn print_memory(threshold_gb: Option<f64>) -> Result<()> {
     lm_control::print_memory(threshold_gb)
