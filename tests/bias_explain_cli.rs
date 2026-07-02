@@ -11,10 +11,10 @@ fn bias_explain_cli_prints_stable_lines() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     let expected = [
-        "bias.version=1",
+        "bias.version=v1",
         "bias.seed=0",
         "bias.preferred=[AnalyzeTask, ExecuteChanges]",
-        "bias.meta.version=1",
+        "bias.meta.version=v1",
         "bias.meta.seed=0",
         "bias.meta.preferred_count=2",
         "bias.meta.weighted_count=2",
