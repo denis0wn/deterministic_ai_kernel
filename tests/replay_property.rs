@@ -53,7 +53,7 @@ proptest! {
         let first  = emit_and_fetch(&db, &task, "step-idem", &step_refs);
         let second = emit_and_fetch(&db, &task, "step-idem", &step_refs);
         prop_assert_eq!(&first, &second);
-        prop_assert_eq!(&first["version"], 1);
+        prop_assert_eq!(&first["version"], "v1");
         prop_assert_eq!(&first["seed"], 0);
         cleanup(&db);
     }
@@ -104,7 +104,7 @@ proptest! {
         let db = unique_db(&task); cleanup(&db);
         let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
         let payload = emit_and_fetch(&db, &task, "step-batch", &step_refs);
-        prop_assert_eq!(&payload["version"], 1);
+        prop_assert_eq!(&payload["version"], "v1");
         prop_assert_eq!(&payload["seed"], 0);
         let weights = payload["weights"].as_object().expect("weights must be object");
         prop_assert!(!weights.is_empty());
