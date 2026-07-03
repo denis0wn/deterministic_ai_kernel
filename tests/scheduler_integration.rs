@@ -581,3 +581,65 @@ fn double_commit_is_rejected_after_lease_reclaim() {
         "{double}"
     );
 }
+
+fn query_status(db: &std::path::Path, task_id: &str, step_id: &str) -> String {
+    let out = std::process::Command::new("sqlite3")
+        .arg(db)
+        .arg(format!(
+            "SELECT status FROM step_status WHERE task_id='{}' AND step_id='{}'",
+            task_id, step_id
+        ))
+        .output()
+        .expect("sqlite3 failed");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn complete_step_unlocks_dependent_steps() {
+    let db = unique_db_path("complete_step_unlocks_dependent_steps");
+    setup_task(&db, "task_unlock");
+
+    run(&db, &["schedule", "task_unlock"]);
+    assert_eq!(query_status(&db, "task_unlock", "00_analyze_task"), "dispatched");
+    assert_eq!(query_status(&db, "task_unlock", "01_plan_execution"), "pending");
+    assert_eq!(query_status(&db, "task_unlock", "02_execute_changes"), "pending");
+
+    run(&db, &["claim-worker", "task_unlock", "worker-A"]);
+    run(&db, &["start-step", "task_unlock", "worker-A", "00_analyze_task"]);
+    let out = run(&db, &["complete-step", "task_unlock", "worker-A", "00_analyze_task"]);
+    assert!(out.contains("STEP_COMPLETE_OK"), "{out}");
+
+    assert_eq!(query_status(&db, "task_unlock", "00_analyze_task"), "committed");
+    assert_ne!(
+        query_status(&db, "task_unlock", "01_plan_execution"),
+        "pending",
+        "dependent step must be unblocked after predecessor completes"
+    );
+    assert_eq!(query_status(&db, "task_unlock", "02_execute_changes"), "pending");
+
+    let _ = std::fs::remove_file(&db);
+}
+
+#[test]
+fn terminal_failure_rejects_step() {
+    let db = unique_db_path("terminal_failure_rejects_step");
+    setup_task(&db, "task_terminal");
+
+    run(&db, &["schedule", "task_terminal"]);
+    run(&db, &["claim-worker", "task_terminal", "worker-A"]);
+    run(&db, &["start-step", "task_terminal", "worker-A", "00_analyze_task"]);
+
+    let out = run(
+        &db,
+        &["fail-step", "task_terminal", "worker-A", "00_analyze_task", "fatal: unrecoverable error"],
+    );
+    assert!(out.contains("STEP_FAIL_OK"), "{out}");
+
+    assert_eq!(
+        query_status(&db, "task_terminal", "00_analyze_task"),
+        "rejected",
+        "terminal failure must set step to rejected"
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
