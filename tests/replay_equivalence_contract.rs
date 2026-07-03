@@ -114,7 +114,7 @@ fn contract_same_input_identical_snapshot_graph() {
             "[contract-1] snapshot graph drifted on second emit\ntag={}\nsteps={:?}",
             case.tag, case.steps
         );
-        assert_eq!(graph_a["version"], 1, "[contract-1] version must be 1");
+        assert_eq!(graph_a["version"], "v1", "[contract-1] version must be v1");
         assert_eq!(graph_a["seed"],    0, "[contract-1] seed must be 0");
 
         cleanup(&db);
@@ -205,7 +205,7 @@ fn contract_payload_schema_invariants() {
         emit(&db, &task, step, case.steps);
         let p = fetch_payload(&db, &task, step);
 
-        assert_eq!(p["version"], 1, "[contract-4] version tag={}", case.tag);
+        assert_eq!(p["version"], "v1", "[contract-4] version tag={}", case.tag);
         assert_eq!(p["seed"],    0, "[contract-4] seed    tag={}", case.tag);
 
         let weights = p["weights"].as_object()
