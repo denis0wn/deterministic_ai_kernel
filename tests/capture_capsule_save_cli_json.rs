@@ -17,8 +17,7 @@ fn unique_db_path(test_name: &str) -> PathBuf {
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
-    let out = Command::new("cargo")
-        .args(["run", "--quiet", "--"])
+    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db.as_os_str())
         .args(args)
         .output()

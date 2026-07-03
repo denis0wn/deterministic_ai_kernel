@@ -3,3 +3,6 @@ kernel.db
 kernel.db-shm
 kernel.db-wal
 .DS_Store
+.aider*
+.env
+.env
