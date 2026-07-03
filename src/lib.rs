@@ -14,7 +14,7 @@ pub mod workflow;
 
 pub mod model_manifest;
 
-pub(crate) mod lm_control;
+pub mod lm_control;
 
 pub mod embeddings;
 pub mod kernel_types;
