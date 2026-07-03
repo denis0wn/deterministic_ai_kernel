@@ -21,11 +21,11 @@ fn doctor_json_contract_is_stable() {
     assert!(stdout.contains("\"roles\""), "{stdout}");
     assert!(stdout.contains("\"task_planning\""), "{stdout}");
     assert!(
-        stdout.contains("\"manifest_model\": \"huihui-gemma-4-e2b-it-abliterated-mlx\""),
+        stdout.contains("\"manifest_model\":\"huihui-gemma-4-e2b-it-abliterated-mlx\""),
         "{stdout}"
     );
-    assert!(stdout.contains("\"threshold_gb\": 6.0"), "{stdout}");
-    assert!(stdout.contains("\"model_available\": true"), "{stdout}");
-    assert!(stdout.contains("\"switch_ready\": true"), "{stdout}");
-    assert!(stdout.contains("\"in_sync\": true"), "{stdout}");
+    assert!(stdout.contains("\"threshold_gb\":6.0"), "{stdout}");
+    assert!(stdout.contains("\"model_available\":true"), "{stdout}");
+    assert!(stdout.contains("\"switch_ready\":true"), "{stdout}");
+    assert!(stdout.contains("\"in_sync\":true"), "{stdout}");
 }
