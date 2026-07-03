@@ -433,7 +433,6 @@ pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) ->
         params![lease_id, worker_id],
     )?;
 
-    crate::scheduler::unlock_ready_steps(&tx, task_id)?;
     tx.commit()?;
 
     println!("STEP_COMPLETE_OK");

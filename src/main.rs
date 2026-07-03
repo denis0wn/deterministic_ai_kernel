@@ -974,6 +974,7 @@ async fn main() {
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
             let step_id = args.get(4).map(|s| s.as_str()).expect("step id required");
             worker::complete_step(db, task_id, worker_id, step_id).unwrap();
+            scheduler::unlock_ready_steps_by_db(db, task_id).unwrap();
             return;
         }
         Some("fail-step") => {
