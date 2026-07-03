@@ -1,0 +1,17 @@
+{
+  "name": "lm_control_doctor",
+  "commands": [
+    [
+      "doctor-json"
+    ]
+  ],
+  "expect_substrings": [
+    "\"command\":\"doctor-json\"",
+    "\"ok\":true",
+    "\"schema_version\":\"cli-json-v1\"",
+    "\"free_gb\":",
+    "\"switch_ready\":",
+    "\"in_sync\":"
+  ],
+  "expected_artifact_refs": []
+}

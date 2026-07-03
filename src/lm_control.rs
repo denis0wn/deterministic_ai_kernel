@@ -88,9 +88,8 @@ pub fn list_models() -> Result<Vec<String>> {
             .collect());
     }
 
-    let output = Command::new("sh")
-        .arg("-lc")
-        .arg("curl -s http://127.0.0.1:1234/v1/models")
+    let output = Command::new("curl")
+        .args(["-s", "http://127.0.0.1:1234/v1/models"])
         .output()?;
 
     if !output.status.success() {

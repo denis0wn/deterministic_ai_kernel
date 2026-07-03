@@ -108,15 +108,9 @@ pub fn seed_dependencies(db: &str, task_id: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
-    let conn = Connection::open(db)?;
-    seed_dependencies(db, task_id)?;
-
-    conn.execute(
-        "UPDATE step_status SET status = 'pending' WHERE task_id = ?1",
-        [task_id],
-    )?;
-
+/// Replays all step events from `event_log` onto `step_status` / `leases`.
+/// Idempotent: call after resetting statuses to 'pending'.
+fn replay_events(conn: &Connection, task_id: &str) -> Result<()> {
     let mut stmt = conn.prepare(
         "SELECT step_id, event_type, payload
          FROM event_log
@@ -208,7 +202,12 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
-    let all_steps = ordered_step_ids(&conn, task_id)?;
+    Ok(())
+}
+
+/// Unlocks all pending steps whose dependencies are fully committed, marking them 'ready'.
+pub(crate) fn unlock_ready_steps(conn: &Connection, task_id: &str) -> Result<()> {
+    let all_steps = ordered_step_ids(conn, task_id)?;
 
     for step_id in &all_steps {
         let current: String = conn.query_row(
@@ -265,6 +264,21 @@ pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+pub fn reconcile(db: &str, task_id: &str) -> Result<()> {
+    let conn = Connection::open(db)?;
+    seed_dependencies(db, task_id)?;
+
+    conn.execute(
+        "UPDATE step_status SET status = 'pending' WHERE task_id = ?1",
+        [task_id],
+    )?;
+
+    replay_events(&conn, task_id)?;
+    unlock_ready_steps(&conn, task_id)?;
+
     let mut status: BTreeMap<String, String> = BTreeMap::new();
     let mut stmt = conn.prepare(
         "SELECT step_id, status
@@ -295,154 +309,9 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         [task_id],
     )?;
 
-    {
-        let mut stmt = tx.prepare(
-            "SELECT step_id, event_type, payload
-             FROM event_log
-             WHERE task_id = ?1 AND step_id IS NOT NULL
-             ORDER BY causal_unit_id, sequence_in_unit, id",
-        )?;
-        let rows = stmt.query_map([task_id], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?;
 
-        for row in rows.filter_map(|r| r.ok()) {
-            let (step_id, event_type, payload) = row;
-
-            match event_type.as_str() {
-                "STEP_COMPLETED" => {
-                    tx.execute(
-                        "UPDATE step_status SET status = 'committed'
-                         WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id],
-                    )?;
-                    tx.execute(
-                        "UPDATE leases
-                         SET state = 'completed'
-                         WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
-                        params![task_id, step_id],
-                    )?;
-                }
-                "STEP_FAILED" => {
-                    tx.execute(
-                        "UPDATE step_status SET status = ?3
-                         WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id, failed_step_status_from_payload(&payload)],
-                    )?;
-                    tx.execute(
-                        "UPDATE leases
-                         SET state = 'released'
-                         WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
-                        params![task_id, step_id],
-                    )?;
-                }
-                "STEP_DISPATCHED" => {
-                    let current: String = tx.query_row(
-                        "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id],
-                        |r| r.get(0),
-                    )?;
-                    if !status_outcome(&current)
-                        .as_ref()
-                        .map(terminal_outcome)
-                        .unwrap_or(false)
-                    {
-                        tx.execute(
-                            "UPDATE step_status SET status = 'dispatched'
-                             WHERE task_id = ?1 AND step_id = ?2",
-                            params![task_id, step_id],
-                        )?;
-                    }
-                }
-                "LEASE_EXPIRED" => {
-                    let current: String = tx.query_row(
-                        "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id],
-                        |r| r.get(0),
-                    )?;
-                    if !status_outcome(&current)
-                        .as_ref()
-                        .map(terminal_outcome)
-                        .unwrap_or(false)
-                    {
-                        tx.execute(
-                            "UPDATE step_status SET status = 'pending'
-                             WHERE task_id = ?1 AND step_id = ?2",
-                            params![task_id, step_id],
-                        )?;
-                        tx.execute(
-                            "UPDATE leases
-                             SET state = 'expired'
-                             WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
-                            params![task_id, step_id],
-                        )?;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let all_steps = ordered_step_ids(&tx, task_id)?;
-
-    for step_id in &all_steps {
-        let current: String = tx.query_row(
-            "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-            params![task_id, step_id],
-            |r| r.get(0),
-        )?;
-
-        if status_outcome(&current)
-            .as_ref()
-            .map(terminal_outcome)
-            .unwrap_or(false)
-            || current == "dispatched"
-            || current == "ready"
-        {
-            continue;
-        }
-
-        let dep_total: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM step_dependencies
-             WHERE task_id = ?1 AND step_id = ?2",
-            params![task_id, step_id],
-            |r| r.get(0),
-        )?;
-
-        if dep_total == 0 {
-            tx.execute(
-                "UPDATE step_status SET status = 'ready'
-                 WHERE task_id = ?1 AND step_id = ?2 AND status = 'pending'",
-                params![task_id, step_id],
-            )?;
-            continue;
-        }
-
-        let dep_satisfied: i64 = tx.query_row(
-            "SELECT COUNT(*)
-             FROM step_dependencies d
-             JOIN step_status s
-               ON s.task_id = d.task_id
-              AND s.step_id = d.depends_on_step_id
-             WHERE d.task_id = ?1
-               AND d.step_id = ?2
-               AND s.status = 'committed'",
-            params![task_id, step_id],
-            |r| r.get(0),
-        )?;
-
-        if dep_satisfied == dep_total {
-            tx.execute(
-                "UPDATE step_status SET status = 'ready'
-                 WHERE task_id = ?1 AND step_id = ?2 AND status = 'pending'",
-                params![task_id, step_id],
-            )?;
-        }
-    }
+    replay_events(&tx, task_id)?;
+    unlock_ready_steps(&tx, task_id)?;
 
     let ready: Vec<String> = ordered_step_ids(&tx, task_id)?
         .into_iter()

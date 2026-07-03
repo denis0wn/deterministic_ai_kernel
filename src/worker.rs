@@ -338,11 +338,16 @@ pub fn fail_step(
         ],
     )?;
 
+    let new_status = match outcome {
+        StepOutcome::RetryableFailure | StepOutcome::Blocked => "pending",
+        _ => "rejected",
+    };
+
     tx.execute(
         "UPDATE step_status
-         SET status = 'rejected'
+         SET status = ?3
          WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
-        params![task_id, step_id],
+        params![task_id, step_id, new_status],
     )?;
 
     tx.execute(

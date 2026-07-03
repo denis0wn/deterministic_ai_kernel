@@ -11,7 +11,7 @@ pub fn print_json_report(report: &Value) {
 
 pub fn emit_json(command: &str, report: Value) {
     let envelope = command_report(command, report);
-    print_json_report(&envelope);
+    println!("{}", serde_json::to_string(&envelope).unwrap());
 }
 
 pub fn command_report(command: &str, report: Value) -> Value {
