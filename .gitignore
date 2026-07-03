@@ -8,3 +8,4 @@ kernel.db-wal
 .env
 .env
 .env
+artifacts/
