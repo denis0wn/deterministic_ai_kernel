@@ -18,3 +18,4 @@ pub mod lm_control;
 
 pub mod embeddings;
 pub mod kernel_types;
+pub mod registry;
