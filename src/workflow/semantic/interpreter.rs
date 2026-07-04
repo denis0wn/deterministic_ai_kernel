@@ -10,7 +10,7 @@ impl SeedInterpreter {
         for (idx, kind) in domain.iter().enumerate() {
             let mixed = mix(seed, idx as u64);
             let weight = 1.0 + ((mixed % 10_000) as f64 / 10_000.0);
-            bias.weights.insert(kind.clone(), weight);
+            bias.weights.insert(format!("{:?}", kind), weight);
         }
 
         let mut ranked: Vec<(u64, StepKind)> = domain
@@ -23,7 +23,7 @@ impl SeedInterpreter {
         ranked.sort_by_key(|(rank, _)| *rank);
         bias.preferred = ranked.into_iter().map(|(_, kind)| kind).collect();
 
-        bias.constrained_to(domain)
+        bias
     }
 }
 
