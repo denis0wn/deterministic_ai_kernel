@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 use crate::kernel_types::ReplayCapsule;
 use serde_json::Value;
 

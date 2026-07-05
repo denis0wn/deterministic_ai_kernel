@@ -1,9 +1,11 @@
+#![allow(dead_code, unused)]
 use anyhow::Result;
 use serde_json::json;
 
 use crate::embeddings::embed_text;
 use crate::event_bus::EventBus;
 use crate::workflow::contract::{Step, StepKind};
+use crate::workflow::pipeline::PipelineOutput;
 
 pub struct Runtime {
     bus: EventBus,
@@ -33,6 +35,14 @@ impl Runtime {
             )?;
         }
 
+        Ok(())
+    }
+
+    /// Execute all steps from a PipelineOutput, publishing events for each.
+    pub async fn execute_plan(&self, output: &PipelineOutput) -> anyhow::Result<()> {
+        for ps in &output.steps {
+            self.execute_step(&output.task_id, &ps.step).await?;
+        }
         Ok(())
     }
 }

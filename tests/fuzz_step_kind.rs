@@ -5,15 +5,19 @@
 ///   - duplicate-heavy sequences normalize correctly
 ///   - random invalid sequences: system rejects or normalizes, never diverges
 use proptest::prelude::*;
+use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::fs;
 
 fn unique_db(label: &str) -> String {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_fuzz_{}_{}.db", label, nanos))
-        .display().to_string()
+        .display()
+        .to_string()
 }
 
 fn cleanup(db: &str) {
@@ -24,7 +28,9 @@ fn cleanup(db: &str) {
 
 /// Run emit-bias-artifact with arbitrary step strings.
 /// Must either succeed (exit 0) or reject gracefully (exit 1, no panic/signal).
-fn sanitize(s: &str) -> String { s.replace('\0', "") }
+fn sanitize(s: &str) -> String {
+    s.replace('\0', "")
+}
 
 fn run_emit(db: &str, task: &str, step: &str, steps: &[String]) -> std::process::Output {
     let mut args = vec!["emit-bias-artifact", task, step];
@@ -100,16 +106,40 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 const VALID: &[&str] = &[
-    "TightenPlannerPrompt", "NormalizePlannerOutput", "AddLlmFallbackHandling",
-    "AddPlannerTestCoverage", "ValidatePlannerOutput",
-    "AnalyzeTask", "PlanExecution", "ExecuteChanges",
-    "ReadRepository", "LocateBug", "PatchCode", "RunTests", "ValidatePatch",
+    "TightenPlannerPrompt",
+    "NormalizePlannerOutput",
+    "AddLlmFallbackHandling",
+    "AddPlannerTestCoverage",
+    "ValidatePlannerOutput",
+    "AnalyzeTask",
+    "PlanExecution",
+    "ExecuteChanges",
+    "ReadRepository",
+    "LocateBug",
+    "PatchCode",
+    "RunTests",
+    "ValidatePatch",
 ];
 
 const INVALID: &[&str] = &[
-    "", " ", "\t", "\n", "analyzeTASK", "ANALYZETASK", "analyze_task",
-    "analyze task", "RunTest", "ExecuteChange", "unknown", "null", "None",
-    "0", "true", "{}",  "[]", "\"AnalyzeTask\"",
+    "",
+    " ",
+    "\t",
+    "\n",
+    "analyzeTASK",
+    "ANALYZETASK",
+    "analyze_task",
+    "analyze task",
+    "RunTest",
+    "ExecuteChange",
+    "unknown",
+    "null",
+    "None",
+    "0",
+    "true",
+    "{}",
+    "[]",
+    "\"AnalyzeTask\"",
 ];
 
 proptest! {

@@ -1,9 +1,9 @@
 {
   "ok": true,
-  "plan_id": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
-  "plan_hash": "23a1ee7b4104f253e953035f7c9225e87e2fa58ce4b885282f96b8985bba729c",
+  "plan_id": "b821279262e891a3aa499bbe5f64d266bb83aefd363f46d8721e9fac2d2e5538",
+  "plan_hash": "b821279262e891a3aa499bbe5f64d266bb83aefd363f46d8721e9fac2d2e5538",
   "spec_hash": "c24e1c5168616c6c45378a667bdfb10fed38498783565800b809f892d750d545",
-  "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
   "execution_order": [
     "integrity@v1",
     "snapshot_version_matrix@v1",
@@ -17,20 +17,20 @@
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
   "manifest_path": "docs/verification_graph.json",
-  "plan_generated_at_epoch": 1782891202,
+  "plan_generated_at_epoch": 1783259470,
   "environment": {
-    "python": "3.14.5",
+    "python": "3.14.6",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
     "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
-    "environment_id": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3",
-    "environment_fingerprint": "1ea936bc62aa6f2da0ccfd56bafd9fb8ee9ca9eb7b13a4ac9e6b468bc0e163c3"
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
   },
   "environment_debug": {
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
     "system": "Darwin",
     "release": "27.0.0",
     "machine": "arm64",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel.worktrees/agents-associated-crawdad"
   },
   "ordered_nodes": [
     {

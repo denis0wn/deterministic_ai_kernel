@@ -193,10 +193,7 @@ fn domain_must_not_import_api() {
 
 #[test]
 fn kernel_must_not_import_interface() {
-    let kernel_files = [
-        "src/kernel_types.rs",
-        "src/snapshot.rs",
-    ];
+    let kernel_files = ["src/kernel_types.rs", "src/snapshot.rs"];
     for file in kernel_files {
         let content = read_file(file);
         assert!(
@@ -214,10 +211,7 @@ fn kernel_must_not_import_interface() {
 
 #[test]
 fn kernel_must_not_import_domain() {
-    let kernel_files = [
-        "src/kernel_types.rs",
-        "src/snapshot.rs",
-    ];
+    let kernel_files = ["src/kernel_types.rs", "src/snapshot.rs"];
     for file in kernel_files {
         let content = read_file(file);
         assert!(

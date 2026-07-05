@@ -9,7 +9,10 @@ fn unique_db_path(test_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+    std::env::temp_dir().join(format!(
+        "deterministic_ai_kernel_{}_{}.db",
+        test_name, nanos
+    ))
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> std::process::Output {
@@ -50,7 +53,10 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
     assert!(list.status.success());
 
     let stdout = String::from_utf8(list.stdout).unwrap();
-    let line = stdout.lines().next().expect("expected one semantic artifact row");
+    let line = stdout
+        .lines()
+        .next()
+        .expect("expected one semantic artifact row");
     let cols: Vec<&str> = line.splitn(6, '\t').collect();
 
     assert_eq!(cols.len(), 6);
@@ -62,7 +68,10 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
 
     assert_eq!(payload["version"], 1);
     assert_eq!(payload["seed"], 0);
-    assert_eq!(payload["preferred"], serde_json::json!(["AnalyzeTask", "ExecuteChanges"]));
+    assert_eq!(
+        payload["preferred"],
+        serde_json::json!(["AnalyzeTask", "ExecuteChanges"])
+    );
 
     let lines = payload["lines"].as_array().expect("lines must be an array");
     let rendered: Vec<&str> = lines.iter().map(|v| v.as_str().unwrap()).collect();
@@ -71,7 +80,9 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
     assert!(rendered.contains(&"bias.weight.AnalyzeTask=1.000000"));
     assert!(rendered.contains(&"bias.weight.ExecuteChanges=1.000000"));
 
-    let weights = payload["weights"].as_object().expect("weights must be an object");
+    let weights = payload["weights"]
+        .as_object()
+        .expect("weights must be an object");
     assert_eq!(weights["AnalyzeTask"], 1.0);
     assert_eq!(weights["ExecuteChanges"], 1.0);
 

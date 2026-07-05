@@ -24,8 +24,7 @@ fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
         .output()
         .expect("failed to run kernel");
 
-    let text =
-        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
     (text, out.status.success())
 }
 
