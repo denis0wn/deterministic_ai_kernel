@@ -19,3 +19,5 @@ pub mod lm_control;
 pub mod embeddings;
 pub mod kernel_types;
 pub mod registry;
+pub mod semantic_bias;
+pub mod planner_pipeline;
