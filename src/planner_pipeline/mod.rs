@@ -72,3 +72,6 @@ mod tests {
         assert_eq!(p.id.len(), 16);
     }
 }
+pub mod pipeline;
+pub mod replay;
+pub mod plan_diff;

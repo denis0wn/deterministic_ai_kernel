@@ -8,16 +8,22 @@ impl PipelineStage for Normalizer {
     type Output = RawInput;
 
     fn run(&self, input: RawInput, _ctx: &PipelineContext) -> Result<RawInput> {
-        let cleaned = input.payload
-            .chars()
-            .filter(|&c| !matches!(c, '\x00'..='\x08' | '\x0B'..='\x0C' | '\x0E'..='\x1F' | '\x7F'))
-            .collect::<String>();
-        let canonical = cleaned
-            .split_whitespace()
+        // Normalize each line independently, preserving line boundaries for Parser
+        let normalized = input.payload
+            .lines()
+            .map(|line| {
+                line.chars()
+                    .filter(|&c| !matches!(c, '\x00'..='\x08' | '\x0B'..='\x0C' | '\x0E'..='\x1F' | '\x7F'))
+                    .collect::<String>()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase()
+            })
             .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase();
-        Ok(RawInput { payload: canonical })
+            .join("\n");
+
+        Ok(RawInput { payload: normalized })
     }
 }
 
@@ -34,12 +40,19 @@ mod tests {
     fn normalizer_collapses_whitespace() {
         let input = RawInput { payload: "  Step  ONE  \n  Step TWO  ".into() };
         let out = Normalizer.run(input, &ctx()).unwrap();
-        assert_eq!(out.payload, "step one step two");
+        assert_eq!(out.payload, "step one\nstep two");
+    }
+
+    #[test]
+    fn normalizer_preserves_line_boundaries() {
+        let input = RawInput { payload: "line one\nline two\nline three".into() };
+        let out = Normalizer.run(input, &ctx()).unwrap();
+        assert_eq!(out.payload.lines().count(), 3);
     }
 
     #[test]
     fn normalizer_is_idempotent() {
-        let input = RawInput { payload: "  Hello   World \t\n".into() };
+        let input = RawInput { payload: "  Hello   World \t\n  Foo  BAR  ".into() };
         let first = Normalizer.run(input, &ctx()).unwrap();
         let second = Normalizer.run(RawInput { payload: first.payload.clone() }, &ctx()).unwrap();
         assert_eq!(first.payload, second.payload);
