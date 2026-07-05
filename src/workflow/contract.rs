@@ -1,4 +1,5 @@
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StepKind {
     TightenPlannerPrompt,
     NormalizePlannerOutput,
@@ -15,7 +16,7 @@ pub enum StepKind {
     ValidatePatch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Step {
     pub kind: StepKind,
     pub detail: Option<String>,
@@ -56,7 +57,7 @@ pub enum TaskClass {
     CodeFix,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkerCapability {
     Planner,
     Executor,
@@ -64,7 +65,7 @@ pub enum WorkerCapability {
     LegacyGeneric,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepSpec {
     pub kind: StepKind,
     pub required_capability: WorkerCapability,

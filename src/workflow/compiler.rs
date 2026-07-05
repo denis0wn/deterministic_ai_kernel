@@ -1,8 +1,11 @@
 use anyhow::Result;
 
+use crate::event_bus::EventBus;
 use crate::llm;
 use crate::workflow::contract::{step_specs_to_steps, task_class_to_flow, Step, TaskClass};
+use crate::workflow::pipeline::{PipelineInput, PipelineOutput, PlannerPipeline};
 use crate::workflow::planner::{apply_semantic_bias_from_seed, parse_steps, validate_steps};
+use crate::workflow::planner_types::PlannerManifest;
 
 pub struct Workflow;
 
@@ -91,6 +94,26 @@ impl Workflow {
         step_specs_to_steps(&step_specs, None)
     }
 
+    /// Canonical executor entry point. Deterministic, event-sourced.
+    /// Use this for all new call sites.
+    pub fn build_via_pipeline(
+        task_id: &str,
+        input: &TaskInput,
+        bus: &EventBus,
+        seed: u64,
+    ) -> Result<PipelineOutput> {
+        let manifest = PlannerManifest::v1();
+        let task_text = input.detail().unwrap_or("").to_string();
+        PlannerPipeline::new(bus).run(PipelineInput {
+            task_id: task_id.to_string(),
+            task_text,
+            seed,
+            manifest,
+        })
+    }
+
+    /// Legacy LLM-augmented path. Kept as fallback — prefer `build_via_pipeline`.
+    #[allow(dead_code)]
     pub async fn build_from_task_llm(input: &TaskInput) -> Result<Vec<Step>> {
         let normalized = input.detail().unwrap_or("");
 
