@@ -27,3 +27,5 @@ path = "src/lib.rs"
 [dev-dependencies]
 proptest = "1.6"
 serial_test = "3.5.0"
+
+tempfile = "3"
