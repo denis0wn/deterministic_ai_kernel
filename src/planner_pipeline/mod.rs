@@ -75,3 +75,4 @@ mod tests {
 pub mod pipeline;
 pub mod replay;
 pub mod plan_diff;
+pub mod execution_engine;
