@@ -3,7 +3,6 @@
 //! Any change to semantic_bias_v1 structure without bumping the version
 //! must break this test.
 
-use std::collections::BTreeMap;
 
 /// Canonical field fingerprint of semantic_bias_v1.
 /// If you add/remove/rename a field — bump SCHEMA_VERSION and update this hash.
