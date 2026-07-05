@@ -506,6 +506,7 @@ pub fn next_ready_step(db: &str, task_id: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
+#[allow(dead_code)]
 pub(crate) fn unlock_ready_steps_by_db(db: &str, task_id: &str) -> Result<()> {
     let conn = Connection::open(db)?;
     unlock_ready_steps(&conn, task_id)

@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub enum ModelPurpose {
     CodingAssistant,
     TaskPlanning,
+    CodeReview,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +63,8 @@ fn resolve_model_from_values(
             .unwrap_or_else(|| default_model.clone()),
         ModelPurpose::TaskPlanning => optional_from_map(values, "OPENAI_MODEL_TASK_PLANNING")
             .unwrap_or_else(|| default_model.clone()),
+        ModelPurpose::CodeReview => optional_from_map(values, "OPENAI_MODEL_CODING_ASSISTANT")
+            .unwrap_or_else(|| default_model.clone()),
     };
 
     Ok(ModelConfig {
@@ -83,6 +86,9 @@ pub fn resolve_model(purpose: ModelPurpose) -> Result<ModelConfig> {
         }
         ModelPurpose::TaskPlanning => {
             env_optional("OPENAI_MODEL_TASK_PLANNING").unwrap_or_else(|| default_model.clone())
+        }
+        ModelPurpose::CodeReview => {
+            env_optional("OPENAI_MODEL_CODING_ASSISTANT").unwrap_or_else(|| default_model.clone())
         }
     };
 

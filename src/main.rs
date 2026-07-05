@@ -689,6 +689,13 @@ async fn main() {
                 std::process::exit(1);
             }
 
+            let conn = rusqlite::Connection::open(db).unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
+                rusqlite::params![task_id],
+            ).unwrap();
+            drop(conn);
+
             let bus = event_bus::EventBus::new(db).unwrap();
             let runtime = Runtime::new(bus);
 
@@ -809,6 +816,22 @@ async fn main() {
             let text = llm::coding_assistant(&prompt).await.unwrap();
 
             println!("{}", text);
+            return;
+        }
+        Some("prompt") => {
+            let role = args.get(2).cloned().unwrap_or_default();
+            let text = args.get(3..).map(|xs| xs.join(" ")).unwrap_or_default();
+            if role.trim().is_empty() || text.trim().is_empty() {
+                eprintln!("usage: dak prompt <role> \"your text here\"");
+                std::process::exit(1);
+            }
+            match lm_control::send_prompt(&role, &text).await {
+                Ok(response) => println!("{}", response),
+                Err(e) => {
+                    eprintln!("prompt failed: {e}");
+                    std::process::exit(1);
+                }
+            }
             return;
         }
         Some("gateway-stdin") => {
@@ -963,6 +986,18 @@ async fn main() {
             expire_leases(db, task_id).unwrap();
             return;
         }
+        Some("submit-task") => {
+            let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
+            {
+                let conn = rusqlite::Connection::open(db).unwrap();
+                conn.execute(
+                    "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
+                    rusqlite::params![task_id],
+                ).unwrap();
+            }
+            scheduler::schedule(db, task_id).unwrap();
+            return;
+        }
         Some("claim-worker") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
@@ -974,7 +1009,7 @@ async fn main() {
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
             let step_id = args.get(4).map(|s| s.as_str()).expect("step id required");
             worker::complete_step(db, task_id, worker_id, step_id).unwrap();
-            scheduler::unlock_ready_steps_by_db(db, task_id).unwrap();
+            scheduler::schedule(db, task_id).unwrap();
             return;
         }
         Some("fail-step") => {
@@ -1004,7 +1039,35 @@ async fn main() {
             println!("RMDB OK");
             return;
         }
+        Some("models-list") => {
+            crate::lm_control::print_all_models_v0().unwrap_or_else(|e| eprintln!("models-list: {e}"));
+            return;
+        }
+        Some("models-loaded") => {
+            crate::lm_control::print_loaded_models().unwrap_or_else(|e| eprintln!("models-loaded: {e}"));
+            return;
+        }
+        Some("model-load") => {
+            let id = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            if id.is_empty() { eprintln!("usage: model-load <model-id>"); return; }
+            crate::lm_control::load_model(id).unwrap_or_else(|e| eprintln!("model-load: {e}"));
+            return;
+        }
+        Some("model-unload") => {
+            let id = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            if id.is_empty() { eprintln!("usage: model-unload <model-id>"); return; }
+            crate::lm_control::unload_model(id).unwrap_or_else(|e| eprintln!("model-unload: {e}"));
+            return;
+        }
+        Some("smart-switch") => {
+            let id  = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            let gb  = args.get(3).and_then(|s| s.parse::<f64>().ok()).unwrap_or(4.0);
+            if id.is_empty() { eprintln!("usage: smart-switch <model-id> [required_gb]"); return; }
+            crate::lm_control::smart_switch(id, gb).unwrap_or_else(|e| eprintln!("smart-switch: {e}"));
+            return;
+        }
         _ => {}
+
     }
 
     eprintln!("no command provided");

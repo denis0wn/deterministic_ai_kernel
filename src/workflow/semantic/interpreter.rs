@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::bias::SemanticBias;
 use crate::workflow::contract::StepKind;
 

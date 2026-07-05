@@ -6,7 +6,8 @@
       "priority": 1,
       "ram_class": "light",
       "enabled": true,
-      "notes": "Primary coding model."
+      "notes": "Primary coding model.",
+      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
       "id": "huihui-gemma-4-e2b-it-abliterated-mlx",
@@ -14,7 +15,8 @@
       "priority": 1,
       "ram_class": "medium",
       "enabled": true,
-      "notes": "Primary task planning model. Verified by planner smoke."
+      "notes": "Primary task planning model. Verified by planner smoke.",
+      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific."
     },
     {
       "id": "omnicoder-9b-mlx-mxfp8",
@@ -22,7 +24,8 @@
       "priority": 2,
       "ram_class": "medium",
       "enabled": true,
-      "notes": "Optional heavier code fallback."
+      "notes": "Optional heavier code fallback.",
+      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
       "id": "qwen2.5-14b-instruct-mlx",
@@ -30,7 +33,8 @@
       "priority": 3,
       "ram_class": "heavy",
       "enabled": false,
-      "notes": "Disabled by default; LM Studio returned speculative decoding incompatibility."
+      "notes": "Disabled by default; LM Studio returned speculative decoding incompatibility.",
+      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific."
     },
     {
       "id": "qwen3-vl-8b-instruct-mlx",
@@ -38,7 +42,17 @@
       "priority": 1,
       "ram_class": "heavy",
       "enabled": false,
-      "notes": "Enable only when multimodal support is needed."
+      "notes": "Enable only when multimodal support is needed.",
+      "system_prompt": "You are a vision-language assistant. Describe images accurately and answer questions about visual content."
+    },
+    {
+      "id": "qwen2.5-coder-3b-instruct-mlx",
+      "role": "code_review",
+      "priority": 1,
+      "ram_class": "light",
+      "enabled": true,
+      "notes": "Code review role. Focused on Rust idioms, correctness, and architecture.",
+      "system_prompt": "You are a senior Rust engineer doing a code review. Identify correctness issues, non-idiomatic patterns, missing edge cases, and suggest concrete improvements. Be concise and specific. Format feedback as numbered points."
     },
     {
       "id": "text-embedding-nomic-embed-text-v1.5",
@@ -46,7 +60,8 @@
       "priority": 1,
       "ram_class": "light",
       "enabled": true,
-      "notes": "Embedding-only model; not for chat."
+      "notes": "Embedding-only model; not for chat.",
+      "system_prompt": ""
     }
   ]
 }

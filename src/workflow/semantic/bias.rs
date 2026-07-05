@@ -74,10 +74,12 @@ pub struct BiasMetadata {
 }
 
 impl SemanticBias {
+    #[allow(dead_code)]
     pub fn to_json(&self) -> Result<serde_json::Value, serde_json::Error> {
         serde_json::to_value(self)
     }
 
+    #[allow(dead_code)]
     pub fn from_json(value: &serde_json::Value) -> Result<Self, Box<dyn std::error::Error>> {
         crate::schema::validator::validate_semantic_bias_v1(value)?;
         let bias: Self = serde_json::from_value(value.clone())?;

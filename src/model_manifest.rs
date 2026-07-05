@@ -15,6 +15,7 @@ pub struct ManifestModel {
     pub ram_class: String,
     pub enabled: bool,
     pub notes: String,
+    pub system_prompt: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +55,9 @@ pub fn env_key_for_role(role: &str) -> Result<&'static str> {
         "coding_assistant" => Ok("OPENAI_MODEL_CODING_ASSISTANT"),
         "task_planning" => Ok("OPENAI_MODEL_TASK_PLANNING"),
         "embeddings" => Ok("OPENAI_MODEL_EMBEDDINGS"),
+        "code_review" => Ok("OPENAI_MODEL_CODING_ASSISTANT"),
+        "coding_fallback" => Ok("OPENAI_MODEL_CODING_ASSISTANT"),
+        "task_planning_fallback" => Ok("OPENAI_MODEL_TASK_PLANNING"),
         _ => Err(anyhow!("unsupported manifest role {:?}", role)),
     }
 }
@@ -98,6 +102,11 @@ pub fn threshold_gb_for_ram_class(ram_class: &str) -> Result<f64> {
     }
 }
 
+
+pub fn system_prompt_for_role(role: &str) -> Result<String> {
+    let model = best_enabled_model_for_role(role)?;
+    Ok(model.system_prompt)
+}
 fn read_env_value(env_key: &str) -> Result<Option<String>> {
     let text = fs::read_to_string(".env").unwrap_or_default();
     for line in text.lines() {
@@ -109,7 +118,7 @@ fn read_env_value(env_key: &str) -> Result<Option<String>> {
 }
 
 pub fn current_model_statuses() -> Result<Vec<CurrentModelStatus>> {
-    let roles = ["coding_assistant", "task_planning", "embeddings"];
+    let roles = ["coding_assistant", "task_planning", "code_review", "embeddings"];
     let mut out = Vec::new();
 
     for role in roles {
@@ -146,7 +155,7 @@ pub fn print_current_models() -> Result<()> {
 }
 
 pub fn sync_all_roles() -> Result<()> {
-    for role in ["coding_assistant", "task_planning", "embeddings"] {
+    for role in ["coding_assistant", "task_planning", "code_review", "embeddings"] {
         let model = sync_env_for_role(role)?;
         println!("SYNCED role={} model={}", role, model);
     }

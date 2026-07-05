@@ -5,15 +5,18 @@ pub fn cli_json_schema_version() -> &'static str {
     "cli-json-v1"
 }
 
+#[allow(dead_code)]
 pub fn print_json_report(report: &Value) {
     println!("{}", serde_json::to_string_pretty(report).unwrap());
 }
 
+#[allow(dead_code)]
 pub fn emit_json(command: &str, report: Value) {
     let envelope = command_report(command, report);
     println!("{}", serde_json::to_string(&envelope).unwrap());
 }
 
+#[allow(dead_code)]
 pub fn command_report(command: &str, report: Value) -> Value {
     serde_json::json!({
         "ok": true,

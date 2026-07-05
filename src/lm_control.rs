@@ -292,3 +292,130 @@ mod tests {
         }
     }
 }
+
+const LM_STUDIO_BASE: &str = "http://127.0.0.1:1234";
+
+// ── v0 structs ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize, Clone)]
+pub struct V0ModelInfo {
+    pub id: String,
+    pub state: Option<String>,
+    pub arch: Option<String>,
+    pub quantization: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct V0ModelsResponse {
+    data: Vec<V0ModelInfo>,
+}
+
+// ── list ──────────────────────────────────────────────────────────────────────
+
+pub fn list_all_models_v0() -> Result<Vec<V0ModelInfo>> {
+    let url = format!("{}/api/v0/models", LM_STUDIO_BASE);
+    let resp = std::thread::spawn(move || {
+        reqwest::blocking::get(&url)
+            .and_then(|r| r.text())
+    }).join().map_err(|_| anyhow!("thread panic"))??;
+    let parsed: V0ModelsResponse = serde_json::from_str(&resp)
+        .map_err(|e| anyhow!("list_all_models_v0 parse: {e}"))?;
+    Ok(parsed.data)
+}
+
+pub fn list_loaded_models() -> Result<Vec<String>> {
+    Ok(list_all_models_v0()?
+        .into_iter()
+        .filter(|m| m.state.as_deref() == Some("loaded"))
+        .map(|m| m.id)
+        .collect())
+}
+
+// ── load / unload ─────────────────────────────────────────────────────────────
+
+pub fn load_model(identifier: &str) -> Result<()> {
+    let url = format!("{}/api/v0/models/load", LM_STUDIO_BASE);
+    let body = serde_json::json!({ "identifier": identifier });
+    let id = identifier.to_string();
+    std::thread::spawn(move || {
+        reqwest::blocking::Client::new().post(&url).json(&body).send()
+    }).join().map_err(|_| anyhow!("thread panic"))??;
+    println!("LOAD_OK model={id}");
+    Ok(())
+}
+
+pub fn unload_model(identifier: &str) -> Result<()> {
+    let url = format!("{}/api/v0/models/unload", LM_STUDIO_BASE);
+    let body = serde_json::json!({ "identifier": identifier });
+    let id = identifier.to_string();
+    std::thread::spawn(move || {
+        reqwest::blocking::Client::new().post(&url).json(&body).send()
+    }).join().map_err(|_| anyhow!("thread panic"))??;
+    println!("UNLOAD_OK model={id}");
+    Ok(())
+}
+
+// ── smart_switch ──────────────────────────────────────────────────────────────
+
+pub fn smart_switch(target_model: &str, required_gb: f64) -> Result<()> {
+    let free_gb = free_memory_gb_estimate()?;
+    println!("SMART_SWITCH target={target_model} required_gb={required_gb:.2} free_gb={free_gb:.2}");
+
+    let loaded = list_loaded_models()?;
+    println!("LOADED_NOW {:?}", loaded);
+
+    if loaded.contains(&target_model.to_string()) {
+        println!("ALREADY_LOADED model={target_model}");
+        return Ok(());
+    }
+
+    if free_gb < required_gb {
+        for m in &loaded {
+            println!("UNLOADING_TO_FREE model={m}");
+            unload_model(m)?;
+        }
+        let free_after = free_memory_gb_estimate()?;
+        if free_after < required_gb {
+            return Err(anyhow!(
+                "smart_switch: not enough memory after unload: {free_after:.2} GB < {required_gb:.2} GB"
+            ));
+        }
+    }
+
+    load_model(target_model)
+}
+
+// ── CLI print helpers ─────────────────────────────────────────────────────────
+
+pub fn print_loaded_models() -> Result<()> {
+    let loaded = list_loaded_models()?;
+    if loaded.is_empty() {
+        println!("NO_MODELS_LOADED");
+    } else {
+        for m in &loaded { println!("LOADED model={m}"); }
+    }
+    Ok(())
+}
+
+pub fn print_all_models_v0() -> Result<()> {
+    let all = list_all_models_v0()?;
+    let free_gb = free_memory_gb_estimate()?;
+    println!("FREE_GB={free_gb:.2}  TOTAL_MODELS={}", all.len());
+    println!();
+    for m in &all {
+        let state = m.state.as_deref().unwrap_or("?");
+        let arch  = m.arch.as_deref().unwrap_or("?");
+        let quant = m.quantization.as_deref().unwrap_or("?");
+        println!("  [{state:^12}] {}  arch={arch} quant={quant}", m.id);
+    }
+    Ok(())
+}
+
+pub async fn send_prompt(role: &str, user_text: &str) -> Result<String> {
+    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        return Ok(format!("[mock] role={role} input={user_text}"));
+    }
+
+    let system_prompt = model_manifest::system_prompt_for_role(role)?;
+    crate::llm::chat_with_role(role, &system_prompt, user_text).await
+}

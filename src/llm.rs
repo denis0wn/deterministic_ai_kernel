@@ -31,6 +31,7 @@ fn role_for_purpose(purpose: ModelPurpose) -> &'static str {
     match purpose {
         ModelPurpose::CodingAssistant => "coding_assistant",
         ModelPurpose::TaskPlanning => "task_planning",
+        ModelPurpose::CodeReview => "code_review",
     }
 }
 
@@ -39,7 +40,7 @@ pub async fn chat(system_prompt: &str, user_prompt: &str) -> Result<String> {
     chat_with_purpose(ModelPurpose::CodingAssistant, system_prompt, user_prompt).await
 }
 
-async fn chat_with_purpose(
+pub async fn chat_with_purpose(
     purpose: ModelPurpose,
     system_prompt: &str,
     user_prompt: &str,
@@ -98,6 +99,17 @@ async fn chat_with_purpose(
 const CODING_ASSISTANT_SYSTEM_PROMPT: &str = "You are a concise coding assistant.";
 const TASK_PLANNER_SYSTEM_PROMPT: &str =
     "You are a concise task planning assistant. Follow output constraints exactly.";
+
+
+pub async fn chat_with_role(role: &str, system_prompt: &str, user_prompt: &str) -> Result<String> {
+    let purpose = match role {
+        "coding_assistant" | "coding_fallback" => ModelPurpose::CodingAssistant,
+        "task_planning"    | "task_planning_fallback" => ModelPurpose::TaskPlanning,
+        "code_review" => ModelPurpose::CodeReview,
+        other => return Err(anyhow::anyhow!("unknown role for llm dispatch: {other}")),
+    };
+    chat_with_purpose(purpose, system_prompt, user_prompt).await
+}
 
 pub async fn coding_assistant(user_prompt: &str) -> Result<String> {
     chat_with_purpose(
