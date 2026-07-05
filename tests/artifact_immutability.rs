@@ -1,66 +1,61 @@
-//! Phase 4 §3 — Artifact Immutability
-//!
-//! Verifies that the ArtifactRegistry is append-only: records are never
-//! removed or mutated after registration, and hashes remain stable.
+//! Phase 4 §3 — Artifact Immutability Contract
 
-use deterministic_ai_kernel::registry::{ArtifactRecord, ArtifactRegistry, ArtifactType};
-use deterministic_ai_kernel::workflow::semantic::bias::BiasVersion;
+use deterministic_ai_kernel::event_bus::EventBus;
+use serde_json::json;
 
-fn make_record(artifact_type: ArtifactType, payload: &[u8]) -> ArtifactRecord {
-    ArtifactRecord::new(artifact_type, 42, BiasVersion::V1, None, payload)
+fn unique_db(name: &str) -> String {
+    format!("/tmp/artifact_immut_{}.db", name)
 }
 
 #[test]
-fn registered_artifact_hash_is_stable() {
-    let mut reg = ArtifactRegistry::new();
-    let record = make_record(ArtifactType::VerificationVerdict, b"payload_a");
-    let expected_hash = record.hash.clone();
-    let id = reg.register(record);
+fn artifact_source_generation_is_monotonically_increasing() {
+    let db = unique_db("monotonic");
+    let bus = EventBus::new(&db).unwrap();
 
-    let fetched = reg.get(&id).expect("record must exist after registration");
-    assert_eq!(fetched.hash, expected_hash, "hash must not change after registration");
+    for i in 0..3i64 {
+        bus.append_semantic_artifact("task-x", "00_analyze", i, "semantic_bias_v1",
+            &json!({"preferred_field": format!("h{i}")})).unwrap();
+    }
+
+    let artifacts = bus.list_semantic_artifacts("task-x", Some("00_analyze")).unwrap();
+    // list возвращает DESC — разворачиваем
+    let mut gens: Vec<i64> = artifacts.iter().map(|a| a.source_generation).collect();
+    gens.reverse();
+    for w in gens.windows(2) {
+        assert!(w[0] < w[1], "source_generation not monotonic: {:?}", gens);
+    }
+    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
-fn two_records_with_same_payload_have_same_hash() {
-    let r1 = make_record(ArtifactType::Snapshot, b"same_payload");
-    let r2 = make_record(ArtifactType::Snapshot, b"same_payload");
-    assert_eq!(r1.hash, r2.hash, "BLAKE3 of identical payloads must match");
+fn artifact_older_version_content_is_preserved() {
+    let db = unique_db("preserved");
+    let bus = EventBus::new(&db).unwrap();
+
+    bus.append_semantic_artifact("task-y", "01_plan", 1, "semantic_bias_v1",
+        &json!({"preferred_field": "h1"})).unwrap();
+    bus.append_semantic_artifact("task-y", "01_plan", 2, "semantic_bias_v1",
+        &json!({"preferred_field": "h2"})).unwrap();
+
+    let artifacts = bus.list_semantic_artifacts("task-y", Some("01_plan")).unwrap();
+    // DESC порядок — последний элемент = самый старый (gen=1)
+    let oldest = artifacts.last().expect("must have rows");
+    assert!(oldest.payload.contains("h1"),
+        "oldest payload must be preserved, got: {}", oldest.payload);
+    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
-fn two_records_with_different_payloads_have_different_hashes() {
-    let r1 = make_record(ArtifactType::Snapshot, b"payload_a");
-    let r2 = make_record(ArtifactType::Snapshot, b"payload_b");
-    assert_ne!(r1.hash, r2.hash, "distinct payloads must produce distinct hashes");
-}
+fn artifact_count_matches_writes() {
+    let db = unique_db("count");
+    let bus = EventBus::new(&db).unwrap();
 
-#[test]
-fn unregistered_id_returns_none() {
-    let reg = ArtifactRegistry::new();
-    let phantom_id = uuid::Uuid::new_v4();
-    assert_eq!(reg.get(&phantom_id), None);
-}
+    for i in 0..5i64 {
+        bus.append_semantic_artifact("task-z", "02_execute", i, "semantic_bias_v1",
+            &json!({"preferred_field": format!("h{i}")})).unwrap();
+    }
 
-#[test]
-fn multiple_distinct_artifacts_coexist() {
-    let mut reg = ArtifactRegistry::new();
-    let id1 = reg.register(make_record(ArtifactType::VerificationPlan, b"plan"));
-    let id2 = reg.register(make_record(ArtifactType::ReplayCapsule, b"capsule"));
-    let id3 = reg.register(make_record(ArtifactType::SemanticBias, b"bias"));
-
-    assert!(reg.get(&id1).is_some());
-    assert!(reg.get(&id2).is_some());
-    assert!(reg.get(&id3).is_some());
-    assert_eq!(reg.len(), 3);
-}
-
-#[test]
-fn registry_is_append_only_len_never_shrinks() {
-    let mut reg = ArtifactRegistry::new();
-    assert_eq!(reg.len(), 0);
-    reg.register(make_record(ArtifactType::Snapshot, b"a"));
-    assert_eq!(reg.len(), 1);
-    reg.register(make_record(ArtifactType::Snapshot, b"b"));
-    assert_eq!(reg.len(), 2);
+    let artifacts = bus.list_semantic_artifacts("task-z", Some("02_execute")).unwrap();
+    assert_eq!(artifacts.len(), 5, "expected 5 artifacts, got {}", artifacts.len());
+    let _ = std::fs::remove_file(&db);
 }
