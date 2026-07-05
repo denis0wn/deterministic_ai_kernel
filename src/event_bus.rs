@@ -91,6 +91,18 @@ impl EventBus {
         payload: &Value,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        // Generation fence: reject if source_generation <= existing max for this task+step
+        let max_gen: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(source_generation), -1) FROM semantic_artifacts              WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, step_id],
+            |r| r.get(0),
+        )?;
+        if source_generation < max_gen {
+            return Err(anyhow::anyhow!(
+                "generation fence: source_generation {} <= existing max {} for task={} step={}",
+                source_generation, max_gen, task_id, step_id
+            ));
+        }
         conn.execute(
             "INSERT INTO semantic_artifacts
              (task_id, step_id, source_generation, artifact_type, payload)
