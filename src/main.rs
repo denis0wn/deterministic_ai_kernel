@@ -16,6 +16,7 @@ mod snapshot;
 mod worker;
 mod workflow;
 
+use crate::event_bus::EventBus;
 use cli_json::emit_json;
 use effects::execute_effects;
 use execution::runtime::Runtime;
@@ -855,10 +856,28 @@ async fn main() {
                 workflow::compiler::TaskInput::generic(task.as_str())
             };
 
-            let steps = Workflow::build_from_task_llm(&input).await.unwrap();
+            // Non-Generic inputs (CodeFix, PlannerHardening) have a fixed canonical
+            // flow — bypass the pipeline so they are never misrouted.
+            use workflow::contract::TaskClass;
+            if input.task_class() != TaskClass::Generic {
+                let steps = Workflow::build_steps(&input);
+                for s in &steps {
+                    println!("{}", s.as_text());
+                }
+                return;
+            }
 
-            for step in steps {
-                println!("{}", step.as_text());
+            // Generic tasks go through the full PlannerPipeline.
+            let bus = EventBus::new(db).unwrap();
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64;
+            let task_id = format!("plan-{}", seed % 1_000_000);
+            let output = Workflow::build_via_pipeline(&task_id, &input, &bus, seed).unwrap();
+
+            for ps in &output.steps {
+                println!("{} [{}]", ps.step.as_text(), ps.id);
             }
             return;
         }
