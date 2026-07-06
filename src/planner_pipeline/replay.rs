@@ -49,6 +49,7 @@ impl Replayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::planner_pipeline::BiasConfiguration;
     use crate::semantic_bias::SemanticBiasRule;
 
     fn mkp() -> Pipeline {

@@ -391,6 +391,49 @@ impl EventBus {
         }
     }
 
+    pub fn publish_pipeline_report(
+        &self,
+        task_id: &str,
+        plan_id: &str,
+        seed: u64,
+        planner_version: &str,
+        steps: &[String],
+        fingerprint: &str,
+        elapsed_ms: u128,
+        critic_passed: bool,
+        warnings: &[String],
+        stage_events: &[(String, String, u128)], // (stage, desc, offset_ms)
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.append_event(
+            task_id, None, "pipeline.started",
+            &json!({ "seed": seed, "planner_version": planner_version }),
+        )?;
+
+        for (stage, desc, offset_ms) in stage_events {
+            self.append_event(
+                task_id, None,
+                &format!("pipeline.stage.{}", stage),
+                &json!({ "desc": desc, "offset_ms": offset_ms }),
+            )?;
+        }
+
+        self.append_event(
+            task_id, None, "pipeline.completed",
+            &json!({
+                "plan_id": plan_id,
+                "fingerprint": fingerprint,
+                "steps": steps,
+                "elapsed_ms": elapsed_ms,
+                "critic_passed": critic_passed,
+                "warnings": warnings,
+            }),
+        )?;
+
+        Ok(())
+    }
+
     fn canonical_json(value: &Value) -> String {
         let mut ordered = BTreeMap::new();
         if let Value::Object(map) = value {

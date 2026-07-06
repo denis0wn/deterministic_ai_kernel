@@ -45,10 +45,52 @@ impl Pipeline {
     }
 }
 
+
+use crate::event_bus::EventBus;
+
+impl Pipeline {
+    pub fn publish_output(
+        &self,
+        output: &PipelineOutput,
+        task_id: &str,
+        bus: &EventBus,
+    ) -> anyhow::Result<i64> {
+        let payload = serde_json::json!({
+            "task_id": task_id,
+            "plan_id": &output.plan.id,
+            "seed": output.plan.seed,
+            "steps": &output.plan.steps,
+            "critic_passed": output.report.passed,
+            "critic_violations": &output.report.invariant_violations,
+            "critic_warnings": &output.report.warnings,
+        });
+        let generation = bus.append_event(task_id, None, "pipeline_report", &payload)?;
+
+        for (i, step) in output.plan.steps.iter().enumerate() {
+            let step_id = format!("step_{i}");
+            let step_payload = serde_json::json!({
+                "index": i,
+                "text": step,
+                "plan_id": &output.plan.id,
+            });
+            bus.append_semantic_artifact(
+                task_id,
+                &step_id,
+                generation,
+                "pipeline_step",
+                &step_payload,
+            )?;
+        }
+
+        Ok(generation)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::semantic_bias::{BiasVersion, BiasConfiguration, SemanticBiasRule};
+    use crate::event_bus::EventBus;
 
     fn ctx() -> PipelineContext {
         PipelineContext { seed: 42, bias_version: BiasVersion::V1 }
@@ -101,4 +143,25 @@ mod tests {
         let out2 = pipeline.run("step one\nstep two", &ctx2).unwrap();
         assert_ne!(out1.plan.id, out2.plan.id);
     }
+
+    #[test]
+    fn publish_output_writes_to_event_bus() {
+        let bus = EventBus::new(":memory:").unwrap();
+        let pipeline = Pipeline::new(bias());
+        let ctx = ctx();
+        let output = pipeline.run("step one\nstep two\ncritical step", &ctx).unwrap();
+
+        let gen = pipeline.publish_output(&output, "task-42", &bus).unwrap();
+        assert!(gen > 0);
+
+        // EventBus содержит запись о pipeline_report
+        let latest = bus.latest_generation_for_task("task-42").unwrap();
+        assert_eq!(latest, gen);
+
+        // Semantic artifacts созданы для каждого шага
+        let artifacts = bus.list_semantic_artifacts("task-42", None).unwrap();
+        assert_eq!(artifacts.len(), output.plan.steps.len());
+        assert!(artifacts.iter().all(|a| a.artifact_type == "pipeline_step"));
+    }
+
 }

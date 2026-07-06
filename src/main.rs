@@ -234,6 +234,8 @@ async fn main() {
         println!("  compare-capsules <task_id_a> <task_id_b> [--explain] [--json]");
         println!("  bias-explain <step_kind>...");
         println!("  analyze-task <task_id> <text>");
+        println!("  pipeline-run --task-id <id> [--seed <u64>] [--json]");
+        println!("  pipeline-run --payload <text> [--seed <u64>] [--json]");
         println!("  doctor");
         println!("  doctor-json");
         println!("  integrity");
@@ -271,7 +273,7 @@ async fn main() {
                 match crate::api::capture_capsule_save_text(db, &task_id) {
                     Ok(report) => {
                         println!(
-                            "CAPTURE_CAPSULE_SAVE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}",
+                            "CAPTURE_CAPSULE_SAVE_OK[id]{}[id]{}[id]events={}[id]nodes={}[id]edges={}",
                             report.execution_id,
                             report.capsule_id,
                             report.events,
@@ -312,7 +314,7 @@ async fn main() {
                     Ok(report) => {
                         if explain {
                             println!(
-                                "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}\texplanation={}",
+                                "COMPARE_CAPSULES_OK[id]{}[id]{}[id]status={}[id]explanation={}",
                                 report.left_capsule_id,
                                 report.right_capsule_id,
                                 report.status,
@@ -320,7 +322,7 @@ async fn main() {
                             );
                         } else {
                             println!(
-                                "COMPARE_CAPSULES_OK\t{}\t{}\tstatus={}",
+                                "COMPARE_CAPSULES_OK[id]{}[id]{}[id]status={}",
                                 report.left_capsule_id, report.right_capsule_id, report.status
                             );
                         }
@@ -354,7 +356,7 @@ async fn main() {
                 match crate::api::replay_capsule_text(db, &task_id) {
                     Ok(report) => {
                         println!(
-                            "REPLAY_CAPSULE_OK\t{}\t{}\tevents={}\tnodes={}\tedges={}\tvalid={}",
+                            "REPLAY_CAPSULE_OK[id]{}[id]{}[id]events={}[id]nodes={}[id]edges={}[id]valid={}",
                             report.execution_id,
                             report.capsule_id,
                             report.events,
@@ -477,7 +479,7 @@ async fn main() {
             match bus.append_semantic_artifact(&task_id, &step_id, 0, "semantic_bias_v1", &payload)
             {
                 Ok(()) => {
-                    println!("EMIT_BIAS_ARTIFACT_OK\t{}\t{}", task_id, step_id);
+                    println!("EMIT_BIAS_ARTIFACT_OK[id]{}[id]{}", task_id, step_id);
                 }
                 Err(e) => {
                     eprintln!("emit-bias-artifact failed: {e}");
@@ -629,7 +631,7 @@ async fn main() {
                 Ok(rows) => {
                     for row in rows {
                         println!(
-                            "{}\t{}\t{}\t{}\t{}\t{}",
+                            "{}[id]{}[id]{}[id]{}[id]{}[id]{}",
                             row.artifact_id,
                             row.task_id,
                             row.step_id,
@@ -809,7 +811,7 @@ async fn main() {
         Some("llm-prompt") => {
             let prompt = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
             if prompt.trim().is_empty() {
-                eprintln!("usage: cargo run -- llm-prompt \"your prompt here\"");
+                eprintln!("usage: cargo run -- llm-prompt [id]your prompt here[id]");
                 std::process::exit(1);
             }
 
@@ -822,7 +824,7 @@ async fn main() {
             let role = args.get(2).cloned().unwrap_or_default();
             let text = args.get(3..).map(|xs| xs.join(" ")).unwrap_or_default();
             if role.trim().is_empty() || text.trim().is_empty() {
-                eprintln!("usage: dak prompt <role> \"your text here\"");
+                eprintln!("usage: dak prompt <role> [id]your text here[id]");
                 std::process::exit(1);
             }
             match lm_control::send_prompt(&role, &text).await {
@@ -856,11 +858,87 @@ async fn main() {
             println!("{}", serde_json::to_string(&parsed).unwrap());
             return;
         }
+        Some("pipeline-run") => {
+            use deterministic_ai_kernel::planner_pipeline::build_plan;
+            let mut task_id: Option<String> = None;
+            let mut payload: Option<String> = None;
+            let mut seed: u64 = 42;
+            let mut as_json = false;
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--task-id"  => { i += 1; task_id  = args.get(i).cloned(); }
+                    "--payload"  => { i += 1; payload  = args.get(i).cloned(); }
+                    "--seed"     => { i += 1; seed = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(42); }
+                    "--json"     => { as_json = true; }
+                    other => { eprintln!("unknown arg: {other}"); std::process::exit(1); }
+                }
+                i += 1;
+            }
+            if task_id.is_some() == payload.is_some() {
+                eprintln!("usage: pipeline-run --task-id <id> [--seed <u64>] [--json]");
+                eprintln!("   or: pipeline-run --payload [id]...[id] [--seed <u64>] [--json]");
+                std::process::exit(1);
+            }
+            let resolved = if let Some(p) = payload { p } else {
+                let conn = rusqlite::Connection::open(db).unwrap();
+                let id = task_id.unwrap();
+                conn.query_row(
+                    "SELECT input_representation FROM semantic_bias_artifacts WHERE task_id = ?1 ORDER BY artifact_id DESC LIMIT 1",
+                    [&id], |r| r.get::<_, String>(0)
+                ).unwrap_or_else(|_| { eprintln!("pipeline-run: no payload for task_id={id}"); std::process::exit(1); })
+            };
+            let report = match build_plan(&resolved, seed) {
+                Ok(r) => r,
+                Err(e) => { eprintln!("pipeline-run failed: {e}"); std::process::exit(1); }
+            };
+            if let Ok(bus) = crate::event_bus::EventBus::new(&db) {
+                let stage_tuples: Vec<(String, String, u128)> = report.stage_events.iter()
+                    .map(|e| (e.stage.to_string(), e.description.clone(), e.timestamp_offset_ms))
+                    .collect();
+                let _ = bus.publish_pipeline_report(
+                    &report.plan.id,
+                    &report.plan.id,
+                    report.plan.seed,
+                    report.planner_version,
+                    &report.plan.steps,
+                    &report.fingerprint,
+                    report.elapsed_ms,
+                    report.critic_report.passed,
+                    &report.critic_report.warnings,
+                    &stage_tuples,
+                );
+            }
+            if as_json {
+                let out = serde_json::json!({
+                    "plan_id": report.plan.id,
+                    "seed": report.plan.seed,
+                    "steps": report.plan.steps,
+                    "fingerprint": report.fingerprint,
+                    "planner_version": report.planner_version,
+                    "elapsed_ms": report.elapsed_ms,
+                    "critic": { "passed": report.critic_report.passed, "warnings": report.critic_report.warnings, "violations": report.critic_report.invariant_violations },
+                    "stage_events": report.stage_events.iter().map(|e| serde_json::json!({"stage": e.stage.to_string(), "offset_ms": e.timestamp_offset_ms, "desc": e.description})).collect::<Vec<_>>(),
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            } else {
+                println!("PLAN_ID={}", report.plan.id);
+                println!("PLANNER_VERSION={}", report.planner_version);
+                println!("SEED={}", report.plan.seed);
+                println!("STEP_COUNT={}", report.plan.steps.len());
+                println!("FINGERPRINT={}", report.fingerprint);
+                println!("ELAPSED_MS={}", report.elapsed_ms);
+                println!("CRITIC_PASSED={}", report.critic_report.passed);
+                for (i, s) in report.plan.steps.iter().enumerate() { println!("STEP.{}={}", i+1, s); }
+                for e in &report.stage_events { println!("STAGE|{}|{}ms|{}", e.stage, e.timestamp_offset_ms, e.description); }
+            }
+            return;
+        }
         Some("plan-task") => {
             let task = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
             if task.trim().is_empty() {
-                eprintln!("usage: cargo run -- plan-task \"your task here\"");
-                eprintln!("   or: cargo run -- plan-task --planner-hardening \"your task here\"");
+                eprintln!("usage: cargo run -- plan-task [id]your task here[id]");
+                eprintln!("   or: cargo run -- plan-task --planner-hardening [id]your task here[id]");
                 eprintln!("   or: cargo run -- plan-task --compile-error path/to/log.txt");
                 eprintln!("   or: cargo run -- plan-task --test-failure path/to/log.txt");
                 eprintln!("   or: cargo run -- plan-task --lint-report path/to/log.txt");
@@ -956,7 +1034,7 @@ async fn main() {
             let payload_json: Value = serde_json::from_str(&payload).unwrap();
             if let Some(artifacts) = payload_json.get("artifacts").and_then(|v| v.as_object()) {
                 for (artifact_type, artifact_id) in artifacts {
-                    println!("ARTIFACT_REF\t{}\t{}", artifact_type, artifact_id);
+                    println!("ARTIFACT_REF[id]{}[id]{}", artifact_type, artifact_id);
                 }
             }
             return;

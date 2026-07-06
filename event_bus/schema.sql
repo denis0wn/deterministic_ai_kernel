@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS semantic_artifacts (
     task_id TEXT NOT NULL,
     step_id TEXT NOT NULL,
     source_generation BIGINT NOT NULL,
-    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1')),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1','pipeline_step','pipeline_report')),
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

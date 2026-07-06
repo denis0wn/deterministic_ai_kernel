@@ -1,6 +1,7 @@
+use serde::Serialize;
 use crate::planner_pipeline::Plan;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CriticReport {
     pub invariant_violations: Vec<String>,
     pub warnings: Vec<String>,

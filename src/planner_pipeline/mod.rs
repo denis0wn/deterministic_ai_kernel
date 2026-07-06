@@ -1,3 +1,4 @@
+use serde::Serialize;
 use anyhow::Result;
 use crate::semantic_bias::BiasVersion;
 
@@ -12,16 +13,17 @@ pub trait PipelineStage {
     fn run(&self, input: Self::Input, ctx: &PipelineContext) -> Result<Self::Output>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct RawInput {
     pub payload: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct IntermediateRepresentation {
     pub steps: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
 pub struct Plan {
     pub id: String,
     pub steps: Vec<String>,
@@ -45,6 +47,7 @@ pub mod normalizer;
 pub mod parser;
 pub mod semantic_mapper;
 pub mod critic;
+
 
 #[cfg(test)]
 mod tests {
@@ -77,3 +80,77 @@ pub mod replay;
 pub mod plan_diff;
 pub mod execution_engine;
 pub mod persistence;
+
+pub mod report;
+
+use std::time::Instant;
+use crate::planner_pipeline::critic::PlannerCritic;
+use crate::planner_pipeline::normalizer::Normalizer;
+use crate::planner_pipeline::parser::Parser;
+use crate::planner_pipeline::report::{PipelineReport, ReplayEvent, StageName};
+use crate::planner_pipeline::replay::ReplayTape;
+use crate::planner_pipeline::semantic_mapper::SemanticMapper;
+use crate::semantic_bias::BiasConfiguration;
+
+/// Library API. Pure function — no side effects.
+/// Used by CLI, Scheduler, Worker, and future HTTP API.
+pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
+    let started = Instant::now();
+    let ctx = PipelineContext { seed, bias_version: BiasVersion::V1 };
+    let bias = BiasConfiguration::new("default", vec![]);
+    let raw = RawInput { payload: payload.to_owned() };
+    let mut events: Vec<ReplayEvent> = Vec::new();
+
+    let normalized = Normalizer.run(raw, &ctx)?;
+    events.push(ReplayEvent {
+        stage: StageName::Normalizer,
+        timestamp_offset_ms: started.elapsed().as_millis(),
+        description: "payload normalized".into(),
+    });
+
+    let ir = Parser.run(normalized, &ctx)?;
+    events.push(ReplayEvent {
+        stage: StageName::Parser,
+        timestamp_offset_ms: started.elapsed().as_millis(),
+        description: format!("parsed {} step(s)", ir.steps.len()),
+    });
+
+    let mapped = SemanticMapper { bias }.run(ir, &ctx)?;
+    events.push(ReplayEvent {
+        stage: StageName::SemanticMapper,
+        timestamp_offset_ms: started.elapsed().as_millis(),
+        description: format!("mapped {} step(s)", mapped.steps.len()),
+    });
+
+    let plan = Plan::new_with_stable_id(ctx.seed, mapped.steps);
+    events.push(ReplayEvent {
+        stage: StageName::StableId,
+        timestamp_offset_ms: started.elapsed().as_millis(),
+        description: format!("plan id={}", plan.id),
+    });
+
+    let critic_report = PlannerCritic.analyze(&plan);
+    events.push(ReplayEvent {
+        stage: StageName::Critic,
+        timestamp_offset_ms: started.elapsed().as_millis(),
+        description: if critic_report.passed {
+            "critic passed".into()
+        } else {
+            format!("{} violation(s)", critic_report.invariant_violations.len())
+        },
+    });
+
+    let mut replay_tape = ReplayTape::new();
+    replay_tape.record(payload, seed, &plan.id);
+
+    Ok(PipelineReport {
+        fingerprint: plan.id.clone(),
+        plan,
+        critic_report,
+        replay_tape,
+        stage_events: events,
+        planner_version: env!("CARGO_PKG_VERSION"),
+        elapsed_ms: started.elapsed().as_millis(),
+    })
+}
+

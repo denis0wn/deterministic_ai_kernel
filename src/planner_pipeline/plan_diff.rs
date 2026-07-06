@@ -79,7 +79,7 @@ mod tests {
     use super::*;
     use crate::planner_pipeline::Plan;
 
-    fn plan(id: &str, steps: &[&str]) -> Plan {
+    fn plan(_id: &str, steps: &[&str]) -> Plan {
         Plan::new_with_stable_id(0, steps.iter().map(|s| s.to_string()).collect())
     }
 
