@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crate::planner_pipeline::{Plan, PipelineContext, RawInput};
+use crate::planner_pipeline::PipelineContext;
 use crate::planner_pipeline::pipeline::Pipeline;
 use crate::planner_pipeline::replay::{ReplayTape, Replayer};
 
