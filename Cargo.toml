@@ -2,6 +2,7 @@
 name = "deterministic_ai_kernel"
 version = "0.1.0"
 edition = "2021"
+default-run = "deterministic_ai_kernel"
 
 [dependencies]
 anyhow = "1.0"
