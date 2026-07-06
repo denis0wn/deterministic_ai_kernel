@@ -83,6 +83,60 @@ pub mod persistence;
 
 pub mod report;
 
+/// Строит план и публикует события в EventBus.
+/// Эмитит pipeline.started, pipeline.stage.*, pipeline.completed или pipeline.failed.
+pub fn build_plan_and_publish(payload: &str, seed: u64, db_path: &str) -> Result<PipelineReport> {
+    use crate::event_bus::EventBus;
+    let bus = EventBus::new(db_path)?;
+    match build_plan(payload, seed) {
+        Ok(report) => {
+            let stage_tuples: Vec<(String, String, u128)> = report.stage_events.iter()
+                .map(|e| (e.stage.to_string(), e.description.clone(), e.timestamp_offset_ms))
+                .collect();
+            let _ = bus.publish_pipeline_report(
+                &report.plan.id,
+                &report.plan.id,
+                report.plan.seed,
+                report.planner_version,
+                &report.plan.steps,
+                &report.fingerprint,
+                report.elapsed_ms,
+                report.critic_report.passed,
+                &report.critic_report.warnings,
+                &stage_tuples,
+            );
+            // Сохраняем PipelineReport как артефакт для Replay
+            let artifact_payload = serde_json::json!({
+                "fingerprint": report.fingerprint,
+                "seed": report.plan.seed,
+                "steps": report.plan.steps,
+                "planner_version": report.planner_version,
+                "elapsed_ms": report.elapsed_ms,
+                "critic_passed": report.critic_report.passed,
+                "warnings": report.critic_report.warnings,
+            });
+            let _ = bus.append_semantic_artifact(
+                &report.plan.id,
+                "pipeline",
+                0,
+                "pipeline_report_v1",
+                &artifact_payload,
+            );
+            Ok(report)
+        }
+        Err(e) => {
+            let _ = bus.publish_pipeline_failed(
+                "unknown",
+                seed,
+                env!("CARGO_PKG_VERSION"),
+                &e.to_string(),
+            );
+            Err(e)
+        }
+    }
+}
+
+
 use std::time::Instant;
 use crate::planner_pipeline::critic::PlannerCritic;
 use crate::planner_pipeline::normalizer::Normalizer;

@@ -28,7 +28,7 @@
   "ok": true,
   "ordered_nodes": [
     {
-      "cmd": "cargo run --bin run -- doctor-json",
+      "cmd": "${DAK_BIN:-cargo run --bin run --} doctor-json",
       "cost": 1,
       "depends_on": [],
       "id": "integrity",
@@ -90,11 +90,11 @@
       "version": "v1"
     }
   ],
-  "plan_generated_at_epoch": 1783279257,
-  "plan_hash": "b821279262e891a3aa499bbe5f64d266bb83aefd363f46d8721e9fac2d2e5538",
-  "plan_id": "b821279262e891a3aa499bbe5f64d266bb83aefd363f46d8721e9fac2d2e5538",
+  "plan_generated_at_epoch": 1783330042,
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
   "selected_only": [],
   "selected_pipeline": "fast",
-  "spec_hash": "c24e1c5168616c6c45378a667bdfb10fed38498783565800b809f892d750d545",
+  "spec_hash": "871338c01caae2a63c55832253ac12ef0f5862e645fa2eaeb06f6f39b20a6826",
   "total_cost": 17
 }

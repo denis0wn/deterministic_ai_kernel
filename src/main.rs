@@ -888,27 +888,10 @@ async fn main() {
                     [&id], |r| r.get::<_, String>(0)
                 ).unwrap_or_else(|_| { eprintln!("pipeline-run: no payload for task_id={id}"); std::process::exit(1); })
             };
-            let report = match build_plan(&resolved, seed) {
+            let report = match deterministic_ai_kernel::planner_pipeline::build_plan_and_publish(&resolved, seed, &db) {
                 Ok(r) => r,
                 Err(e) => { eprintln!("pipeline-run failed: {e}"); std::process::exit(1); }
             };
-            if let Ok(bus) = crate::event_bus::EventBus::new(&db) {
-                let stage_tuples: Vec<(String, String, u128)> = report.stage_events.iter()
-                    .map(|e| (e.stage.to_string(), e.description.clone(), e.timestamp_offset_ms))
-                    .collect();
-                let _ = bus.publish_pipeline_report(
-                    &report.plan.id,
-                    &report.plan.id,
-                    report.plan.seed,
-                    report.planner_version,
-                    &report.plan.steps,
-                    &report.fingerprint,
-                    report.elapsed_ms,
-                    report.critic_report.passed,
-                    &report.critic_report.warnings,
-                    &stage_tuples,
-                );
-            }
             if as_json {
                 let out = serde_json::json!({
                     "plan_id": report.plan.id,
@@ -1034,7 +1017,7 @@ async fn main() {
             let payload_json: Value = serde_json::from_str(&payload).unwrap();
             if let Some(artifacts) = payload_json.get("artifacts").and_then(|v| v.as_object()) {
                 for (artifact_type, artifact_id) in artifacts {
-                    println!("ARTIFACT_REF[id]{}[id]{}", artifact_type, artifact_id);
+                    println!("ARTIFACT_REF\t{}\t{}", artifact_type, artifact_id);
                 }
             }
             return;

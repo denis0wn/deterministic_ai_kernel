@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "plan_id": "822699961c086d144198c6e2bcf4c62e84fb5c5788a3c2c64eacf02a2d80ccd6",
-  "plan_hash": "822699961c086d144198c6e2bcf4c62e84fb5c5788a3c2c64eacf02a2d80ccd6",
-  "spec_hash": "c24e1c5168616c6c45378a667bdfb10fed38498783565800b809f892d750d545",
+  "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "spec_hash": "871338c01caae2a63c55832253ac12ef0f5862e645fa2eaeb06f6f39b20a6826",
   "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
   "execution_order": [
     "integrity@v1",
@@ -18,7 +18,7 @@
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
   "manifest_path": "docs/verification_graph.json",
-  "plan_generated_at_epoch": 1783279219,
+  "plan_generated_at_epoch": 1783330002,
   "environment": {
     "python": "3.14.6",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
@@ -43,7 +43,7 @@
       "priority": 10,
       "cost": 1,
       "depends_on": [],
-      "cmd": "cargo run --bin run -- doctor-json",
+      "cmd": "${DAK_BIN:-cargo run --bin run --} doctor-json",
       "outputs": [
         "integrity_report"
       ]

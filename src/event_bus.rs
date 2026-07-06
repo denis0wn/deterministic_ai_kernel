@@ -434,6 +434,26 @@ impl EventBus {
         Ok(())
     }
 
+
+    pub fn publish_pipeline_failed(
+        &self,
+        task_id: &str,
+        seed: u64,
+        planner_version: &str,
+        reason: &str,
+    ) -> Result<()> {
+        use serde_json::json;
+        self.append_event(
+            task_id, None, "pipeline.failed",
+            &json!({
+                "seed": seed,
+                "planner_version": planner_version,
+                "reason": reason,
+            }),
+        )?;
+        Ok(())
+    }
+
     fn canonical_json(value: &Value) -> String {
         let mut ordered = BTreeMap::new();
         if let Value::Object(map) = value {
