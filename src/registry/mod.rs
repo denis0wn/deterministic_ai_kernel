@@ -18,32 +18,32 @@ pub enum ArtifactType {
 /// only the metadata needed to locate or verify it without replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactRecord {
-    pub id:            Uuid,
+    pub id: Uuid,
     pub artifact_type: ArtifactType,
-    pub seed:          u64,
-    pub version:       BiasVersion,
-    pub timestamp:     DateTime<Utc>,
-    pub parent:        Option<Uuid>,
+    pub seed: u64,
+    pub version: BiasVersion,
+    pub timestamp: DateTime<Utc>,
+    pub parent: Option<Uuid>,
     /// BLAKE3 digest of the canonical JSON payload (32 bytes, hex-encoded).
-    pub hash:          String,
+    pub hash: String,
 }
 
 impl ArtifactRecord {
     pub fn new(
         artifact_type: ArtifactType,
-        seed:          u64,
-        version:       BiasVersion,
-        parent:        Option<Uuid>,
+        seed: u64,
+        version: BiasVersion,
+        parent: Option<Uuid>,
         payload_bytes: &[u8],
     ) -> Self {
         Self {
-            id:            Uuid::new_v4(),
+            id: Uuid::new_v4(),
             artifact_type,
             seed,
             version,
-            timestamp:     Utc::now(),
+            timestamp: Utc::now(),
             parent,
-            hash:          blake3::hash(payload_bytes).to_hex().to_string(),
+            hash: blake3::hash(payload_bytes).to_hex().to_string(),
         }
     }
 }

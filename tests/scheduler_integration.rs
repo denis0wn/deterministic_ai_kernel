@@ -371,7 +371,8 @@ fn cli_compile_error_routes_to_codefix_flow() {
         .args([
             "run",
             "--quiet",
-            "--bin", "deterministic_ai_kernel",
+            "--bin",
+            "deterministic_ai_kernel",
             "--",
             "plan-task",
             "--compile-error",
@@ -601,22 +602,48 @@ fn complete_step_unlocks_dependent_steps() {
     setup_task(&db, "task_unlock");
 
     run(&db, &["schedule", "task_unlock"]);
-    assert_eq!(query_status(&db, "task_unlock", "00_analyze_task"), "dispatched");
-    assert_eq!(query_status(&db, "task_unlock", "01_plan_execution"), "pending");
-    assert_eq!(query_status(&db, "task_unlock", "02_execute_changes"), "pending");
+    assert_eq!(
+        query_status(&db, "task_unlock", "00_analyze_task"),
+        "dispatched"
+    );
+    assert_eq!(
+        query_status(&db, "task_unlock", "01_plan_execution"),
+        "pending"
+    );
+    assert_eq!(
+        query_status(&db, "task_unlock", "02_execute_changes"),
+        "pending"
+    );
 
     run(&db, &["claim-worker", "task_unlock", "worker-A"]);
-    run(&db, &["start-step", "task_unlock", "worker-A", "00_analyze_task"]);
-    let out = run(&db, &["complete-step", "task_unlock", "worker-A", "00_analyze_task"]);
+    run(
+        &db,
+        &["start-step", "task_unlock", "worker-A", "00_analyze_task"],
+    );
+    let out = run(
+        &db,
+        &[
+            "complete-step",
+            "task_unlock",
+            "worker-A",
+            "00_analyze_task",
+        ],
+    );
     assert!(out.contains("STEP_COMPLETE_OK"), "{out}");
 
-    assert_eq!(query_status(&db, "task_unlock", "00_analyze_task"), "committed");
+    assert_eq!(
+        query_status(&db, "task_unlock", "00_analyze_task"),
+        "committed"
+    );
     assert_ne!(
         query_status(&db, "task_unlock", "01_plan_execution"),
         "pending",
         "dependent step must be unblocked after predecessor completes"
     );
-    assert_eq!(query_status(&db, "task_unlock", "02_execute_changes"), "pending");
+    assert_eq!(
+        query_status(&db, "task_unlock", "02_execute_changes"),
+        "pending"
+    );
 
     let _ = std::fs::remove_file(&db);
 }
@@ -628,11 +655,20 @@ fn terminal_failure_rejects_step() {
 
     run(&db, &["schedule", "task_terminal"]);
     run(&db, &["claim-worker", "task_terminal", "worker-A"]);
-    run(&db, &["start-step", "task_terminal", "worker-A", "00_analyze_task"]);
+    run(
+        &db,
+        &["start-step", "task_terminal", "worker-A", "00_analyze_task"],
+    );
 
     let out = run(
         &db,
-        &["fail-step", "task_terminal", "worker-A", "00_analyze_task", "fatal: unrecoverable error"],
+        &[
+            "fail-step",
+            "task_terminal",
+            "worker-A",
+            "00_analyze_task",
+            "fatal: unrecoverable error",
+        ],
     );
     assert!(out.contains("STEP_FAIL_OK"), "{out}");
 

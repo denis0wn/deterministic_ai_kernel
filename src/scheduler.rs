@@ -309,7 +309,6 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         [task_id],
     )?;
 
-
     replay_events(&tx, task_id)?;
     unlock_ready_steps(&tx, task_id)?;
 

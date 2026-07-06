@@ -29,9 +29,8 @@ fn run_kernel(db: &Path, args: &[&str]) -> (String, bool) {
         .output()
         .expect("failed to run kernel");
 
-
     let raw = String::from_utf8_lossy(&out.stdout);
-    let text = if let Some(pos) = raw.find(|c| c == '{' || c == '[') {
+    let text = if let Some(pos) = raw.find(['{', '[']) {
         raw[pos..].trim_end().to_string()
     } else {
         raw.trim().to_string()

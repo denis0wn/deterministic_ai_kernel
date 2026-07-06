@@ -20,23 +20,43 @@ impl PlanDiff {
         let b: Vec<&str> = new.steps.iter().map(String::as_str).collect();
         let lcs = lcs_table(&a, &b);
         let changes = backtrack(&lcs, &a, &b, a.len(), b.len());
-        Self { old_id: old.id.clone(), new_id: new.id.clone(), changes }
+        Self {
+            old_id: old.id.clone(),
+            new_id: new.id.clone(),
+            changes,
+        }
     }
 
     pub fn is_identical(&self) -> bool {
-        self.changes.iter().all(|c| matches!(c, StepChange::Retained(_)))
+        self.changes
+            .iter()
+            .all(|c| matches!(c, StepChange::Retained(_)))
     }
 
     pub fn added(&self) -> Vec<&str> {
-        self.changes.iter().filter_map(|c| {
-            if let StepChange::Added(s) = c { Some(s.as_str()) } else { None }
-        }).collect()
+        self.changes
+            .iter()
+            .filter_map(|c| {
+                if let StepChange::Added(s) = c {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn removed(&self) -> Vec<&str> {
-        self.changes.iter().filter_map(|c| {
-            if let StepChange::Removed(s) = c { Some(s.as_str()) } else { None }
-        }).collect()
+        self.changes
+            .iter()
+            .filter_map(|c| {
+                if let StepChange::Removed(s) = c {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -45,32 +65,42 @@ fn lcs_table(a: &[&str], b: &[&str]) -> Vec<Vec<usize>> {
     let mut dp = vec![vec![0usize; n + 1]; m + 1];
     for i in 1..=m {
         for j in 1..=n {
-            dp[i][j] = if a[i-1] == b[j-1] { dp[i-1][j-1] + 1 }
-                       else { dp[i-1][j].max(dp[i][j-1]) };
+            dp[i][j] = if a[i - 1] == b[j - 1] {
+                dp[i - 1][j - 1] + 1
+            } else {
+                dp[i - 1][j].max(dp[i][j - 1])
+            };
         }
     }
     dp
 }
 
 fn backtrack(dp: &[Vec<usize>], a: &[&str], b: &[&str], i: usize, j: usize) -> Vec<StepChange> {
-    if i == 0 && j == 0 { return vec![]; }
+    if i == 0 && j == 0 {
+        return vec![];
+    }
     if i == 0 {
-        let mut v = backtrack(dp, a, b, i, j-1);
-        v.push(StepChange::Added(b[j-1].to_owned())); return v;
+        let mut v = backtrack(dp, a, b, i, j - 1);
+        v.push(StepChange::Added(b[j - 1].to_owned()));
+        return v;
     }
     if j == 0 {
-        let mut v = backtrack(dp, a, b, i-1, j);
-        v.push(StepChange::Removed(a[i-1].to_owned())); return v;
+        let mut v = backtrack(dp, a, b, i - 1, j);
+        v.push(StepChange::Removed(a[i - 1].to_owned()));
+        return v;
     }
-    if a[i-1] == b[j-1] {
-        let mut v = backtrack(dp, a, b, i-1, j-1);
-        v.push(StepChange::Retained(a[i-1].to_owned())); v
-    } else if dp[i-1][j] >= dp[i][j-1] {
-        let mut v = backtrack(dp, a, b, i-1, j);
-        v.push(StepChange::Removed(a[i-1].to_owned())); v
+    if a[i - 1] == b[j - 1] {
+        let mut v = backtrack(dp, a, b, i - 1, j - 1);
+        v.push(StepChange::Retained(a[i - 1].to_owned()));
+        v
+    } else if dp[i - 1][j] >= dp[i][j - 1] {
+        let mut v = backtrack(dp, a, b, i - 1, j);
+        v.push(StepChange::Removed(a[i - 1].to_owned()));
+        v
     } else {
-        let mut v = backtrack(dp, a, b, i, j-1);
-        v.push(StepChange::Added(b[j-1].to_owned())); v
+        let mut v = backtrack(dp, a, b, i, j - 1);
+        v.push(StepChange::Added(b[j - 1].to_owned()));
+        v
     }
 }
 

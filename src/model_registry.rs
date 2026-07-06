@@ -80,17 +80,16 @@ pub fn resolve_model(purpose: ModelPurpose) -> Result<ModelConfig> {
 
     let default_model = env_required("OPENAI_MODEL")?;
 
-    let model = match purpose {
-        ModelPurpose::CodingAssistant => {
-            env_optional("OPENAI_MODEL_CODING_ASSISTANT").unwrap_or_else(|| default_model.clone())
-        }
-        ModelPurpose::TaskPlanning => {
-            env_optional("OPENAI_MODEL_TASK_PLANNING").unwrap_or_else(|| default_model.clone())
-        }
-        ModelPurpose::CodeReview => {
-            env_optional("OPENAI_MODEL_CODING_ASSISTANT").unwrap_or_else(|| default_model.clone())
-        }
-    };
+    let model =
+        match purpose {
+            ModelPurpose::CodingAssistant => env_optional("OPENAI_MODEL_CODING_ASSISTANT")
+                .unwrap_or_else(|| default_model.clone()),
+            ModelPurpose::TaskPlanning => {
+                env_optional("OPENAI_MODEL_TASK_PLANNING").unwrap_or_else(|| default_model.clone())
+            }
+            ModelPurpose::CodeReview => env_optional("OPENAI_MODEL_CODING_ASSISTANT")
+                .unwrap_or_else(|| default_model.clone()),
+        };
 
     Ok(ModelConfig {
         base_url,

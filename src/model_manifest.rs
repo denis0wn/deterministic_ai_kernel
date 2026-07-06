@@ -102,7 +102,6 @@ pub fn threshold_gb_for_ram_class(ram_class: &str) -> Result<f64> {
     }
 }
 
-
 pub fn system_prompt_for_role(role: &str) -> Result<String> {
     let model = best_enabled_model_for_role(role)?;
     Ok(model.system_prompt)
@@ -118,7 +117,12 @@ fn read_env_value(env_key: &str) -> Result<Option<String>> {
 }
 
 pub fn current_model_statuses() -> Result<Vec<CurrentModelStatus>> {
-    let roles = ["coding_assistant", "task_planning", "code_review", "embeddings"];
+    let roles = [
+        "coding_assistant",
+        "task_planning",
+        "code_review",
+        "embeddings",
+    ];
     let mut out = Vec::new();
 
     for role in roles {
@@ -155,7 +159,12 @@ pub fn print_current_models() -> Result<()> {
 }
 
 pub fn sync_all_roles() -> Result<()> {
-    for role in ["coding_assistant", "task_planning", "code_review", "embeddings"] {
+    for role in [
+        "coding_assistant",
+        "task_planning",
+        "code_review",
+        "embeddings",
+    ] {
         let model = sync_env_for_role(role)?;
         println!("SYNCED role={} model={}", role, model);
     }

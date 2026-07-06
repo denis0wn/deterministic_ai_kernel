@@ -1,6 +1,6 @@
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
-use anyhow::{Context, Result};
 
 use crate::planner_pipeline::execution_engine::ExecutionReport;
 use crate::planner_pipeline::replay::ReplayTape;
@@ -14,10 +14,16 @@ pub struct StoreConfig {
 
 impl StoreConfig {
     pub fn new(base_dir: impl Into<PathBuf>) -> Self {
-        Self { base_dir: base_dir.into() }
+        Self {
+            base_dir: base_dir.into(),
+        }
     }
-    pub fn tape_path(&self) -> PathBuf { self.base_dir.join("tape.json") }
-    pub fn runs_dir(&self)  -> PathBuf { self.base_dir.join("runs") }
+    pub fn tape_path(&self) -> PathBuf {
+        self.base_dir.join("tape.json")
+    }
+    pub fn runs_dir(&self) -> PathBuf {
+        self.base_dir.join("runs")
+    }
     pub fn run_path(&self, plan_id: &str) -> PathBuf {
         self.runs_dir().join(format!("{plan_id}.json"))
     }
@@ -37,32 +43,28 @@ impl PersistenceStore {
 
     pub fn save_report(&self, report: &ExecutionReport) -> Result<()> {
         let path = self.config.run_path(&report.plan_id);
-        let json = serde_json::to_string_pretty(report)
-            .context("serialize ExecutionReport")?;
-        fs::write(&path, json)
-            .with_context(|| format!("write report to {path:?}"))
+        let json = serde_json::to_string_pretty(report).context("serialize ExecutionReport")?;
+        fs::write(&path, json).with_context(|| format!("write report to {path:?}"))
     }
 
     pub fn save_tape(&self, tape: &ReplayTape) -> Result<()> {
         let path = self.config.tape_path();
-        let json = serde_json::to_string_pretty(tape)
-            .context("serialize ReplayTape")?;
-        fs::write(&path, json)
-            .with_context(|| format!("write tape to {path:?}"))
+        let json = serde_json::to_string_pretty(tape).context("serialize ReplayTape")?;
+        fs::write(&path, json).with_context(|| format!("write tape to {path:?}"))
     }
 
     pub fn load_tape(&self) -> Result<ReplayTape> {
         let path = self.config.tape_path();
-        if !path.exists() { return Ok(ReplayTape::new()); }
-        let json = fs::read_to_string(&path)
-            .with_context(|| format!("read tape from {path:?}"))?;
+        if !path.exists() {
+            return Ok(ReplayTape::new());
+        }
+        let json = fs::read_to_string(&path).with_context(|| format!("read tape from {path:?}"))?;
         serde_json::from_str(&json).context("deserialize ReplayTape")
     }
 
     pub fn load_report(&self, plan_id: &str) -> Result<ExecutionReport> {
         let path = self.config.run_path(plan_id);
-        let json = fs::read_to_string(&path)
-            .with_context(|| format!("read report {plan_id}"))?;
+        let json = fs::read_to_string(&path).with_context(|| format!("read report {plan_id}"))?;
         serde_json::from_str(&json).context("deserialize ExecutionReport")
     }
 
@@ -99,12 +101,16 @@ mod tests {
         ExecutionReport {
             plan_id: plan_id.to_owned(),
             seed: 42,
-            steps: descs.iter().enumerate().map(|(i, d)| StepResult {
-                index: i,
-                description: d.to_string(),
-                status: StepStatus::Ok,
-                duration_ms: 1,
-            }).collect(),
+            steps: descs
+                .iter()
+                .enumerate()
+                .map(|(i, d)| StepResult {
+                    index: i,
+                    description: d.to_string(),
+                    status: StepStatus::Ok,
+                    duration_ms: 1,
+                })
+                .collect(),
             total_duration_ms: descs.len() as u64,
             success: true,
         }
@@ -142,8 +148,12 @@ mod tests {
     #[test]
     fn list_runs_returns_saved_ids() {
         let (store, _dir) = tmp_store();
-        store.save_report(&fake_report("plan0000000000001", &["a"])).unwrap();
-        store.save_report(&fake_report("plan0000000000002", &["b"])).unwrap();
+        store
+            .save_report(&fake_report("plan0000000000001", &["a"]))
+            .unwrap();
+        store
+            .save_report(&fake_report("plan0000000000002", &["b"]))
+            .unwrap();
         let ids = store.list_runs().unwrap();
         assert_eq!(ids, vec!["plan0000000000001", "plan0000000000002"]);
     }

@@ -1,7 +1,7 @@
-use serde::{Serialize};
-use crate::planner_pipeline::Plan;
 use crate::planner_pipeline::critic::CriticReport;
 use crate::planner_pipeline::replay::ReplayTape;
+use crate::planner_pipeline::Plan;
+use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum StageName {
@@ -15,11 +15,11 @@ pub enum StageName {
 impl std::fmt::Display for StageName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            StageName::Normalizer     => "normalizer",
-            StageName::Parser         => "parser",
+            StageName::Normalizer => "normalizer",
+            StageName::Parser => "parser",
             StageName::SemanticMapper => "semantic_mapper",
-            StageName::StableId       => "stable_id",
-            StageName::Critic         => "critic",
+            StageName::StableId => "stable_id",
+            StageName::Critic => "critic",
         };
         write!(f, "{s}")
     }

@@ -314,12 +314,11 @@ struct V0ModelsResponse {
 
 pub fn list_all_models_v0() -> Result<Vec<V0ModelInfo>> {
     let url = format!("{}/api/v0/models", LM_STUDIO_BASE);
-    let resp = std::thread::spawn(move || {
-        reqwest::blocking::get(&url)
-            .and_then(|r| r.text())
-    }).join().map_err(|_| anyhow!("thread panic"))??;
-    let parsed: V0ModelsResponse = serde_json::from_str(&resp)
-        .map_err(|e| anyhow!("list_all_models_v0 parse: {e}"))?;
+    let resp = std::thread::spawn(move || reqwest::blocking::get(&url).and_then(|r| r.text()))
+        .join()
+        .map_err(|_| anyhow!("thread panic"))??;
+    let parsed: V0ModelsResponse =
+        serde_json::from_str(&resp).map_err(|e| anyhow!("list_all_models_v0 parse: {e}"))?;
     Ok(parsed.data)
 }
 
@@ -338,8 +337,13 @@ pub fn load_model(identifier: &str) -> Result<()> {
     let body = serde_json::json!({ "identifier": identifier });
     let id = identifier.to_string();
     std::thread::spawn(move || {
-        reqwest::blocking::Client::new().post(&url).json(&body).send()
-    }).join().map_err(|_| anyhow!("thread panic"))??;
+        reqwest::blocking::Client::new()
+            .post(&url)
+            .json(&body)
+            .send()
+    })
+    .join()
+    .map_err(|_| anyhow!("thread panic"))??;
     println!("LOAD_OK model={id}");
     Ok(())
 }
@@ -349,8 +353,13 @@ pub fn unload_model(identifier: &str) -> Result<()> {
     let body = serde_json::json!({ "identifier": identifier });
     let id = identifier.to_string();
     std::thread::spawn(move || {
-        reqwest::blocking::Client::new().post(&url).json(&body).send()
-    }).join().map_err(|_| anyhow!("thread panic"))??;
+        reqwest::blocking::Client::new()
+            .post(&url)
+            .json(&body)
+            .send()
+    })
+    .join()
+    .map_err(|_| anyhow!("thread panic"))??;
     println!("UNLOAD_OK model={id}");
     Ok(())
 }
@@ -359,7 +368,9 @@ pub fn unload_model(identifier: &str) -> Result<()> {
 
 pub fn smart_switch(target_model: &str, required_gb: f64) -> Result<()> {
     let free_gb = free_memory_gb_estimate()?;
-    println!("SMART_SWITCH target={target_model} required_gb={required_gb:.2} free_gb={free_gb:.2}");
+    println!(
+        "SMART_SWITCH target={target_model} required_gb={required_gb:.2} free_gb={free_gb:.2}"
+    );
 
     let loaded = list_loaded_models()?;
     println!("LOADED_NOW {:?}", loaded);
@@ -392,7 +403,9 @@ pub fn print_loaded_models() -> Result<()> {
     if loaded.is_empty() {
         println!("NO_MODELS_LOADED");
     } else {
-        for m in &loaded { println!("LOADED model={m}"); }
+        for m in &loaded {
+            println!("LOADED model={m}");
+        }
     }
     Ok(())
 }
@@ -404,7 +417,7 @@ pub fn print_all_models_v0() -> Result<()> {
     println!();
     for m in &all {
         let state = m.state.as_deref().unwrap_or("?");
-        let arch  = m.arch.as_deref().unwrap_or("?");
+        let arch = m.arch.as_deref().unwrap_or("?");
         let quant = m.quantization.as_deref().unwrap_or("?");
         println!("  [{state:^12}] {}  arch={arch} quant={quant}", m.id);
     }

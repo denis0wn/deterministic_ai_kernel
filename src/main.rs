@@ -1,4 +1,3 @@
-mod schema;
 mod api;
 mod cli_json;
 mod effects;
@@ -13,6 +12,7 @@ mod model_manifest;
 mod model_registry;
 mod replay;
 mod scheduler;
+mod schema;
 mod snapshot;
 mod worker;
 mod workflow;
@@ -695,7 +695,8 @@ async fn main() {
             conn.execute(
                 "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
                 rusqlite::params![task_id],
-            ).unwrap();
+            )
+            .unwrap();
             drop(conn);
 
             let bus = event_bus::EventBus::new(db).unwrap();
@@ -859,7 +860,6 @@ async fn main() {
             return;
         }
         Some("pipeline-run") => {
-            use deterministic_ai_kernel::planner_pipeline::build_plan;
             let mut task_id: Option<String> = None;
             let mut payload: Option<String> = None;
             let mut seed: u64 = 42;
@@ -867,11 +867,25 @@ async fn main() {
             let mut i = 2usize;
             while i < args.len() {
                 match args[i].as_str() {
-                    "--task-id"  => { i += 1; task_id  = args.get(i).cloned(); }
-                    "--payload"  => { i += 1; payload  = args.get(i).cloned(); }
-                    "--seed"     => { i += 1; seed = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(42); }
-                    "--json"     => { as_json = true; }
-                    other => { eprintln!("unknown arg: {other}"); std::process::exit(1); }
+                    "--task-id" => {
+                        i += 1;
+                        task_id = args.get(i).cloned();
+                    }
+                    "--payload" => {
+                        i += 1;
+                        payload = args.get(i).cloned();
+                    }
+                    "--seed" => {
+                        i += 1;
+                        seed = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(42);
+                    }
+                    "--json" => {
+                        as_json = true;
+                    }
+                    other => {
+                        eprintln!("unknown arg: {other}");
+                        std::process::exit(1);
+                    }
                 }
                 i += 1;
             }
@@ -880,7 +894,9 @@ async fn main() {
                 eprintln!("   or: pipeline-run --payload [id]...[id] [--seed <u64>] [--json]");
                 std::process::exit(1);
             }
-            let resolved = if let Some(p) = payload { p } else {
+            let resolved = if let Some(p) = payload {
+                p
+            } else {
                 let conn = rusqlite::Connection::open(db).unwrap();
                 let id = task_id.unwrap();
                 conn.query_row(
@@ -888,9 +904,14 @@ async fn main() {
                     [&id], |r| r.get::<_, String>(0)
                 ).unwrap_or_else(|_| { eprintln!("pipeline-run: no payload for task_id={id}"); std::process::exit(1); })
             };
-            let report = match deterministic_ai_kernel::planner_pipeline::build_plan_and_publish(&resolved, seed, &db) {
+            let report = match deterministic_ai_kernel::planner_pipeline::build_plan_and_publish(
+                &resolved, seed, db,
+            ) {
                 Ok(r) => r,
-                Err(e) => { eprintln!("pipeline-run failed: {e}"); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("pipeline-run failed: {e}");
+                    std::process::exit(1);
+                }
             };
             if as_json {
                 let out = serde_json::json!({
@@ -912,8 +933,15 @@ async fn main() {
                 println!("FINGERPRINT={}", report.fingerprint);
                 println!("ELAPSED_MS={}", report.elapsed_ms);
                 println!("CRITIC_PASSED={}", report.critic_report.passed);
-                for (i, s) in report.plan.steps.iter().enumerate() { println!("STEP.{}={}", i+1, s); }
-                for e in &report.stage_events { println!("STAGE|{}|{}ms|{}", e.stage, e.timestamp_offset_ms, e.description); }
+                for (i, s) in report.plan.steps.iter().enumerate() {
+                    println!("STEP.{}={}", i + 1, s);
+                }
+                for e in &report.stage_events {
+                    println!(
+                        "STAGE|{}|{}ms|{}",
+                        e.stage, e.timestamp_offset_ms, e.description
+                    );
+                }
             }
             return;
         }
@@ -921,7 +949,9 @@ async fn main() {
             let task = args.get(2..).map(|xs| xs.join(" ")).unwrap_or_default();
             if task.trim().is_empty() {
                 eprintln!("usage: cargo run -- plan-task [id]your task here[id]");
-                eprintln!("   or: cargo run -- plan-task --planner-hardening [id]your task here[id]");
+                eprintln!(
+                    "   or: cargo run -- plan-task --planner-hardening [id]your task here[id]"
+                );
                 eprintln!("   or: cargo run -- plan-task --compile-error path/to/log.txt");
                 eprintln!("   or: cargo run -- plan-task --test-failure path/to/log.txt");
                 eprintln!("   or: cargo run -- plan-task --lint-report path/to/log.txt");
@@ -1054,7 +1084,8 @@ async fn main() {
                 conn.execute(
                     "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
                     rusqlite::params![task_id],
-                ).unwrap();
+                )
+                .unwrap();
             }
             scheduler::schedule(db, task_id).unwrap();
             return;
@@ -1101,34 +1132,48 @@ async fn main() {
             return;
         }
         Some("models-list") => {
-            crate::lm_control::print_all_models_v0().unwrap_or_else(|e| eprintln!("models-list: {e}"));
+            crate::lm_control::print_all_models_v0()
+                .unwrap_or_else(|e| eprintln!("models-list: {e}"));
             return;
         }
         Some("models-loaded") => {
-            crate::lm_control::print_loaded_models().unwrap_or_else(|e| eprintln!("models-loaded: {e}"));
+            crate::lm_control::print_loaded_models()
+                .unwrap_or_else(|e| eprintln!("models-loaded: {e}"));
             return;
         }
         Some("model-load") => {
             let id = args.get(2).map(|s| s.as_str()).unwrap_or("");
-            if id.is_empty() { eprintln!("usage: model-load <model-id>"); return; }
+            if id.is_empty() {
+                eprintln!("usage: model-load <model-id>");
+                return;
+            }
             crate::lm_control::load_model(id).unwrap_or_else(|e| eprintln!("model-load: {e}"));
             return;
         }
         Some("model-unload") => {
             let id = args.get(2).map(|s| s.as_str()).unwrap_or("");
-            if id.is_empty() { eprintln!("usage: model-unload <model-id>"); return; }
+            if id.is_empty() {
+                eprintln!("usage: model-unload <model-id>");
+                return;
+            }
             crate::lm_control::unload_model(id).unwrap_or_else(|e| eprintln!("model-unload: {e}"));
             return;
         }
         Some("smart-switch") => {
-            let id  = args.get(2).map(|s| s.as_str()).unwrap_or("");
-            let gb  = args.get(3).and_then(|s| s.parse::<f64>().ok()).unwrap_or(4.0);
-            if id.is_empty() { eprintln!("usage: smart-switch <model-id> [required_gb]"); return; }
-            crate::lm_control::smart_switch(id, gb).unwrap_or_else(|e| eprintln!("smart-switch: {e}"));
+            let id = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            let gb = args
+                .get(3)
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(4.0);
+            if id.is_empty() {
+                eprintln!("usage: smart-switch <model-id> [required_gb]");
+                return;
+            }
+            crate::lm_control::smart_switch(id, gb)
+                .unwrap_or_else(|e| eprintln!("smart-switch: {e}"));
             return;
         }
         _ => {}
-
     }
 
     eprintln!("no command provided");

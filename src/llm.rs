@@ -100,11 +100,10 @@ const CODING_ASSISTANT_SYSTEM_PROMPT: &str = "You are a concise coding assistant
 const TASK_PLANNER_SYSTEM_PROMPT: &str =
     "You are a concise task planning assistant. Follow output constraints exactly.";
 
-
 pub async fn chat_with_role(role: &str, system_prompt: &str, user_prompt: &str) -> Result<String> {
     let purpose = match role {
         "coding_assistant" | "coding_fallback" => ModelPurpose::CodingAssistant,
-        "task_planning"    | "task_planning_fallback" => ModelPurpose::TaskPlanning,
+        "task_planning" | "task_planning_fallback" => ModelPurpose::TaskPlanning,
         "code_review" => ModelPurpose::CodeReview,
         other => return Err(anyhow::anyhow!("unknown role for llm dispatch: {other}")),
     };

@@ -37,13 +37,7 @@ fn find_by_seed_returns_all_matches() {
 fn find_by_type_filters_correctly() {
     let mut reg = ArtifactRegistry::new();
     reg.register(make_record(1, None));
-    let snap = ArtifactRecord::new(
-        ArtifactType::Snapshot,
-        0,
-        BiasVersion::V1,
-        None,
-        b"snap",
-    );
+    let snap = ArtifactRecord::new(ArtifactType::Snapshot, 0, BiasVersion::V1, None, b"snap");
     reg.register(snap);
     assert_eq!(reg.find_by_type(&ArtifactType::SemanticBias).len(), 1);
     assert_eq!(reg.find_by_type(&ArtifactType::Snapshot).len(), 1);
@@ -52,8 +46,20 @@ fn find_by_type_filters_correctly() {
 
 #[test]
 fn hash_is_deterministic_for_same_payload() {
-    let a = ArtifactRecord::new(ArtifactType::SemanticBias, 7, BiasVersion::V1, None, b"payload");
-    let b = ArtifactRecord::new(ArtifactType::SemanticBias, 7, BiasVersion::V1, None, b"payload");
+    let a = ArtifactRecord::new(
+        ArtifactType::SemanticBias,
+        7,
+        BiasVersion::V1,
+        None,
+        b"payload",
+    );
+    let b = ArtifactRecord::new(
+        ArtifactType::SemanticBias,
+        7,
+        BiasVersion::V1,
+        None,
+        b"payload",
+    );
     assert_eq!(a.hash, b.hash);
 }
 

@@ -5,8 +5,14 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_db(label: &str) -> String {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("dak_prop_{}_{}.db", label, nanos)).display().to_string()
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir()
+        .join(format!("dak_prop_{}_{}.db", label, nanos))
+        .display()
+        .to_string()
 }
 
 fn cleanup(db: &str) {
@@ -17,8 +23,16 @@ fn cleanup(db: &str) {
 
 fn run_ok(db: &str, args: &[&str]) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
-        .env("KERNEL_DB_PATH", db).args(args).output().expect("failed to spawn kernel");
-    assert!(out.status.success(), "cmd {:?} failed\nstderr:\n{}", args, String::from_utf8_lossy(&out.stderr));
+        .env("KERNEL_DB_PATH", db)
+        .args(args)
+        .output()
+        .expect("failed to spawn kernel");
+    assert!(
+        out.status.success(),
+        "cmd {:?} failed\nstderr:\n{}",
+        args,
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8(out.stdout).unwrap()
 }
 
@@ -34,11 +48,19 @@ fn emit_and_fetch(db: &str, task: &str, step: &str, steps: &[&str]) -> Value {
 }
 
 const STEP_KINDS: &[&str] = &[
-    "AnalyzeTask", "PlanExecution", "ExecuteChanges",
-    "RunTests", "ReadRepository", "LocateBug", "PatchCode", "ValidatePatch",
+    "AnalyzeTask",
+    "PlanExecution",
+    "ExecuteChanges",
+    "RunTests",
+    "ReadRepository",
+    "LocateBug",
+    "PatchCode",
+    "ValidatePatch",
 ];
 
-fn arb_step() -> impl Strategy<Value = &'static str> { prop::sample::select(STEP_KINDS) }
+fn arb_step() -> impl Strategy<Value = &'static str> {
+    prop::sample::select(STEP_KINDS)
+}
 fn arb_steps(min: usize, max: usize) -> impl Strategy<Value = Vec<&'static str>> {
     prop::collection::vec(arb_step(), min..=max)
 }
@@ -49,7 +71,7 @@ proptest! {
     fn prop_repeat_emit_is_idempotent(steps in arb_steps(1, 6), task_suffix in "[a-z]{4}") {
         let task = format!("task-idem-{task_suffix}");
         let db = unique_db(&task); cleanup(&db);
-        let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
+        let step_refs: Vec<&str> = steps.iter().map(|s| s.as_ref()).collect();
         let first  = emit_and_fetch(&db, &task, "step-idem", &step_refs);
         let second = emit_and_fetch(&db, &task, "step-idem", &step_refs);
         prop_assert_eq!(&first, &second);
@@ -65,7 +87,7 @@ proptest! {
     fn prop_snapshot_restore_preserves_payload(steps in arb_steps(1, 8), task_suffix in "[a-z]{4}") {
         let task = format!("task-snap-{task_suffix}");
         let db = unique_db(&task); cleanup(&db);
-        let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
+        let step_refs: Vec<&str> = steps.iter().map(|s| s.as_ref()).collect();
         let before = emit_and_fetch(&db, &task, "step-snap", &step_refs);
         let _ = run_ok(&db, &["snapshot", &task]);
         let _ = run_ok(&db, &["restore",  &task]);
@@ -102,7 +124,7 @@ proptest! {
     fn prop_batch_structural_invariants(steps in arb_steps(1, 5), task_suffix in "[a-z0-9]{6}") {
         let task = format!("task-batch-{task_suffix}");
         let db = unique_db(&task); cleanup(&db);
-        let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
+        let step_refs: Vec<&str> = steps.iter().map(|s| s.as_ref()).collect();
         let payload = emit_and_fetch(&db, &task, "step-batch", &step_refs);
         prop_assert_eq!(&payload["version"], "v1");
         prop_assert_eq!(&payload["seed"], 0);

@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::planner_pipeline::PipelineContext;
 use crate::planner_pipeline::pipeline::Pipeline;
+use crate::planner_pipeline::PipelineContext;
 use crate::semantic_bias::BiasVersion;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -18,28 +18,49 @@ pub struct ReplayTape {
 }
 
 impl ReplayTape {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn record(&mut self, payload: &str, seed: u64, plan_id: &str) {
         self.entries.push(ReplayEntry {
-            payload: payload.to_owned(), seed, plan_id: plan_id.to_owned(),
+            payload: payload.to_owned(),
+            seed,
+            plan_id: plan_id.to_owned(),
         });
     }
-    pub fn entries(&self) -> &[ReplayEntry] { &self.entries }
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn entries(&self) -> &[ReplayEntry] {
+        &self.entries
+    }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
-pub struct Replayer { pipeline: Pipeline }
+pub struct Replayer {
+    pipeline: Pipeline,
+}
 
 impl Replayer {
-    pub fn new(pipeline: Pipeline) -> Self { Self { pipeline } }
+    pub fn new(pipeline: Pipeline) -> Self {
+        Self { pipeline }
+    }
 
     pub fn verify(&self, tape: &ReplayTape) -> Result<()> {
         for entry in tape.entries() {
-            let ctx = PipelineContext { seed: entry.seed, bias_version: BiasVersion::V1 };
+            let ctx = PipelineContext {
+                seed: entry.seed,
+                bias_version: BiasVersion::V1,
+            };
             let report = self.pipeline.run(entry.payload.clone(), &ctx)?;
             if report.plan.id != entry.plan_id {
-                bail!("Replay mismatch: expected id={} got id={}", entry.plan_id, report.plan.id);
+                bail!(
+                    "Replay mismatch: expected id={} got id={}",
+                    entry.plan_id,
+                    report.plan.id
+                );
             }
         }
         Ok(())
@@ -54,10 +75,16 @@ mod tests {
 
     fn mkp() -> Pipeline {
         Pipeline::new(BiasConfiguration::new(
-            "test", vec![SemanticBiasRule::new("r1", 1, "critical", "first")],
+            "test",
+            vec![SemanticBiasRule::new("r1", 1, "critical", "first")],
         ))
     }
-    fn ctx(s: u64) -> PipelineContext { PipelineContext { seed: s, bias_version: BiasVersion::V1 } }
+    fn ctx(s: u64) -> PipelineContext {
+        PipelineContext {
+            seed: s,
+            bias_version: BiasVersion::V1,
+        }
+    }
 
     #[test]
     fn tape_records_entries() {
@@ -68,7 +95,9 @@ mod tests {
     }
 
     #[test]
-    fn tape_is_empty_initially() { assert!(ReplayTape::new().is_empty()); }
+    fn tape_is_empty_initially() {
+        assert!(ReplayTape::new().is_empty());
+    }
 
     #[test]
     fn replayer_verifies_stable_run() {
@@ -98,8 +127,14 @@ mod tests {
         let mut tape = ReplayTape::new();
         for seed in [1u64, 2, 3] {
             let c = ctx(seed);
-            let r = mkp().run(format!("task alpha\ntask beta\ntask {seed}"), &c).unwrap();
-            tape.record(&format!("task alpha\ntask beta\ntask {seed}"), seed, &r.plan.id);
+            let r = mkp()
+                .run(format!("task alpha\ntask beta\ntask {seed}"), &c)
+                .unwrap();
+            tape.record(
+                &format!("task alpha\ntask beta\ntask {seed}"),
+                seed,
+                &r.plan.id,
+            );
         }
         assert!(Replayer::new(mkp()).verify(&tape).is_ok());
     }

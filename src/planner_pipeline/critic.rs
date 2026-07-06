@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::planner_pipeline::Plan;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CriticReport {
@@ -41,7 +41,11 @@ impl PlannerCritic {
         }
 
         let passed = violations.is_empty();
-        CriticReport { invariant_violations: violations, warnings, passed }
+        CriticReport {
+            invariant_violations: violations,
+            warnings,
+            passed,
+        }
     }
 }
 
@@ -66,7 +70,10 @@ mod tests {
 
     #[test]
     fn critic_catches_empty_id() {
-        let plan = Plan { id: "".into(), ..valid_plan() };
+        let plan = Plan {
+            id: "".into(),
+            ..valid_plan()
+        };
         let report = PlannerCritic.analyze(&plan);
         assert!(!report.passed);
         assert!(report.invariant_violations.iter().any(|v| v.contains("id")));
@@ -80,7 +87,10 @@ mod tests {
         };
         let report = PlannerCritic.analyze(&plan);
         assert!(!report.passed);
-        assert!(report.invariant_violations.iter().any(|v| v.contains("duplicate")));
+        assert!(report
+            .invariant_violations
+            .iter()
+            .any(|v| v.contains("duplicate")));
     }
 
     #[test]

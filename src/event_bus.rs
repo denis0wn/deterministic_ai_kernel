@@ -100,7 +100,10 @@ impl EventBus {
         if source_generation < max_gen {
             return Err(anyhow::anyhow!(
                 "generation fence: source_generation {} <= existing max {} for task={} step={}",
-                source_generation, max_gen, task_id, step_id
+                source_generation,
+                max_gen,
+                task_id,
+                step_id
             ));
         }
         conn.execute(
@@ -391,6 +394,8 @@ impl EventBus {
         }
     }
 
+    #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn publish_pipeline_report(
         &self,
         task_id: &str,
@@ -407,20 +412,25 @@ impl EventBus {
         use serde_json::json;
 
         self.append_event(
-            task_id, None, "pipeline.started",
+            task_id,
+            None,
+            "pipeline.started",
             &json!({ "seed": seed, "planner_version": planner_version }),
         )?;
 
         for (stage, desc, offset_ms) in stage_events {
             self.append_event(
-                task_id, None,
+                task_id,
+                None,
                 &format!("pipeline.stage.{}", stage),
                 &json!({ "desc": desc, "offset_ms": offset_ms }),
             )?;
         }
 
         self.append_event(
-            task_id, None, "pipeline.completed",
+            task_id,
+            None,
+            "pipeline.completed",
             &json!({
                 "plan_id": plan_id,
                 "fingerprint": fingerprint,
@@ -434,7 +444,7 @@ impl EventBus {
         Ok(())
     }
 
-
+    #[allow(dead_code)]
     pub fn publish_pipeline_failed(
         &self,
         task_id: &str,
@@ -444,7 +454,9 @@ impl EventBus {
     ) -> Result<()> {
         use serde_json::json;
         self.append_event(
-            task_id, None, "pipeline.failed",
+            task_id,
+            None,
+            "pipeline.failed",
             &json!({
                 "seed": seed,
                 "planner_version": planner_version,

@@ -8,19 +8,24 @@
 use anyhow::{bail, Result};
 use std::env;
 
-use deterministic_ai_kernel::planner_pipeline::PipelineContext;
 use deterministic_ai_kernel::planner_pipeline::execution_engine::{ExecutionEngine, StepStatus};
 use deterministic_ai_kernel::planner_pipeline::persistence::{PersistenceStore, StoreConfig};
 use deterministic_ai_kernel::planner_pipeline::pipeline::Pipeline;
 use deterministic_ai_kernel::planner_pipeline::plan_diff::{PlanDiff, StepChange};
 use deterministic_ai_kernel::planner_pipeline::replay::ReplayTape;
+use deterministic_ai_kernel::planner_pipeline::PipelineContext;
 use deterministic_ai_kernel::planner_pipeline::Plan;
 use deterministic_ai_kernel::semantic_bias::{BiasConfiguration, BiasVersion, SemanticBiasRule};
 
 fn default_bias() -> BiasConfiguration {
     BiasConfiguration::new(
         "default-v1",
-        vec![SemanticBiasRule::new("critical-first", 1, "critical", "first")],
+        vec![SemanticBiasRule::new(
+            "critical-first",
+            1,
+            "critical",
+            "first",
+        )],
     )
 }
 
@@ -48,19 +53,31 @@ fn cmd_run(args: &[String]) -> Result<()> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--payload" => { i += 1; payload = Some(args[i].clone()); }
-            "--seed"    => { i += 1; seed = Some(args[i].parse()?); }
-            "--store"   => { i += 1; store_dir = args[i].clone(); }
+            "--payload" => {
+                i += 1;
+                payload = Some(args[i].clone());
+            }
+            "--seed" => {
+                i += 1;
+                seed = Some(args[i].parse()?);
+            }
+            "--store" => {
+                i += 1;
+                store_dir = args[i].clone();
+            }
             other => bail!("unknown argument: {other}"),
         }
         i += 1;
     }
     let payload = payload.ok_or_else(|| anyhow::anyhow!("--payload required"))?;
-    let seed    = seed.ok_or_else(|| anyhow::anyhow!("--seed required"))?;
+    let seed = seed.ok_or_else(|| anyhow::anyhow!("--seed required"))?;
 
-    let ctx    = PipelineContext { seed, bias_version: BiasVersion::V1 };
+    let ctx = PipelineContext {
+        seed,
+        bias_version: BiasVersion::V1,
+    };
     let engine = ExecutionEngine::with_default_executor(Pipeline::new(default_bias()));
-    let store  = make_store(&store_dir)?;
+    let store = make_store(&store_dir)?;
     let mut tape = store.load_tape().unwrap_or_else(|_| ReplayTape::new());
 
     let report = engine.run_with_replay(&payload, &ctx, &mut tape)?;
@@ -75,15 +92,17 @@ fn cmd_run(args: &[String]) -> Result<()> {
     println!();
     for s in &report.steps {
         let status = match &s.status {
-            StepStatus::Ok        => "ok".to_string(),
-            StepStatus::Skipped   => "skip".to_string(),
+            StepStatus::Ok => "ok".to_string(),
+            StepStatus::Skipped => "skip".to_string(),
             StepStatus::Failed(e) => format!("FAIL: {e}"),
         };
         println!("  [{:>2}] {} -- {}", s.index, status, s.description);
     }
     println!();
     println!("tape    : {} entries  (store: {store_dir})", tape.len());
-    if !report.success { std::process::exit(1); }
+    if !report.success {
+        std::process::exit(1);
+    }
     Ok(())
 }
 
@@ -94,14 +113,17 @@ fn cmd_verify(args: &[String]) -> Result<()> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--store" => { i += 1; store_dir = args[i].clone(); }
+            "--store" => {
+                i += 1;
+                store_dir = args[i].clone();
+            }
             other => bail!("unknown argument: {other}"),
         }
         i += 1;
     }
 
-    let store   = make_store(&store_dir)?;
-    let tape    = store.load_tape()?;
+    let store = make_store(&store_dir)?;
+    let tape = store.load_tape()?;
     let entries = tape.entries().to_vec();
 
     println!("Replay Verification");
@@ -120,8 +142,11 @@ fn cmd_verify(args: &[String]) -> Result<()> {
     let mut failed: Vec<(usize, String, u64, String)> = vec![];
 
     for (idx, entry) in entries.iter().enumerate() {
-        let ctx    = PipelineContext { seed: entry.seed, bias_version: BiasVersion::V1 };
-        let out    = pipeline.run(entry.payload.clone(), &ctx)?;
+        let ctx = PipelineContext {
+            seed: entry.seed,
+            bias_version: BiasVersion::V1,
+        };
+        let out = pipeline.run(entry.payload.clone(), &ctx)?;
         let actual = out.plan.id.clone();
 
         if actual == entry.plan_id {
@@ -129,7 +154,12 @@ fn cmd_verify(args: &[String]) -> Result<()> {
         } else {
             println!("  [!!] tape #{}", idx + 1);
             drift += 1;
-            failed.push((idx + 1, entry.payload.clone(), entry.seed, entry.plan_id.clone()));
+            failed.push((
+                idx + 1,
+                entry.payload.clone(),
+                entry.seed,
+                entry.plan_id.clone(),
+            ));
         }
     }
 
@@ -146,7 +176,10 @@ fn cmd_verify(args: &[String]) -> Result<()> {
     println!();
 
     for (tape_no, payload, seed, expected_id) in failed {
-        let ctx    = PipelineContext { seed, bias_version: BiasVersion::V1 };
+        let ctx = PipelineContext {
+            seed,
+            bias_version: BiasVersion::V1,
+        };
         let actual = pipeline.run(payload.clone(), &ctx)?;
 
         println!("Tape #{tape_no}");
@@ -165,14 +198,16 @@ fn cmd_verify(args: &[String]) -> Result<()> {
                 println!("Drift:");
                 for ch in diff.changes {
                     match ch {
-                        StepChange::Added(s)    => println!("    + {s}"),
-                        StepChange::Removed(s)  => println!("    - {s}"),
+                        StepChange::Added(s) => println!("    + {s}"),
+                        StepChange::Removed(s) => println!("    - {s}"),
                         StepChange::Retained(_) => {}
                     }
                 }
             }
-            Err(_) => println!("Drift:
-  (saved run not found)"),
+            Err(_) => println!(
+                "Drift:
+  (saved run not found)"
+            ),
         }
         println!();
     }
@@ -188,8 +223,11 @@ fn cmd_diff(args: &[String]) -> Result<()> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--store" => { i += 1; store_dir = args[i].clone(); }
-            other     => positional.push(other.to_owned()),
+            "--store" => {
+                i += 1;
+                store_dir = args[i].clone();
+            }
+            other => positional.push(other.to_owned()),
         }
         i += 1;
     }
@@ -201,19 +239,29 @@ fn cmd_diff(args: &[String]) -> Result<()> {
     let id_a = &positional[0];
     let id_b = &positional[1];
 
-    let store    = make_store(&store_dir)?;
-    let report_a = store.load_report(id_a)
+    let store = make_store(&store_dir)?;
+    let report_a = store
+        .load_report(id_a)
         .map_err(|_| anyhow::anyhow!("plan {id_a} not found in {store_dir}"))?;
-    let report_b = store.load_report(id_b)
+    let report_b = store
+        .load_report(id_b)
         .map_err(|_| anyhow::anyhow!("plan {id_b} not found in {store_dir}"))?;
 
     let plan_a = Plan::new_with_stable_id(
         report_a.seed,
-        report_a.steps.iter().map(|s| s.description.clone()).collect(),
+        report_a
+            .steps
+            .iter()
+            .map(|s| s.description.clone())
+            .collect(),
     );
     let plan_b = Plan::new_with_stable_id(
         report_b.seed,
-        report_b.steps.iter().map(|s| s.description.clone()).collect(),
+        report_b
+            .steps
+            .iter()
+            .map(|s| s.description.clone())
+            .collect(),
     );
 
     let diff = PlanDiff::diff(&plan_a, &plan_b);
@@ -225,8 +273,8 @@ fn cmd_diff(args: &[String]) -> Result<()> {
 
     for ch in &diff.changes {
         match ch {
-            StepChange::Added(s)    => println!("  + {s}"),
-            StepChange::Removed(s)  => println!("  - {s}"),
+            StepChange::Added(s) => println!("  + {s}"),
+            StepChange::Removed(s) => println!("  - {s}"),
             StepChange::Retained(s) => println!("  ~ {s}"),
         }
     }
@@ -247,25 +295,25 @@ fn cmd_diff(args: &[String]) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let subcmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
-    let rest   = if args.len() > 2 { &args[2..] } else { &[] };
+    let rest = if args.len() > 2 { &args[2..] } else { &[] };
 
     match subcmd {
-        "run"    => cmd_run(rest),
+        "run" => cmd_run(rest),
         "verify" => cmd_verify(rest),
-        "diff"               => cmd_diff(rest),
-        "emit-bias-artifact"   => cmd_emit_bias_artifact(rest),
-        "latest-bias-artifact"  => cmd_latest_bias_artifact(rest),
-        "analyze-task"          => cmd_analyze_task(rest),
-        "doctor-json"           => cmd_doctor_json(rest),
+        "diff" => cmd_diff(rest),
+        "emit-bias-artifact" => cmd_emit_bias_artifact(rest),
+        "latest-bias-artifact" => cmd_latest_bias_artifact(rest),
+        "analyze-task" => cmd_analyze_task(rest),
+        "doctor-json" => cmd_doctor_json(rest),
         "--help" | "help" | "-h" => print_usage(0),
-        _                       => print_usage(2),
+        _ => print_usage(2),
     }
 }
 
 // -- subcommand: emit-bias-artifact ------------------------------------------
 
 fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
-    use rusqlite::{Connection, params};
+    use rusqlite::{params, Connection};
     use std::collections::HashMap;
 
     if args.len() < 2 {
@@ -275,11 +323,11 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
     let step_bias_id = &args[1];
     let preferred: Vec<&str> = args[2..].iter().map(|s| s.as_str()).collect();
 
-    let db_path = std::env::var("KERNEL_DB_PATH")
-        .unwrap_or_else(|_| "kernel.db".to_string());
+    let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
 
     let conn = Connection::open(&db_path)?;
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS bias_artifacts (
             id            TEXT PRIMARY KEY,
             task_bias_id  TEXT NOT NULL,
@@ -288,7 +336,8 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
             artifact_type TEXT NOT NULL,
             payload       TEXT NOT NULL
         );
-    ")?;
+    ",
+    )?;
 
     // build payload
     let weights: HashMap<&str, f64> = preferred.iter().map(|k| (*k, 1.0_f64)).collect();
@@ -318,14 +367,21 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
     });
 
     let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
 
     conn.execute(
         "INSERT OR REPLACE INTO bias_artifacts
          (id, task_bias_id, step_bias_id, created_at, artifact_type, payload)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, task_bias_id, step_bias_id, now, "semantic_bias_v1",
-                serde_json::to_string(&payload)?],
+        params![
+            id,
+            task_bias_id,
+            step_bias_id,
+            now,
+            "semantic_bias_v1",
+            serde_json::to_string(&payload)?
+        ],
     )?;
 
     println!("ok\t{id}");
@@ -343,8 +399,7 @@ fn cmd_latest_bias_artifact(args: &[String]) -> Result<()> {
     let task_bias_id = &args[0];
     let step_bias_id = &args[1];
 
-    let db_path = std::env::var("KERNEL_DB_PATH")
-        .unwrap_or_else(|_| "kernel.db".to_string());
+    let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
 
     let conn = Connection::open(&db_path)?;
 
@@ -352,22 +407,26 @@ fn cmd_latest_bias_artifact(args: &[String]) -> Result<()> {
         "SELECT id, task_bias_id, step_bias_id, created_at, artifact_type, payload
          FROM bias_artifacts
          WHERE task_bias_id = ?1 AND step_bias_id = ?2
-         ORDER BY created_at DESC LIMIT 1"
+         ORDER BY created_at DESC LIMIT 1",
     )?;
 
-    let row = stmt.query_row(
-        rusqlite::params![task_bias_id, step_bias_id],
-        |r| Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, i64>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, String>(5)?,
-        )),
-    ).map_err(|_| anyhow::anyhow!("no artifact found for {task_bias_id}/{step_bias_id}"))?;
+    let row = stmt
+        .query_row(rusqlite::params![task_bias_id, step_bias_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|_| anyhow::anyhow!("no artifact found for {task_bias_id}/{step_bias_id}"))?;
 
-    println!("{}\t{}\t{}\t{}\t{}\t{}", row.0, row.1, row.2, row.3, row.4, row.5);
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}",
+        row.0, row.1, row.2, row.3, row.4, row.5
+    );
     Ok(())
 }
 
@@ -379,18 +438,27 @@ fn cmd_analyze_task(args: &[String]) -> Result<()> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--payload" => { i += 1; payload = Some(args[i].clone()); }
-            "--seed"    => { i += 1; seed = Some(args[i].parse()?); }
+            "--payload" => {
+                i += 1;
+                payload = Some(args[i].clone());
+            }
+            "--seed" => {
+                i += 1;
+                seed = Some(args[i].parse()?);
+            }
             other => bail!("unknown argument: {other}"),
         }
         i += 1;
     }
     let payload = payload.ok_or_else(|| anyhow::anyhow!("--payload required"))?;
-    let seed    = seed.unwrap_or(0);
+    let seed = seed.unwrap_or(0);
 
-    let ctx      = PipelineContext { seed, bias_version: BiasVersion::V1 };
+    let ctx = PipelineContext {
+        seed,
+        bias_version: BiasVersion::V1,
+    };
     let pipeline = Pipeline::new(default_bias());
-    let out      = pipeline.run(payload, &ctx)?;
+    let out = pipeline.run(payload, &ctx)?;
 
     println!("plan_id : {}", out.plan.id);
     println!("steps   : {}", out.plan.steps.len());
@@ -419,48 +487,57 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
             }
         }
         #[cfg(not(unix))]
-        { -1.0 }
+        {
+            -1.0
+        }
     };
 
     // LM Studio models — try ~/.lmstudio/models or env override
-    let models_dir = std::env::var("LM_STUDIO_MODELS_DIR")
-        .unwrap_or_else(|_| {
-            dirs_next_or_home().join(".lmstudio/models").to_string_lossy().into_owned()
-        });
+    let models_dir = std::env::var("LM_STUDIO_MODELS_DIR").unwrap_or_else(|_| {
+        dirs_next_or_home()
+            .join(".lmstudio/models")
+            .to_string_lossy()
+            .into_owned()
+    });
     let lm_studio_models: Vec<String> = std::fs::read_dir(&models_dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
-              .filter(|e| e.path().is_dir())
-              .map(|e| e.file_name().to_string_lossy().into_owned())
-              .collect()
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
         })
         .unwrap_or_default();
 
     // Roles — read from ROLES_MANIFEST_PATH or empty
     let roles: Vec<serde_json::Value> = {
-        let manifest = std::env::var("ROLES_MANIFEST_PATH").ok()
+        let manifest = std::env::var("ROLES_MANIFEST_PATH")
+            .ok()
             .and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(&s).ok())
             .unwrap_or_default();
-        manifest.into_iter().map(|r| {
-            let role = r["role"].as_str().unwrap_or("unknown").to_owned();
-            let manifest_model = r["manifest_model"].as_str().unwrap_or("").to_owned();
-            let env_model = std::env::var(format!("{}_MODEL",
-                role.to_uppercase().replace('-',"_"))).unwrap_or_default();
-            let in_sync = manifest_model == env_model && !manifest_model.is_empty();
-            let model_available = lm_studio_models.iter().any(|m| m == &manifest_model);
-            let threshold_gb = r["threshold_gb"].as_f64().unwrap_or(4.0);
-            let switch_ready = in_sync && model_available && free_gb >= threshold_gb;
-            json!({
-                "role": role,
-                "manifest_model": manifest_model,
-                "env_model": env_model,
-                "in_sync": in_sync,
-                "model_available": model_available,
-                "threshold_gb": threshold_gb,
-                "switch_ready": switch_ready,
+        manifest
+            .into_iter()
+            .map(|r| {
+                let role = r["role"].as_str().unwrap_or("unknown").to_owned();
+                let manifest_model = r["manifest_model"].as_str().unwrap_or("").to_owned();
+                let env_model =
+                    std::env::var(format!("{}_MODEL", role.to_uppercase().replace('-', "_")))
+                        .unwrap_or_default();
+                let in_sync = manifest_model == env_model && !manifest_model.is_empty();
+                let model_available = lm_studio_models.iter().any(|m| m == &manifest_model);
+                let threshold_gb = r["threshold_gb"].as_f64().unwrap_or(4.0);
+                let switch_ready = in_sync && model_available && free_gb >= threshold_gb;
+                json!({
+                    "role": role,
+                    "manifest_model": manifest_model,
+                    "env_model": env_model,
+                    "in_sync": in_sync,
+                    "model_available": model_available,
+                    "threshold_gb": threshold_gb,
+                    "switch_ready": switch_ready,
+                })
             })
-        }).collect()
+            .collect()
     };
 
     let report = json!({
@@ -479,6 +556,7 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
 }
 
 fn dirs_next_or_home() -> std::path::PathBuf {
-    std::env::var("HOME").map(std::path::PathBuf::from)
+    std::env::var("HOME")
+        .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
 }

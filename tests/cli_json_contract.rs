@@ -36,7 +36,10 @@ pub fn assert_cli_json_v1<T: CliJsonInput + ?Sized>(input: &T, expected_command:
 
 fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_cli_json_{}_{}.db", label, nanos))
         .display()

@@ -8,8 +8,8 @@ pub mod llm;
 pub mod model_registry;
 pub mod replay;
 pub mod scheduler;
-pub mod snapshot;
 pub mod schema;
+pub mod snapshot;
 pub mod workflow;
 
 pub mod model_manifest;
@@ -18,6 +18,6 @@ pub mod lm_control;
 
 pub mod embeddings;
 pub mod kernel_types;
+pub mod planner_pipeline;
 pub mod registry;
 pub mod semantic_bias;
-pub mod planner_pipeline;

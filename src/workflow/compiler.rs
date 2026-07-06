@@ -1,7 +1,10 @@
 use anyhow::Result;
 
 use crate::llm;
-use crate::workflow::contract::{required_capability_for_step, step_specs_to_steps, task_class_to_flow, Step, StepSpec, TaskClass};
+use crate::workflow::contract::{
+    required_capability_for_step, step_specs_to_steps, task_class_to_flow, Step, StepSpec,
+    TaskClass,
+};
 use crate::workflow::planner::{apply_semantic_bias_from_seed, parse_steps, validate_steps};
 
 pub struct Workflow;
@@ -80,13 +83,16 @@ impl TaskInput {
 }
 
 impl Workflow {
-
+    #[allow(dead_code)]
     pub fn from_plan_steps(steps: &[String]) -> Vec<Step> {
         let text = steps.join("\n");
         let kinds = parse_steps(&text);
         let specs: Vec<StepSpec> = kinds
             .into_iter()
-            .map(|kind| StepSpec { required_capability: required_capability_for_step(&kind), kind })
+            .map(|kind| StepSpec {
+                required_capability: required_capability_for_step(&kind),
+                kind,
+            })
             .collect();
         validate_steps(step_specs_to_steps(&specs, None))
     }

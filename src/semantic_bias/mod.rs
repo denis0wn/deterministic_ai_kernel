@@ -27,7 +27,12 @@ impl BiasVersion {
 }
 
 impl SemanticBiasRule {
-    pub fn new(id: impl Into<String>, priority: u8, condition: impl Into<String>, action: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        priority: u8,
+        condition: impl Into<String>,
+        action: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             priority,
@@ -55,7 +60,12 @@ mod tests {
     fn bias_configuration_roundtrip_json() {
         let cfg = BiasConfiguration::new(
             "test-bias",
-            vec![SemanticBiasRule::new("rule-1", 10, "state==pending", "prefer_low_latency")],
+            vec![SemanticBiasRule::new(
+                "rule-1",
+                10,
+                "state==pending",
+                "prefer_low_latency",
+            )],
         );
         let json = serde_json::to_string(&cfg).unwrap();
         let restored: BiasConfiguration = serde_json::from_str(&json).unwrap();

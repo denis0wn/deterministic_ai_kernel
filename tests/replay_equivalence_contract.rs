@@ -17,7 +17,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // ---------------------------------------------------------------------------
 
 fn unique_db(label: &str) -> String {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_reqeq_{}_{}.db", label, nanos))
         .display()
@@ -71,20 +74,56 @@ fn snapshot_graph(db: &str, task: &str, step: &str) -> Value {
 // ---------------------------------------------------------------------------
 
 struct Case {
-    tag:   &'static str,
+    tag: &'static str,
     steps: &'static [&'static str],
 }
 
 const CASES: &[Case] = &[
-    Case { tag: "single-analyze",   steps: &["AnalyzeTask"] },
-    Case { tag: "single-execute",   steps: &["ExecuteChanges"] },
-    Case { tag: "single-run",       steps: &["RunTests"] },
-    Case { tag: "pair-ae",          steps: &["AnalyzeTask", "ExecuteChanges"] },
-    Case { tag: "pair-ar",          steps: &["AnalyzeTask", "RunTests"] },
-    Case { tag: "triple-aer",       steps: &["AnalyzeTask", "ExecuteChanges", "RunTests"] },
-    Case { tag: "triple-all",       steps: &["AnalyzeTask", "PlanExecution", "ExecuteChanges", "RunTests", "ValidatePatch"] },
-    Case { tag: "chain-repeat",     steps: &["AnalyzeTask", "ExecuteChanges", "RunTests",
-                                             "AnalyzeTask", "ExecuteChanges", "RunTests"] },
+    Case {
+        tag: "single-analyze",
+        steps: &["AnalyzeTask"],
+    },
+    Case {
+        tag: "single-execute",
+        steps: &["ExecuteChanges"],
+    },
+    Case {
+        tag: "single-run",
+        steps: &["RunTests"],
+    },
+    Case {
+        tag: "pair-ae",
+        steps: &["AnalyzeTask", "ExecuteChanges"],
+    },
+    Case {
+        tag: "pair-ar",
+        steps: &["AnalyzeTask", "RunTests"],
+    },
+    Case {
+        tag: "triple-aer",
+        steps: &["AnalyzeTask", "ExecuteChanges", "RunTests"],
+    },
+    Case {
+        tag: "triple-all",
+        steps: &[
+            "AnalyzeTask",
+            "PlanExecution",
+            "ExecuteChanges",
+            "RunTests",
+            "ValidatePatch",
+        ],
+    },
+    Case {
+        tag: "chain-repeat",
+        steps: &[
+            "AnalyzeTask",
+            "ExecuteChanges",
+            "RunTests",
+            "AnalyzeTask",
+            "ExecuteChanges",
+            "RunTests",
+        ],
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -115,7 +154,7 @@ fn contract_same_input_identical_snapshot_graph() {
             case.tag, case.steps
         );
         assert_eq!(graph_a["version"], "v1", "[contract-1] version must be v1");
-        assert_eq!(graph_a["seed"],    0, "[contract-1] seed must be 0");
+        assert_eq!(graph_a["seed"], 0, "[contract-1] seed must be 0");
 
         cleanup(&db);
     }
@@ -138,7 +177,7 @@ fn contract_snapshot_restore_preserves_graph() {
         let before = snapshot_graph(&db, &task, step);
 
         let _ = run_ok(&db, &["snapshot", &task]);
-        let _ = run_ok(&db, &["restore",  &task]);
+        let _ = run_ok(&db, &["restore", &task]);
 
         emit(&db, &task, step, case.steps);
         let after = snapshot_graph(&db, &task, step);
@@ -161,15 +200,12 @@ fn contract_snapshot_restore_preserves_graph() {
 
 #[test]
 fn contract_ordering_independence_guaranteed() {
-    let ordered  = &["AnalyzeTask", "ExecuteChanges", "RunTests", "ValidatePatch"];
+    let ordered = &["AnalyzeTask", "ExecuteChanges", "RunTests", "ValidatePatch"];
     let reversed = &["ValidatePatch", "RunTests", "ExecuteChanges", "AnalyzeTask"];
     let shuffled = &["RunTests", "AnalyzeTask", "ValidatePatch", "ExecuteChanges"];
 
-    let permutations: &[(&str, &[&str])] = &[
-        ("ord", ordered),
-        ("rev", reversed),
-        ("shu", shuffled),
-    ];
+    let permutations: &[(&str, &[&str])] =
+        &[("ord", ordered), ("rev", reversed), ("shu", shuffled)];
 
     let mut payloads: HashMap<&str, Value> = HashMap::new();
 
@@ -186,8 +222,14 @@ fn contract_ordering_independence_guaranteed() {
     let w_rev = &payloads["rev"]["weights"];
     let w_shu = &payloads["shu"]["weights"];
 
-    assert_eq!(w_ord, w_rev, "[contract-3] ordered vs reversed weights differ");
-    assert_eq!(w_ord, w_shu, "[contract-3] ordered vs shuffled weights differ");
+    assert_eq!(
+        w_ord, w_rev,
+        "[contract-3] ordered vs reversed weights differ"
+    );
+    assert_eq!(
+        w_ord, w_shu,
+        "[contract-3] ordered vs shuffled weights differ"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -206,15 +248,25 @@ fn contract_payload_schema_invariants() {
         let p = fetch_payload(&db, &task, step);
 
         assert_eq!(p["version"], "v1", "[contract-4] version tag={}", case.tag);
-        assert_eq!(p["seed"],    0, "[contract-4] seed    tag={}", case.tag);
+        assert_eq!(p["seed"], 0, "[contract-4] seed    tag={}", case.tag);
 
-        let weights = p["weights"].as_object()
+        let weights = p["weights"]
+            .as_object()
             .unwrap_or_else(|| panic!("[contract-4] weights not object tag={}", case.tag));
-        assert!(!weights.is_empty(), "[contract-4] weights empty tag={}", case.tag);
+        assert!(
+            !weights.is_empty(),
+            "[contract-4] weights empty tag={}",
+            case.tag
+        );
 
-        let lines = p["lines"].as_array()
+        let lines = p["lines"]
+            .as_array()
             .unwrap_or_else(|| panic!("[contract-4] lines not array tag={}", case.tag));
-        assert!(!lines.is_empty(), "[contract-4] lines empty tag={}", case.tag);
+        assert!(
+            !lines.is_empty(),
+            "[contract-4] lines empty tag={}",
+            case.tag
+        );
 
         // Every unique step in input must appear as a weight key
         let unique: std::collections::HashSet<&str> = case.steps.iter().copied().collect();

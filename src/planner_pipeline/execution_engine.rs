@@ -2,9 +2,9 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-use crate::planner_pipeline::PipelineContext;
 use crate::planner_pipeline::pipeline::Pipeline;
 use crate::planner_pipeline::replay::{ReplayTape, Replayer};
+use crate::planner_pipeline::PipelineContext;
 
 // ── Step-level result ────────────────────────────────────────────────────────
 
@@ -36,10 +36,16 @@ pub struct ExecutionReport {
 
 impl ExecutionReport {
     pub fn failed_steps(&self) -> Vec<&StepResult> {
-        self.steps.iter().filter(|s| matches!(s.status, StepStatus::Failed(_))).collect()
+        self.steps
+            .iter()
+            .filter(|s| matches!(s.status, StepStatus::Failed(_)))
+            .collect()
     }
     pub fn skipped_count(&self) -> usize {
-        self.steps.iter().filter(|s| s.status == StepStatus::Skipped).count()
+        self.steps
+            .iter()
+            .filter(|s| s.status == StepStatus::Skipped)
+            .count()
     }
 }
 
@@ -144,9 +150,9 @@ impl ExecutionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planner_pipeline::{PipelineContext};
     use crate::planner_pipeline::pipeline::Pipeline;
-    use crate::semantic_bias::{BiasVersion, BiasConfiguration, SemanticBiasRule};
+    use crate::planner_pipeline::PipelineContext;
+    use crate::semantic_bias::{BiasConfiguration, BiasVersion, SemanticBiasRule};
 
     fn bias() -> BiasConfiguration {
         BiasConfiguration::new(
@@ -155,7 +161,10 @@ mod tests {
         )
     }
     fn ctx() -> PipelineContext {
-        PipelineContext { seed: 42, bias_version: BiasVersion::V1 }
+        PipelineContext {
+            seed: 42,
+            bias_version: BiasVersion::V1,
+        }
     }
     fn engine() -> ExecutionEngine {
         ExecutionEngine::with_default_executor(Pipeline::new(bias()))
@@ -163,7 +172,9 @@ mod tests {
 
     #[test]
     fn runs_all_steps_successfully() {
-        let r = engine().run("step one\nstep two\ncritical step", &ctx()).unwrap();
+        let r = engine()
+            .run("step one\nstep two\ncritical step", &ctx())
+            .unwrap();
         assert!(r.success);
         assert_eq!(r.steps.len(), 3);
         assert!(r.failed_steps().is_empty());
@@ -225,7 +236,8 @@ mod tests {
     fn run_with_replay_verifies_consistency() {
         let mut tape = ReplayTape::new();
         let eng = engine();
-        eng.run_with_replay("step one\nstep two", &ctx(), &mut tape).unwrap();
+        eng.run_with_replay("step one\nstep two", &ctx(), &mut tape)
+            .unwrap();
         assert_eq!(tape.len(), 1);
     }
 

@@ -3,11 +3,9 @@
 //! Any change to semantic_bias_v1 structure without bumping the version
 //! must break this test.
 
-
 /// Canonical field fingerprint of semantic_bias_v1.
 /// If you add/remove/rename a field — bump SCHEMA_VERSION and update this hash.
-const EXPECTED_FIELD_FINGERPRINT: &str =
-    "preferred,version,weights";
+const EXPECTED_FIELD_FINGERPRINT: &str = "preferred,version,weights";
 
 /// Locked schema version. Must match BiasVersion in source.
 const LOCKED_SCHEMA_VERSION: &str = "semantic_bias_v1";
@@ -63,8 +61,7 @@ fn weight_keys_are_locked() {
 
 #[test]
 fn weight_map_rejects_unknown_keys() {
-    let known: std::collections::BTreeSet<&str> =
-        LOCKED_WEIGHT_KEYS.iter().copied().collect();
+    let known: std::collections::BTreeSet<&str> = LOCKED_WEIGHT_KEYS.iter().copied().collect();
     let candidate_keys = vec![
         "AnalyzeAndPlan",
         "CodeFix",

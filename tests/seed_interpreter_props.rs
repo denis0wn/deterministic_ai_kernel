@@ -1,6 +1,5 @@
 use deterministic_ai_kernel::workflow::{
-    contract::StepKind,
-    semantic::interpreter::SeedInterpreter,
+    contract::StepKind, semantic::interpreter::SeedInterpreter,
 };
 
 fn domain() -> Vec<StepKind> {
@@ -55,7 +54,7 @@ fn weights_are_in_valid_range() {
     let domain = domain();
     let bias = SeedInterpreter::interpret(999, &domain);
     for (key, &w) in &bias.weights {
-        assert!(w >= 1.0 && w < 2.0, "weight for {key} is {w}");
+        assert!((1.0..2.0).contains(&w), "weight for {key} is {w}");
     }
 }
 

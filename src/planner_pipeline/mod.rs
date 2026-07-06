@@ -1,6 +1,6 @@
-use serde::Serialize;
-use anyhow::Result;
 use crate::semantic_bias::BiasVersion;
+use anyhow::Result;
+use serde::Serialize;
 
 pub struct PipelineContext {
     pub seed: u64,
@@ -43,11 +43,10 @@ impl Plan {
     }
 }
 
+pub mod critic;
 pub mod normalizer;
 pub mod parser;
 pub mod semantic_mapper;
-pub mod critic;
-
 
 #[cfg(test)]
 mod tests {
@@ -75,11 +74,11 @@ mod tests {
         assert_eq!(p.id.len(), 16);
     }
 }
-pub mod pipeline;
-pub mod replay;
-pub mod plan_diff;
 pub mod execution_engine;
 pub mod persistence;
+pub mod pipeline;
+pub mod plan_diff;
+pub mod replay;
 
 pub mod report;
 
@@ -90,8 +89,16 @@ pub fn build_plan_and_publish(payload: &str, seed: u64, db_path: &str) -> Result
     let bus = EventBus::new(db_path)?;
     match build_plan(payload, seed) {
         Ok(report) => {
-            let stage_tuples: Vec<(String, String, u128)> = report.stage_events.iter()
-                .map(|e| (e.stage.to_string(), e.description.clone(), e.timestamp_offset_ms))
+            let stage_tuples: Vec<(String, String, u128)> = report
+                .stage_events
+                .iter()
+                .map(|e| {
+                    (
+                        e.stage.to_string(),
+                        e.description.clone(),
+                        e.timestamp_offset_ms,
+                    )
+                })
                 .collect();
             let _ = bus.publish_pipeline_report(
                 &report.plan.id,
@@ -136,23 +143,27 @@ pub fn build_plan_and_publish(payload: &str, seed: u64, db_path: &str) -> Result
     }
 }
 
-
-use std::time::Instant;
 use crate::planner_pipeline::critic::PlannerCritic;
 use crate::planner_pipeline::normalizer::Normalizer;
 use crate::planner_pipeline::parser::Parser;
-use crate::planner_pipeline::report::{PipelineReport, ReplayEvent, StageName};
 use crate::planner_pipeline::replay::ReplayTape;
+use crate::planner_pipeline::report::{PipelineReport, ReplayEvent, StageName};
 use crate::planner_pipeline::semantic_mapper::SemanticMapper;
 use crate::semantic_bias::BiasConfiguration;
+use std::time::Instant;
 
 /// Library API. Pure function — no side effects.
 /// Used by CLI, Scheduler, Worker, and future HTTP API.
 pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
     let started = Instant::now();
-    let ctx = PipelineContext { seed, bias_version: BiasVersion::V1 };
+    let ctx = PipelineContext {
+        seed,
+        bias_version: BiasVersion::V1,
+    };
     let bias = BiasConfiguration::new("default", vec![]);
-    let raw = RawInput { payload: payload.to_owned() };
+    let raw = RawInput {
+        payload: payload.to_owned(),
+    };
     let mut events: Vec<ReplayEvent> = Vec::new();
 
     let normalized = Normalizer.run(raw, &ctx)?;
@@ -207,4 +218,3 @@ pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
         elapsed_ms: started.elapsed().as_millis(),
     })
 }
-
