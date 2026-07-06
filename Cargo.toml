@@ -15,6 +15,7 @@ jsonschema = { version = "0.46.8", default-features = false, features = ["resolv
 uuid  = { version = "1", features = ["v4", "serde"] }
 blake3 = "1"
 chrono = { version = "0.4", features = ["serde"] }
+libc = "0.2"
 
 [[bin]]
 name = "deterministic_ai_kernel"

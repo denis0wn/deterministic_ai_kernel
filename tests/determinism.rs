@@ -2,7 +2,7 @@ use std::process::Command;
 
 fn run_kernel(args: &[&str]) -> (String, bool) {
     let out = Command::new("cargo")
-        .args(["run", "--quiet", "--"])
+        .args(["run", "--quiet", "--bin", "run", "--"])
         .args(args)
         .output()
         .expect("failed to run kernel");

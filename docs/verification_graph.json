@@ -15,7 +15,7 @@
       "pipeline": "fast",
       "priority": 10,
       "cost": 1,
-      "cmd": "cargo run -- integrity-json",
+      "cmd": "${DAK_BIN:-cargo run --bin run --} doctor-json",
       "depends_on": [],
       "outputs": ["integrity_report"]
     },

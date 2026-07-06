@@ -4,7 +4,7 @@ set -x
 
 start_ts=$(date +%s)
 
-cargo run -- integrity-json
+cargo run --bin run -- integrity-json
 cargo test --test snapshot_version_matrix -- --nocapture
 cargo test --test golden_replay_corpus -- --nocapture
 cargo test --test scheduler_integration -- --nocapture

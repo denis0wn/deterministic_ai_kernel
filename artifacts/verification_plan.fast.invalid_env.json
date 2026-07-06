@@ -28,7 +28,7 @@
   "ok": true,
   "ordered_nodes": [
     {
-      "cmd": "cargo run -- integrity-json",
+      "cmd": "cargo run --bin run -- doctor-json",
       "cost": 1,
       "depends_on": [],
       "id": "integrity",
@@ -90,7 +90,7 @@
       "version": "v1"
     }
   ],
-  "plan_generated_at_epoch": 1783276035,
+  "plan_generated_at_epoch": 1783279189,
   "plan_hash": "1111111111111111111111111111111111111111111111111111111111111111",
   "plan_id": "1111111111111111111111111111111111111111111111111111111111111111",
   "selected_only": [],

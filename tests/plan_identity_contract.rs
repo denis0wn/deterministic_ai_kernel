@@ -10,6 +10,7 @@ fn read_json(path: &str) -> serde_json::Value {
 #[test]
 fn verification_plan_exposes_identity_inputs() {
     let status = Command::new("./scripts/run_verification_graph.py")
+        .env("DAK_BIN", env!("CARGO_BIN_EXE_run"))
         .args([
             "--pipeline",
             "fast",

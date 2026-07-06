@@ -14,7 +14,7 @@ fn unique_db_path(test_name: &str) -> PathBuf {
 
 fn run_kernel(db: &Path, args: &[&str]) -> std::process::Output {
     Command::new("cargo")
-        .args(["run", "--quiet", "--"])
+        .args(["run", "--quiet", "--bin", "run", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
         .args(args)
         .output()

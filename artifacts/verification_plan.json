@@ -17,7 +17,7 @@
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
   "manifest_path": "docs/verification_graph.json",
-  "plan_generated_at_epoch": 1783276109,
+  "plan_generated_at_epoch": 1783279268,
   "environment": {
     "python": "3.14.6",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
@@ -42,7 +42,7 @@
       "priority": 10,
       "cost": 1,
       "depends_on": [],
-      "cmd": "cargo run -- integrity-json",
+      "cmd": "cargo run --bin run -- doctor-json",
       "outputs": [
         "integrity_report"
       ]
