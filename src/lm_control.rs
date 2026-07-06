@@ -218,7 +218,12 @@ pub fn auto_route(role: &str) -> Result<()> {
         ));
     }
 
-    if !row.switch_ready {
+    // Skip RAM check if model already loaded in memory
+    let already_loaded = list_loaded_models()
+        .unwrap_or_default()
+        .contains(&row.manifest_model);
+
+    if !row.switch_ready && !already_loaded {
         return Err(anyhow!(
             "auto-route blocked: role {:?} is not ready, free_gb={:.2}, threshold_gb={:.2}",
             role,
