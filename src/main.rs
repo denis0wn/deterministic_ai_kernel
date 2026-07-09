@@ -1,4 +1,3 @@
-mod ai;
 mod api;
 mod cli_json;
 mod effects;

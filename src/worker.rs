@@ -43,7 +43,7 @@ fn capability_for_worker_id(worker_id: &str) -> Result<WorkerCapability> {
     let lower = worker_id.to_ascii_lowercase();
 
     if is_ai_worker(worker_id) {
-        return Ok(WorkerCapability::Ai);
+        return Ok(WorkerCapability::LegacyGeneric);
     }
 
     if lower.contains("planner") {
@@ -158,10 +158,9 @@ pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
 
     tx.commit()?;
 
-    println!("WORKER_CLAIM_OK");
+    println!("STEP_CLAIMED: {}", step_id);
     println!("WORKER: {}", worker_id);
     println!("TASK: {}", task_id);
-    println!("STEP: {}", step_id);
     Ok(())
 }
 
@@ -227,7 +226,7 @@ pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Re
 
     tx.commit()?;
 
-    println!("WORKER_START_OK");
+    println!("STEP_RUNNING_OK");
     println!("WORKER: {}", worker_id);
     println!("STEP: {}", step_id);
     Ok(())

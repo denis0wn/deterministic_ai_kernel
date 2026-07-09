@@ -12,6 +12,8 @@ pub mod schema;
 pub mod snapshot;
 pub mod workflow;
 
+pub mod worker;
+
 pub mod model_manifest;
 
 pub mod lm_control;
