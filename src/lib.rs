@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod api;
 pub(crate) mod cli_json;
 pub mod effects;
@@ -10,6 +11,7 @@ pub mod replay;
 pub mod scheduler;
 pub mod schema;
 pub mod snapshot;
+pub mod worker;
 pub mod workflow;
 
 pub mod model_manifest;

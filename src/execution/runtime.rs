@@ -15,22 +15,80 @@ impl Runtime {
     }
 
     pub async fn execute_step(&self, task_id: &str, step: &Step) -> Result<()> {
-        if step.kind == StepKind::AnalyzeTask {
-            let detail = step.detail.as_deref().unwrap_or("analyze task").trim();
-            let vector = embed_text(detail).await?;
-            let source_generation = self.bus.latest_generation_for_task(task_id)?;
+        let detail = step.detail.as_deref().unwrap_or("").trim();
+        let source_generation = self.bus.latest_generation_for_task(task_id)?;
 
-            self.bus.append_semantic_artifact(
-                task_id,
-                &step.as_text(),
-                source_generation,
-                "analysis_seed",
-                &json!({
-                    "input_representation": detail,
-                    "embedding_dim": vector.len(),
-                    "analysis_kind": "semantic_seed"
-                }),
-            )?;
+        match step.kind {
+            StepKind::AnalyzeTask => {
+                let text = if detail.is_empty() {
+                    "analyze task"
+                } else {
+                    detail
+                };
+                let vector = embed_text(text).await?;
+
+                self.bus.append_semantic_artifact(
+                    task_id,
+                    &step.as_text(),
+                    source_generation,
+                    "analysis_seed",
+                    &json!({
+                        "input_representation": text,
+                        "embedding_dim": vector.len(),
+                        "analysis_kind": "semantic_seed"
+                    }),
+                )?;
+            }
+
+            StepKind::PlanExecution => {
+                self.bus.append_semantic_artifact(
+                    task_id,
+                    &step.as_text(),
+                    source_generation,
+                    "execution_plan_v1",
+                    &json!({
+                        "task_id": task_id,
+                        "step": step.as_text(),
+                        "detail": detail,
+                        "status": "planned"
+                    }),
+                )?;
+            }
+
+            StepKind::ExecuteChanges => {
+                let final_answer = detail.to_string();
+                std::fs::create_dir_all("artifacts")?;
+                std::fs::write(
+                    format!("artifacts/final_answer.{}.txt", task_id),
+                    format!("{}\n", final_answer),
+                )?;
+
+                self.bus.append_semantic_artifact(
+                    task_id,
+                    &step.as_text(),
+                    source_generation,
+                    "final_answer_v1",
+                    &json!({
+                        "task_id": task_id,
+                        "answer": final_answer
+                    }),
+                )?;
+            }
+
+            _ => {
+                self.bus.append_semantic_artifact(
+                    task_id,
+                    &step.as_text(),
+                    source_generation,
+                    "step_execution_v1",
+                    &json!({
+                        "task_id": task_id,
+                        "step": step.as_text(),
+                        "detail": detail,
+                        "status": "executed"
+                    }),
+                )?;
+            }
         }
 
         Ok(())

@@ -7,14 +7,19 @@ use std::collections::HashMap;
 pub enum ModelPurpose {
     CodingAssistant,
     TaskPlanning,
+    #[allow(dead_code)]
     CodeReview,
 }
+
+use crate::ai::adapter::AICapabilities;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    pub max_tokens: u32,
+    pub capabilities: AICapabilities,
 }
 
 fn env_required(key: &str) -> Result<String> {
@@ -30,6 +35,17 @@ fn env_with_default(key: &str, default: &str) -> String {
 fn env_optional(key: &str) -> Option<String> {
     dotenvy::dotenv().ok();
     std::env::var(key).ok()
+}
+
+pub fn default_text_capabilities() -> AICapabilities {
+    AICapabilities {
+        text: true,
+        reasoning: true,
+        code: true,
+        vision: false,
+        audio: false,
+        streaming: false,
+    }
 }
 
 #[cfg(test)]
@@ -71,6 +87,10 @@ fn resolve_model_from_values(
         base_url,
         api_key,
         model,
+        max_tokens: env_with_default("OPENAI_MAX_TOKENS", "1500")
+            .parse()
+            .unwrap_or(1500),
+        capabilities: default_text_capabilities(),
     })
 }
 
@@ -95,6 +115,10 @@ pub fn resolve_model(purpose: ModelPurpose) -> Result<ModelConfig> {
         base_url,
         api_key,
         model,
+        max_tokens: env_with_default("OPENAI_MAX_TOKENS", "1500")
+            .parse()
+            .unwrap_or(1500),
+        capabilities: default_text_capabilities(),
     })
 }
 

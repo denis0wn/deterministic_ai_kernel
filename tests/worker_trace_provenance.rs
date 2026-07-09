@@ -76,9 +76,18 @@ fn worker_lifecycle_emits_traceable_event_sequence() {
     setup_db(&db);
 
     run(&db, &["claim-worker", "task-trace", "worker-A"]);
-    run(&db, &["start-step", "task-trace", "worker-A", "00_analyze_task"]);
-    run(&db, &["heartbeat", "task-trace", "worker-A", "00_analyze_task"]);
-    run(&db, &["complete-step", "task-trace", "worker-A", "00_analyze_task"]);
+    run(
+        &db,
+        &["start-step", "task-trace", "worker-A", "00_analyze_task"],
+    );
+    run(
+        &db,
+        &["heartbeat", "task-trace", "worker-A", "00_analyze_task"],
+    );
+    run(
+        &db,
+        &["complete-step", "task-trace", "worker-A", "00_analyze_task"],
+    );
 
     let bus = EventBus::new(&db).unwrap();
     let events = bus.list_execution_events("task-trace").unwrap();

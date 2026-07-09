@@ -16,8 +16,8 @@ fn doctor_contract_is_stable() {
         .find(|r| r.role == "task_planning")
         .expect("task_planning role missing");
 
-    assert_eq!(task.manifest_model, "huihui-gemma-4-e2b-it-abliterated-mlx");
-    assert_eq!(task.threshold_gb, 6.0);
+    assert_eq!(task.manifest_model, "google/gemma-4-12b-qat");
+    assert_eq!(task.threshold_gb, 7.5);
     assert!(task.model_available);
     assert!(task.switch_ready);
     assert!(task.in_sync);

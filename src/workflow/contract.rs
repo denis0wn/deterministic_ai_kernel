@@ -61,6 +61,7 @@ pub enum WorkerCapability {
     Planner,
     Executor,
     Verifier,
+    Ai,
     LegacyGeneric,
 }
 

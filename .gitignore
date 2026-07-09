@@ -10,3 +10,4 @@ kernel.db-wal
 .env
 artifacts/
 .env
+.env

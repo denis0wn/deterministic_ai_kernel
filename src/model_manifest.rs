@@ -1,10 +1,20 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelManifest {
     pub models: Vec<ManifestModel>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ManifestCapabilities {
+    pub text: bool,
+    pub reasoning: bool,
+    pub code: bool,
+    pub vision: bool,
+    pub audio: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -16,15 +26,34 @@ pub struct ManifestModel {
     pub enabled: bool,
     pub notes: String,
     pub system_prompt: String,
+    #[serde(default)]
+    pub backend: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub capabilities: Option<ManifestCapabilities>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CurrentModelStatus {
     pub role: String,
     pub env_key: String,
     pub manifest_model: String,
     pub env_model: Option<String>,
     pub in_sync: bool,
+    pub model_id: String,
+    pub backend: String,
+    pub path: String,
+    pub status: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedMlxModel {
+    pub id: String,
+    pub role: String,
+    pub backend: String,
+    pub path: PathBuf,
 }
 
 pub fn load_manifest() -> Result<ModelManifest> {
@@ -50,12 +79,40 @@ pub fn best_enabled_model_for_role(role: &str) -> Result<ManifestModel> {
         .ok_or_else(|| anyhow!("no enabled model found for role {:?}", role))
 }
 
+pub fn model_by_id(model_id: &str) -> Result<ManifestModel> {
+    let manifest = load_manifest()?;
+    manifest
+        .models
+        .iter()
+        .find(|m| m.id == model_id)
+        .cloned()
+        .ok_or_else(|| anyhow!("model id not found in manifest: {}", model_id))
+}
+
+#[allow(dead_code)]
+pub fn best_enabled_mlx_model_for_role(role: &str) -> Result<ManifestModel> {
+    let model = best_enabled_model_for_role(role)?;
+    ensure_mlx_model_shape(&model)?;
+    Ok(model)
+}
+
+#[allow(dead_code)]
+pub fn single_active_runtime_model() -> Result<ManifestModel> {
+    let manifest = load_manifest()?;
+    manifest
+        .models
+        .iter()
+        .find(|m| m.enabled && m.backend.as_deref() == Some("mlx"))
+        .cloned()
+        .ok_or_else(|| anyhow!("no enabled MLX runtime model found"))
+}
+
 pub fn env_key_for_role(role: &str) -> Result<&'static str> {
     match role {
         "coding_assistant" => Ok("OPENAI_MODEL_CODING_ASSISTANT"),
         "task_planning" => Ok("OPENAI_MODEL_TASK_PLANNING"),
         "embeddings" => Ok("OPENAI_MODEL_EMBEDDINGS"),
-        "code_review" => Ok("OPENAI_MODEL_CODING_ASSISTANT"),
+        "code_review" => Ok("OPENAI_MODEL_CODE_REVIEW"),
         "coding_fallback" => Ok("OPENAI_MODEL_CODING_ASSISTANT"),
         "task_planning_fallback" => Ok("OPENAI_MODEL_TASK_PLANNING"),
         _ => Err(anyhow!("unsupported manifest role {:?}", role)),
@@ -106,6 +163,7 @@ pub fn system_prompt_for_role(role: &str) -> Result<String> {
     let model = best_enabled_model_for_role(role)?;
     Ok(model.system_prompt)
 }
+
 fn read_env_value(env_key: &str) -> Result<Option<String>> {
     let text = fs::read_to_string(".env").unwrap_or_default();
     for line in text.lines() {
@@ -114,6 +172,112 @@ fn read_env_value(env_key: &str) -> Result<Option<String>> {
         }
     }
     Ok(None)
+}
+
+pub fn expand_model_path(raw: &str) -> Result<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/denissmoliakov".to_string());
+    let expanded = if raw == "~" {
+        home
+    } else if let Some(rest) = raw.strip_prefix("~/") {
+        format!("{home}/{rest}")
+    } else {
+        raw.to_string()
+    };
+    Ok(PathBuf::from(expanded))
+}
+
+fn ensure_required_mlx_files_exist(path: &Path) -> Result<()> {
+    let required = [
+        "config.json",
+        "tokenizer.json",
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+    ];
+
+    for file in required {
+        let candidate = path.join(file);
+        if !candidate.exists() {
+            return Err(anyhow!(
+                "required MLX model file missing: {}",
+                candidate.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_mlx_model_shape(model: &ManifestModel) -> Result<()> {
+    if !model.enabled {
+        return Err(anyhow!("manifest model is disabled: {}", model.id));
+    }
+
+    if model.backend.as_deref() != Some("mlx") {
+        return Err(anyhow!(
+            "manifest model backend is not mlx: {} backend={:?}",
+            model.id,
+            model.backend
+        ));
+    }
+
+    let raw_path = model
+        .path
+        .as_deref()
+        .ok_or_else(|| anyhow!("manifest model path is missing: {}", model.id))?;
+
+    let path = expand_model_path(raw_path)?;
+    if !path.exists() {
+        return Err(anyhow!(
+            "manifest model path does not exist: {}",
+            path.display()
+        ));
+    }
+
+    if !path.is_dir() {
+        return Err(anyhow!(
+            "manifest model path is not a directory: {}",
+            path.display()
+        ));
+    }
+
+    ensure_required_mlx_files_exist(&path)?;
+    Ok(())
+}
+
+pub fn verify_mlx_model_by_id(model_id: &str) -> Result<VerifiedMlxModel> {
+    let model = model_by_id(model_id)?;
+    ensure_mlx_model_shape(&model)?;
+    let path = expand_model_path(
+        model
+            .path
+            .as_deref()
+            .ok_or_else(|| anyhow!("manifest model path is missing: {}", model.id))?,
+    )?;
+
+    Ok(VerifiedMlxModel {
+        id: model.id,
+        role: model.role,
+        backend: "mlx".to_string(),
+        path,
+    })
+}
+
+#[allow(dead_code)]
+pub fn verify_best_mlx_model_for_role(role: &str) -> Result<VerifiedMlxModel> {
+    let model = best_enabled_mlx_model_for_role(role)?;
+    let path = expand_model_path(
+        model
+            .path
+            .as_deref()
+            .ok_or_else(|| anyhow!("manifest model path is missing: {}", model.id))?,
+    )?;
+
+    Ok(VerifiedMlxModel {
+        id: model.id,
+        role: model.role,
+        backend: "mlx".to_string(),
+        path,
+    })
 }
 
 pub fn current_model_statuses() -> Result<Vec<CurrentModelStatus>> {
@@ -126,17 +290,46 @@ pub fn current_model_statuses() -> Result<Vec<CurrentModelStatus>> {
     let mut out = Vec::new();
 
     for role in roles {
-        let manifest_model = best_enabled_model_for_role(role)?;
+        let selected = best_enabled_model_for_role(role)?;
         let env_key = env_key_for_role(role)?.to_string();
         let env_model = read_env_value(&env_key)?;
-        let in_sync = env_model.as_deref() == Some(manifest_model.id.as_str());
+        let in_sync = env_model.as_deref() == Some(selected.id.as_str());
+
+        let backend = selected
+            .backend
+            .clone()
+            .unwrap_or_else(|| "<missing>".to_string());
+        let path = selected
+            .path
+            .clone()
+            .unwrap_or_else(|| "<missing>".to_string());
+
+        let verification = if selected.backend.as_deref() == Some("mlx") {
+            verify_mlx_model_by_id(&selected.id).map(|_| ())
+        } else {
+            Err(anyhow!(
+                "selected model for role {:?} is not an mlx model: {}",
+                role,
+                selected.id
+            ))
+        };
+
+        let (status, error) = match verification {
+            Ok(()) => ("ready".to_string(), String::new()),
+            Err(e) => ("error".to_string(), e.to_string()),
+        };
 
         out.push(CurrentModelStatus {
             role: role.to_string(),
             env_key,
-            manifest_model: manifest_model.id,
+            manifest_model: selected.id.clone(),
             env_model,
             in_sync,
+            model_id: selected.id,
+            backend,
+            path,
+            status,
+            error,
         });
     }
 
@@ -150,9 +343,16 @@ pub fn print_current_models() -> Result<()> {
         println!("MANIFEST_MODEL={}", row.manifest_model);
         println!(
             "ENV_MODEL={}",
-            row.env_model.unwrap_or_else(|| "<missing>".to_string())
+            row.env_model
+                .clone()
+                .unwrap_or_else(|| "<missing>".to_string())
         );
         println!("IN_SYNC={}", row.in_sync);
+        println!("MODEL_ID={}", row.model_id);
+        println!("BACKEND={}", row.backend);
+        println!("PATH={}", row.path);
+        println!("STATUS={}", row.status);
+        println!("ERROR={}", row.error);
         println!();
     }
     Ok(())
@@ -204,7 +404,7 @@ mod tests {
     #[test]
     fn best_enabled_task_planning_model_prefers_priority_one() {
         let model = best_enabled_model_for_role("task_planning").unwrap();
-        assert_eq!(model.id, "huihui-gemma-4-e2b-it-abliterated-mlx");
+        assert_eq!(model.id, "google/gemma-4-12b-qat");
     }
 
     #[test]
@@ -220,5 +420,18 @@ mod tests {
         assert!(rows.iter().any(|r| r.role == "coding_assistant"));
         assert!(rows.iter().any(|r| r.role == "task_planning"));
         assert!(rows.iter().any(|r| r.role == "embeddings"));
+    }
+
+    #[test]
+    fn tilde_expansion_works() {
+        let path = expand_model_path("~/Models/gemma4-reasoning").unwrap();
+        assert!(path.to_string_lossy().contains("/Models/gemma4-reasoning"));
+    }
+
+    #[test]
+    fn verified_mlx_model_for_known_id_resolves_path() {
+        let verified = verify_mlx_model_by_id("google/gemma-4-12b-qat").unwrap();
+        assert_eq!(verified.backend, "mlx");
+        assert!(verified.path.ends_with("gemma4-reasoning"));
     }
 }

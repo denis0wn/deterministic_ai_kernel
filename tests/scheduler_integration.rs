@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_db_path(test_name: &str) -> PathBuf {
@@ -14,11 +15,20 @@ fn unique_db_path(test_name: &str) -> PathBuf {
     ))
 }
 
+fn cargo_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn run(db: &Path, args: &[&str]) -> String {
+    let _guard = cargo_lock().lock().unwrap();
     let out = Command::new("cargo")
         .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
-        .env("CARGO_TARGET_DIR", std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string()))
+        .env(
+            "CARGO_TARGET_DIR",
+            std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string()),
+        )
         .args(args)
         .output()
         .expect("failed to run command");
@@ -32,10 +42,14 @@ fn run(db: &Path, args: &[&str]) -> String {
 }
 
 fn run_expect_fail(db: &Path, args: &[&str]) -> String {
+    let _guard = cargo_lock().lock().unwrap();
     let out = Command::new("cargo")
         .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
-        .env("CARGO_TARGET_DIR", std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string()))
+        .env(
+            "CARGO_TARGET_DIR",
+            std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string()),
+        )
         .args(args)
         .output()
         .expect("failed to run command");
@@ -197,7 +211,7 @@ fn retry_and_reclaim_preserve_ownership_invariants() {
             "01_plan_execution",
         ],
     );
-    assert!(out.contains("STEP_RUNNING_OK"), "{out}");
+    assert!(out.contains("WORKER_START_OK"), "{out}");
 }
 
 #[test]
@@ -444,7 +458,7 @@ fn codefix_runtime_flow_uses_lease_backed_claim_and_execution() {
     run(&db, &["schedule", task_id]);
     let out = run(&db, &["claim-worker", task_id, "worker-exec"]);
     assert!(
-        out.contains("STEP_CLAIMED: 01_locate_bug"),
+        out.contains("STEP: 01_locate_bug"),
         "unexpected claim output: {}",
         out
     );
@@ -454,7 +468,7 @@ fn codefix_runtime_flow_uses_lease_backed_claim_and_execution() {
         &["start-step", task_id, "worker-exec", "01_locate_bug"],
     );
     assert!(
-        out.contains("STEP_RUNNING_OK"),
+        out.contains("WORKER_START_OK"),
         "unexpected output: {}",
         out
     );
@@ -473,7 +487,7 @@ fn start_step_accepts_generic_worker_and_planner_worker() {
         &["start-step", task_id, "worker-exec", "00_read_repository"],
     );
     assert!(
-        out.contains("STEP_RUNNING_OK"),
+        out.contains("WORKER_START_OK"),
         "unexpected output: {}",
         out
     );
@@ -487,7 +501,7 @@ fn start_step_accepts_generic_worker_and_planner_worker() {
         &["start-step", task_id, "worker-plan", "00_read_repository"],
     );
     assert!(
-        out.contains("STEP_RUNNING_OK"),
+        out.contains("WORKER_START_OK"),
         "unexpected output: {}",
         out
     );

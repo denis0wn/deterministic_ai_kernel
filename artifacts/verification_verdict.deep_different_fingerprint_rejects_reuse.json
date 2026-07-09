@@ -2,12 +2,11 @@
   "ok": false,
   "status": "invalid_reuse",
   "reason": "plan_id differed: environment_id differed",
+  "artifact_error": "ENVIRONMENT_ID_MISMATCH",
   "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
   "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
   "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
   "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
-  "expected_environment_id": "0000000000000000000000000000000000000000000000000000000000000000",
-  "actual_environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
   "graph_schema_version": 2,
   "selected_pipeline": "deep",
   "selected_only": [],
@@ -27,5 +26,7 @@
     "machine": "arm64",
     "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
   },
-  "nodes": []
+  "nodes": [],
+  "expected_environment_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "actual_environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
 }

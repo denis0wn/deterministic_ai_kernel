@@ -103,3 +103,54 @@ impl ReplayCapsule {
         Ok(())
     }
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AIModality {
+    Text,
+    Vision,
+    Audio,
+    Multimodal,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AIWorkerHealth {
+    Initializing,
+    Ready,
+    Busy,
+    Degraded,
+    Stopping,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AIRequest {
+    pub request_id: String,
+    pub workflow_id: String,
+    pub modality: AIModality,
+    pub prompt: String,
+    pub model_id: Option<String>,
+    pub seed: Option<u64>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AIResponse {
+    pub request_id: String,
+    pub output_text: Option<String>,
+    pub output_artifact_ids: Vec<String>,
+    pub finished: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AITrace {
+    pub workflow_id: String,
+    pub worker_id: String,
+    pub request_id: String,
+    pub model_id: Option<String>,
+    pub prompt_hash: String,
+    pub config_hash: String,
+    pub seed: Option<u64>,
+}
