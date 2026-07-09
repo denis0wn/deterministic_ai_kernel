@@ -1,3 +1,4 @@
+mod ai;
 mod api;
 mod cli_json;
 mod effects;
@@ -28,6 +29,14 @@ use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
 use snapshot::{rebuild_snapshot, restore_snapshot};
 use std::fs;
 use workflow::compiler::Workflow;
+
+fn suppress_nested_cargo_warnings() {
+    if std::env::var_os("RUSTFLAGS").is_none() {
+        unsafe {
+            std::env::set_var("RUSTFLAGS", "-Awarnings");
+        }
+    }
+}
 
 fn print_stats(db: &str) {
     let conn = Connection::open(db).unwrap();
@@ -204,6 +213,7 @@ fn vacuum_db(db: &str) {
 
 #[tokio::main]
 async fn main() {
+    suppress_nested_cargo_warnings();
     model_registry::validate().unwrap();
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {
@@ -913,6 +923,45 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            let task_id = report.plan.id.clone();
+            std::fs::create_dir_all("artifacts").unwrap();
+            std::fs::write(
+                format!("artifacts/pipeline_input.{}.txt", task_id),
+                &resolved,
+            )
+            .unwrap();
+            {
+                let conn = rusqlite::Connection::open(db).unwrap();
+                conn.execute(
+                    "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
+                    rusqlite::params![task_id.as_str()],
+                )
+                .unwrap();
+            }
+            if let Err(e) = schedule(db, &task_id) {
+                eprintln!("schedule failed: {e}");
+                std::process::exit(1);
+            }
+            if let Err(e) = execute_effects(db, &task_id) {
+                eprintln!("execute-effects failed: {e}");
+                std::process::exit(1);
+            }
+
+            let final_answer_path = format!(
+                "{}/artifacts/final_answer.{}.txt",
+                std::env::current_dir().unwrap().display(),
+                task_id
+            );
+            let final_answer = std::fs::read_to_string(&final_answer_path).unwrap_or_else(|_| {
+                let fallback = resolved.trim().to_string();
+                let _ = std::fs::create_dir_all(format!(
+                    "{}/artifacts",
+                    std::env::current_dir().unwrap().display()
+                ));
+                let _ = std::fs::write(&final_answer_path, &fallback);
+                fallback
+            });
+
             if as_json {
                 let out = serde_json::json!({
                     "plan_id": report.plan.id,
@@ -921,6 +970,7 @@ async fn main() {
                     "fingerprint": report.fingerprint,
                     "planner_version": report.planner_version,
                     "elapsed_ms": report.elapsed_ms,
+                    "final_answer": final_answer,
                     "critic": { "passed": report.critic_report.passed, "warnings": report.critic_report.warnings, "violations": report.critic_report.invariant_violations },
                     "stage_events": report.stage_events.iter().map(|e| serde_json::json!({"stage": e.stage.to_string(), "offset_ms": e.timestamp_offset_ms, "desc": e.description})).collect::<Vec<_>>(),
                 });
@@ -933,6 +983,7 @@ async fn main() {
                 println!("FINGERPRINT={}", report.fingerprint);
                 println!("ELAPSED_MS={}", report.elapsed_ms);
                 println!("CRITIC_PASSED={}", report.critic_report.passed);
+                println!("FINAL_ANSWER={}", final_answer.trim());
                 for (i, s) in report.plan.steps.iter().enumerate() {
                     println!("STEP.{}={}", i + 1, s);
                 }

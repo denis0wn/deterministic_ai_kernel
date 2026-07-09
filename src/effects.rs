@@ -1,10 +1,94 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection};
 use serde_json::json;
 
-pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
-    let conn = Connection::open(db)?;
+use crate::event_bus::EventBus;
+use crate::execution::runtime::Runtime;
+use crate::scheduler::{next_ready_step, schedule};
+use crate::worker;
+use crate::workflow::contract::{Step, StepKind};
 
+fn step_from_step_id(step_id: &str, payload: &str) -> Result<Step> {
+    let slug = step_id
+        .split_once('_')
+        .map(|(_, rest)| rest)
+        .unwrap_or(step_id);
+
+    let kind = match slug {
+        "tighten_planner_prompt" => StepKind::TightenPlannerPrompt,
+        "normalize_planner_output" => StepKind::NormalizePlannerOutput,
+        "add_llm_fallback_handling" => StepKind::AddLlmFallbackHandling,
+        "add_planner_test_coverage" => StepKind::AddPlannerTestCoverage,
+        "validate_planner_output" => StepKind::ValidatePlannerOutput,
+        "analyze_task" => StepKind::AnalyzeTask,
+        "plan_execution" => StepKind::PlanExecution,
+        "execute_changes" => StepKind::ExecuteChanges,
+        "read_repository" => StepKind::ReadRepository,
+        "locate_bug" => StepKind::LocateBug,
+        "patch_code" => StepKind::PatchCode,
+        "run_tests" => StepKind::RunTests,
+        "validate_patch" => StepKind::ValidatePatch,
+        _ => return Err(anyhow!("unknown step id: {}", step_id)),
+    };
+
+    Ok(Step {
+        kind,
+        detail: Some(payload.to_string()),
+    })
+}
+
+fn payload_for_task(task_id: &str) -> Result<String> {
+    Ok(std::fs::read_to_string(format!(
+        "artifacts/pipeline_input.{}.txt",
+        task_id
+    ))?)
+}
+
+fn default_worker_for_step(step_id: &str) -> &'static str {
+    let slug = step_id
+        .split_once('_')
+        .map(|(_, rest)| rest)
+        .unwrap_or(step_id);
+
+    match slug {
+        "analyze_task" | "plan_execution" | "execute_changes" => "worker-ai",
+        "run_tests" | "validate_patch" => "worker-verifier",
+        "patch_code" => "worker-executor",
+        _ => "worker-ai",
+    }
+}
+
+pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
+    std::fs::create_dir_all("artifacts")?;
+    let payload = payload_for_task(task_id)?;
+
+    loop {
+        schedule(db, task_id)?;
+
+        let Some(step_id) = next_ready_step(db, task_id)? else {
+            break;
+        };
+
+        let worker_id = default_worker_for_step(&step_id).to_string();
+        worker::claim_worker(db, task_id, &worker_id)?;
+        worker::start_step(db, task_id, &worker_id, &step_id)?;
+
+        let step = step_from_step_id(&step_id, &payload)?;
+
+        let rt = tokio::runtime::Runtime::new()?;
+        let bus = EventBus::new(db)?;
+        let runtime = Runtime::new(bus);
+
+        match rt.block_on(runtime.execute_step(task_id, &step)) {
+            Ok(()) => worker::complete_step(db, task_id, &worker_id, &step_id)?,
+            Err(e) => {
+                worker::fail_step(db, task_id, &worker_id, &step_id, &e.to_string())?;
+                return Err(e);
+            }
+        }
+    }
+
+    let conn = Connection::open(db)?;
     let mut stmt = conn.prepare(
         "SELECT e.effect_id, e.task_id, e.step_id, e.state
          FROM effect_ledger e
