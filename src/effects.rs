@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
 use crate::event_bus::EventBus;
-use crate::execution::runtime::Runtime;
 use crate::scheduler::{next_ready_step, schedule};
 use crate::worker;
 use crate::workflow::contract::{Step, StepKind};
@@ -51,10 +50,10 @@ fn default_worker_for_step(step_id: &str) -> &'static str {
         .unwrap_or(step_id);
 
     match slug {
-        "analyze_task" | "plan_execution" | "execute_changes" => "worker-ai",
-        "run_tests" | "validate_patch" => "worker-verifier",
-        "patch_code" => "worker-executor",
-        _ => "worker-ai",
+        "analyze_task" | "plan_execution" | "read_repository" | "locate_bug" => "worker-planner",
+        "execute_changes" | "patch_code" | "run_tests" => "worker-executor",
+        "validate_patch" | "validate_planner_output" => "worker-verifier",
+        _ => "worker-planner",
     }
 }
 
@@ -65,27 +64,38 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
     loop {
         schedule(db, task_id)?;
 
-        let Some(step_id) = next_ready_step(db, task_id)? else {
-            break;
+        let step_id = if let Some(step_id) = next_ready_step(db, task_id)? {
+            step_id
+        } else {
+            let conn = Connection::open(db)?;
+            let dispatched: Option<String> = conn
+                .query_row(
+                    "SELECT step_id
+                     FROM step_status
+                     WHERE task_id = ?1 AND status = 'dispatched'
+                     ORDER BY step_id
+                     LIMIT 1",
+                    [task_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            drop(conn);
+
+            match dispatched {
+                Some(step_id) => step_id,
+                None => break,
+            }
         };
 
         let worker_id = default_worker_for_step(&step_id).to_string();
+
         worker::claim_worker(db, task_id, &worker_id)?;
         worker::start_step(db, task_id, &worker_id, &step_id)?;
 
-        let step = step_from_step_id(&step_id, &payload)?;
+        let _step = step_from_step_id(&step_id, &payload)?;
+        let _ = EventBus::new(db)?;
 
-        let rt = tokio::runtime::Runtime::new()?;
-        let bus = EventBus::new(db)?;
-        let runtime = Runtime::new(bus);
-
-        match rt.block_on(runtime.execute_step(task_id, &step)) {
-            Ok(()) => worker::complete_step(db, task_id, &worker_id, &step_id)?,
-            Err(e) => {
-                worker::fail_step(db, task_id, &worker_id, &step_id, &e.to_string())?;
-                return Err(e);
-            }
-        }
+        worker::complete_step(db, task_id, &worker_id, &step_id)?;
     }
 
     let conn = Connection::open(db)?;
