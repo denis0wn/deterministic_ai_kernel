@@ -30,8 +30,21 @@ fn parse_step_kind_from_step_id(step_id: &str) -> Result<StepKind> {
     }
 }
 
+fn is_ai_worker(worker_id: &str) -> bool {
+    let lower = worker_id.to_ascii_lowercase();
+    lower == "ai"
+        || lower.contains("worker-ai")
+        || lower.contains("ai-worker")
+        || lower.starts_with("ai-")
+        || lower.starts_with("ai_")
+}
+
 fn capability_for_worker_id(worker_id: &str) -> Result<WorkerCapability> {
     let lower = worker_id.to_ascii_lowercase();
+
+    if is_ai_worker(worker_id) {
+        return Ok(WorkerCapability::Ai);
+    }
 
     if lower.contains("planner") {
         return Ok(WorkerCapability::Planner);
@@ -147,7 +160,8 @@ pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
 
     println!("WORKER_CLAIM_OK");
     println!("WORKER: {}", worker_id);
-    println!("STEP_CLAIMED: {}", step_id);
+    println!("TASK: {}", task_id);
+    println!("STEP: {}", step_id);
     Ok(())
 }
 
@@ -200,7 +214,7 @@ pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Re
     tx.execute(
         "INSERT INTO event_log
          (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'STEP_RUNNING', ?5, ?6)",
+         VALUES (?1, ?2, 0, ?3, ?4, 'STEP_STARTED', ?5, ?6)",
         params![
             next_generation,
             next_generation,
@@ -213,9 +227,9 @@ pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Re
 
     tx.commit()?;
 
-    println!("STEP_RUNNING_OK");
+    println!("WORKER_START_OK");
     println!("WORKER: {}", worker_id);
-    println!("STEP_RUNNING: {}", step_id);
+    println!("STEP: {}", step_id);
     Ok(())
 }
 
@@ -264,7 +278,7 @@ pub fn heartbeat(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Res
     tx.execute(
         "INSERT INTO event_log
          (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'LEASE_HEARTBEAT', ?5, ?6)",
+         VALUES (?1, ?2, 0, ?3, ?4, 'WORKER_HEARTBEAT', ?5, ?6)",
         params![
             next_generation,
             next_generation,
@@ -277,7 +291,7 @@ pub fn heartbeat(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Res
 
     tx.commit()?;
 
-    println!("LEASE_HEARTBEAT_OK");
+    println!("WORKER_HEARTBEAT_OK");
     println!("WORKER: {}", worker_id);
     println!("STEP: {}", step_id);
     Ok(())
