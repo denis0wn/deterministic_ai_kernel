@@ -99,6 +99,76 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
     }
 
     let conn = Connection::open(db)?;
+
+    let mut reserve_stmt = conn.prepare(
+        "SELECT step_id, payload
+         FROM event_log
+         WHERE task_id = ?1 AND event_type = 'EFFECT_RESERVED'
+         ORDER BY id",
+    )?;
+    let reserve_rows = reserve_stmt.query_map([task_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+
+    for row in reserve_rows {
+        let (step_id, payload) = row?;
+        let v: serde_json::Value = serde_json::from_str(&payload)?;
+        if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
+            conn.execute(
+                "INSERT OR IGNORE INTO effect_ledger
+                 (effect_id, task_id, step_id, reservation_generation, state)
+                 VALUES (?1, ?2, ?3, 0, 'reserved')",
+                params![effect_id, task_id, step_id],
+            )?;
+        }
+    }
+
+    let mut complete_stmt = conn.prepare(
+        "SELECT step_id, payload
+         FROM event_log
+         WHERE task_id = ?1 AND event_type = 'STEP_COMPLETED'
+         ORDER BY id",
+    )?;
+    let complete_rows = complete_stmt.query_map([task_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+
+    for row in complete_rows {
+        let (step_id, payload) = row?;
+        let v: serde_json::Value = serde_json::from_str(&payload)?;
+        if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
+            conn.execute(
+                "UPDATE effect_ledger
+                 SET state = 'committed'
+                 WHERE effect_id = ?1 AND task_id = ?2 AND step_id = ?3",
+                params![effect_id, task_id, step_id],
+            )?;
+        }
+    }
+
+    let mut fail_stmt = conn.prepare(
+        "SELECT step_id, payload
+         FROM event_log
+         WHERE task_id = ?1 AND event_type = 'STEP_FAILED'
+         ORDER BY id",
+    )?;
+    let fail_rows = fail_stmt.query_map([task_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+
+    for row in fail_rows {
+        let (step_id, payload) = row?;
+        let v: serde_json::Value = serde_json::from_str(&payload)?;
+        if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
+            conn.execute(
+                "UPDATE effect_ledger
+                 SET state = 'rejected'
+                 WHERE effect_id = ?1 AND task_id = ?2 AND step_id = ?3",
+                params![effect_id, task_id, step_id],
+            )?;
+        }
+    }
+
     let mut stmt = conn.prepare(
         "SELECT e.effect_id, e.task_id, e.step_id, e.state
          FROM effect_ledger e

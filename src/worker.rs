@@ -409,7 +409,31 @@ pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) ->
     )?;
 
     let outcome = StepOutcome::Success;
+    let effect_id = format!("effect/{}/{}", task_id, step_id);
+
+    let reserve_payload = json!({
+        "effect_id": effect_id,
+        "lease_id": lease_id,
+        "worker_id": worker_id
+    });
+
+    tx.execute(
+        "INSERT INTO event_log
+         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+         VALUES (?1, ?2, 0, ?3, ?4, 'EFFECT_RESERVED', ?5, ?6)",
+        params![
+            next_generation,
+            next_generation,
+            task_id,
+            step_id,
+            serde_json::to_string(&reserve_payload)?,
+            next_generation
+        ],
+    )?;
+
+    let complete_generation = next_generation + 1;
     let complete_payload = json!({
+        "effect_id": effect_id,
         "lease_id": lease_id,
         "worker_id": worker_id,
         "result": "ok",
@@ -421,13 +445,13 @@ pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) ->
          (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
          VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
         params![
-            next_generation,
-            next_generation,
+            complete_generation,
+            complete_generation,
             task_id,
             step_id,
             outcome_to_event_type(outcome),
             serde_json::to_string(&complete_payload)?,
-            next_generation
+            complete_generation
         ],
     )?;
 
