@@ -312,6 +312,22 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
         [task_id],
     )?;
 
+    // Reset dispatched steps whose lease is no longer active (any worker).
+    // Covers worker-planner and worker-scheduler stale leases from interrupted runs.
+    tx.execute(
+        "UPDATE step_status
+         SET status = 'ready'
+         WHERE task_id = ?1
+           AND status = 'dispatched'
+           AND NOT EXISTS (
+               SELECT 1 FROM leases
+               WHERE task_id = ?1
+                 AND step_id = step_status.step_id
+                 AND state = 'active'
+           )",
+        [task_id],
+    )?;
+
     replay_events(&tx, task_id)?;
     unlock_ready_steps(&tx, task_id)?;
 
