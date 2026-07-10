@@ -305,7 +305,10 @@ pub fn schedule(db: &str, task_id: &str) -> Result<()> {
     let tx = conn.transaction()?;
 
     tx.execute(
-        "UPDATE step_status SET status = 'pending' WHERE task_id = ?1 AND status NOT IN ('committed','rejected')",
+        "UPDATE step_status
+         SET status = 'pending'
+         WHERE task_id = ?1
+           AND status NOT IN ('dispatched','committed','rejected')",
         [task_id],
     )?;
 
