@@ -118,6 +118,27 @@ pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
 
     let (lease_id, step_id) = row.ok_or_else(|| anyhow!("no dispatchable active lease found"))?;
 
+    let current_owner: String = tx.query_row(
+        "SELECT worker_id
+         FROM leases
+         WHERE lease_id = ?1
+           AND state = 'active'",
+        [lease_id.clone()],
+        |r| r.get(0),
+    )?;
+
+    if current_owner == worker_id {
+        tx.commit()?;
+        return Ok(());
+    }
+
+    if current_owner != "worker-scheduler" {
+        return Err(anyhow!(
+            "lease already owned by {}",
+            current_owner
+        ));
+    }
+
     let updated = tx.execute(
         "UPDATE leases
          SET worker_id = ?1
