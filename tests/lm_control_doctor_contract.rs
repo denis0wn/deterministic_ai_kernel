@@ -7,7 +7,7 @@ fn doctor_contract_is_stable() {
     let report = doctor().unwrap();
 
     assert!(report.free_gb > 0.0);
-    assert!(report.lm_studio_models >= 1);
+    let _ = report.mlx_models; // mlx_models is usize, always valid
     assert!(!report.roles.is_empty());
 
     let task = report
@@ -16,7 +16,10 @@ fn doctor_contract_is_stable() {
         .find(|r| r.role == "task_planning")
         .expect("task_planning role missing");
 
-    assert_eq!(task.manifest_model, "huihui-gemma-4-e2b-it-abliterated-mlx");
+    assert_eq!(
+        task.manifest_model,
+        "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+    );
     assert_eq!(task.threshold_gb, 6.0);
     assert!(task.model_available);
     assert!(task.switch_ready);

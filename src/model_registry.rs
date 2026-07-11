@@ -54,7 +54,7 @@ fn resolve_model_from_values(
     let api_key = values
         .get("OPENAI_API_KEY")
         .cloned()
-        .unwrap_or_else(|| "lm-studio".to_string());
+        .unwrap_or_else(|| "mlx-local".to_string());
 
     let default_model = required_from_map(values, "OPENAI_MODEL")?;
 
@@ -76,7 +76,7 @@ fn resolve_model_from_values(
 
 pub fn resolve_model(purpose: ModelPurpose) -> Result<ModelConfig> {
     let base_url = env_required("OPENAI_BASE_URL")?;
-    let api_key = env_with_default("OPENAI_API_KEY", "lm-studio");
+    let api_key = env_with_default("OPENAI_API_KEY", "mlx-local");
 
     let default_model = env_required("OPENAI_MODEL")?;
 
@@ -110,7 +110,7 @@ mod tests {
 
     fn base_values() -> HashMap<&'static str, String> {
         HashMap::from([
-            ("OPENAI_BASE_URL", "http://localhost:1234/v1".to_string()),
+            ("OPENAI_BASE_URL", "http://127.0.0.1:8080/v1".to_string()),
             ("OPENAI_MODEL", "default-model".to_string()),
         ])
     }
@@ -137,7 +137,7 @@ mod tests {
         let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values).unwrap();
 
         assert_eq!(cfg.model, "default-model");
-        assert_eq!(cfg.api_key, "lm-studio");
+        assert_eq!(cfg.api_key, "mlx-local");
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod tests {
         let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values).unwrap();
 
         assert_eq!(cfg.model, "default-model");
-        assert_eq!(cfg.api_key, "lm-studio");
+        assert_eq!(cfg.api_key, "mlx-local");
     }
 
     #[test]

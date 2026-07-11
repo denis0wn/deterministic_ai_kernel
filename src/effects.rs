@@ -82,7 +82,7 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
             drop(conn);
 
             match dispatched {
-                Some(step_id) => step_id,
+                Some(dispatched_step_id) => dispatched_step_id,
                 None => break,
             }
         };
@@ -92,8 +92,36 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
         worker::claim_worker(db, task_id, &worker_id)?;
         worker::start_step(db, task_id, &worker_id, &step_id)?;
 
-        let _step = step_from_step_id(&step_id, &payload)?;
+        let step = step_from_step_id(&step_id, &payload)?;
         let _ = EventBus::new(db)?;
+
+        // Execute LLM for AI steps
+        if matches!(
+            step.kind,
+            crate::workflow::contract::StepKind::ExecuteChanges
+                | crate::workflow::contract::StepKind::PatchCode
+                | crate::workflow::contract::StepKind::AnalyzeTask
+                | crate::workflow::contract::StepKind::PlanExecution
+        ) {
+            let prompt = format!(
+                "You are a deterministic AI kernel worker.\nTask payload:\n{}\nStep: {:?}\nExecute this step and return only the result.",
+                payload, step.kind
+            );
+            let llm_result = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(crate::llm::coding_assistant(&prompt))
+            });
+            match llm_result {
+                Ok(text) => {
+                    let answer_path = format!("artifacts/final_answer.{}.txt", task_id);
+                    std::fs::write(&answer_path, &text)?;
+                }
+                Err(e) => {
+                    let reason = format!("llm_error: {e}");
+                    let _ = worker::fail_step(db, task_id, &worker_id, &step_id, &reason);
+                    return Err(anyhow::anyhow!("step {} failed: {}", step_id, reason));
+                }
+            }
+        }
 
         worker::complete_step(db, task_id, &worker_id, &step_id)?;
     }

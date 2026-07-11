@@ -9,11 +9,13 @@ pub mod policy;
 use policy::switch_plan;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ModelsResponse {
     data: Vec<ModelInfo>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ModelInfo {
     id: String,
 }
@@ -21,7 +23,7 @@ struct ModelInfo {
 #[derive(Debug, serde::Serialize)]
 pub struct DoctorReport {
     pub free_gb: f64,
-    pub lm_studio_models: usize,
+    pub mlx_models: usize,
     pub roles: Vec<DoctorRoleReport>,
 }
 
@@ -31,6 +33,13 @@ pub struct DoctorRoleReport {
     pub manifest_model: String,
     pub env_model: String,
     pub in_sync: bool,
+    /// Local model files exist on disk
+    pub model_present: bool,
+    /// MLX runtime responded to health probe
+    pub runtime_ready: bool,
+    /// manifest model_id matches what runtime reports
+    pub model_id_match: bool,
+    /// Composite: runtime_ready && model_id_match (replaces old model_available)
     pub model_available: bool,
     pub switch_ready: bool,
     pub threshold_gb: f64,
@@ -77,27 +86,51 @@ pub fn free_memory_gb_estimate() -> Result<f64> {
     Ok(s.parse::<f64>()?)
 }
 
-pub fn list_models() -> Result<Vec<String>> {
+/// Probe the MLX runtime via OPENAI_BASE_URL/v1/models.
+/// Returns (runtime_ready, model_ids).
+pub fn probe_mlx_runtime() -> (bool, Vec<String>) {
     if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
-        let manifest = model_manifest::load_manifest()?;
-        return Ok(manifest
-            .models
-            .into_iter()
-            .filter(|m| m.enabled)
-            .map(|m| m.id)
-            .collect());
+        let ids = model_manifest::load_manifest()
+            .map(|m| {
+                m.models
+                    .into_iter()
+                    .filter(|r| r.enabled)
+                    .map(|r| r.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        return (true, ids);
     }
-
-    let output = Command::new("curl")
-        .args(["-s", "http://127.0.0.1:1234/v1/models"])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(anyhow!("failed to query LM Studio models endpoint"));
+    let base =
+        std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080/v1".to_string());
+    let url = format!("{}/models", base.trim_end_matches('/'));
+    let output = match Command::new("curl")
+        .args(["-s", "--max-time", "3", &url])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return (false, vec![]),
+    };
+    if !output.status.success() || output.stdout.is_empty() {
+        return (false, vec![]);
     }
+    match serde_json::from_slice::<ModelsResponse>(&output.stdout) {
+        Ok(parsed) => (true, parsed.data.into_iter().map(|m| m.id).collect()),
+        Err(_) => (false, vec![]),
+    }
+}
 
-    let parsed: ModelsResponse = serde_json::from_slice(&output.stdout)?;
-    Ok(parsed.data.into_iter().map(|m| m.id).collect())
+/// Returns model ids from MLX runtime (empty if unavailable).
+pub fn list_models() -> Result<Vec<String>> {
+    let (_, ids) = probe_mlx_runtime();
+    Ok(ids)
+}
+
+/// Returns true if local model files exist on disk.
+pub fn model_path_present() -> bool {
+    std::env::var("OPENAI_MODEL")
+        .map(|p| std::path::Path::new(&p).exists())
+        .unwrap_or(false)
 }
 
 pub fn print_memory(threshold_gb: Option<f64>) -> Result<()> {
@@ -175,7 +208,8 @@ pub fn dry_run_switch(role: &str) -> Result<()> {
 
 pub fn doctor() -> Result<DoctorReport> {
     let free_gb = free_memory_gb_estimate()?;
-    let models = list_models().unwrap_or_default();
+    let (runtime_ready, runtime_ids) = probe_mlx_runtime();
+    let present = model_path_present();
     let rows = model_manifest::current_model_statuses()?;
 
     let mut roles = Vec::new();
@@ -183,21 +217,46 @@ pub fn doctor() -> Result<DoctorReport> {
         let threshold = model_manifest::threshold_gb_for_ram_class(
             &model_manifest::best_enabled_model_for_role(&row.role)?.ram_class,
         )?;
-        let available = models.iter().any(|m| m == &row.manifest_model);
+        // MLX runtime returns the local path as model id (e.g. /Users/.../Models/foo).
+        // Match if: (1) exact, (2) runtime id == OPENAI_MODEL env path,
+        // (3) basename of runtime id matches basename of OPENAI_MODEL.
+        let _local_model_path = std::env::var("OPENAI_MODEL").unwrap_or_default();
+        let model_id_match = runtime_ids.iter().any(|runtime_id| {
+            if runtime_id == &row.manifest_model {
+                return true;
+            }
+            if !_local_model_path.is_empty() && runtime_id == &_local_model_path {
+                return true;
+            }
+            let rt_base = std::path::Path::new(runtime_id.as_str())
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let lp_base = std::path::Path::new(_local_model_path.as_str())
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            !rt_base.is_empty() && !lp_base.is_empty() && rt_base == lp_base
+        });
+        // model_available = runtime is up AND runtime knows this model_id
+        let model_available = runtime_ready && model_id_match;
         roles.push(DoctorRoleReport {
             role: row.role,
             manifest_model: row.manifest_model,
             env_model: row.env_model.unwrap_or_else(|| "<missing>".to_string()),
             in_sync: row.in_sync,
-            model_available: available,
-            switch_ready: free_gb >= threshold && available,
+            model_present: present,
+            runtime_ready,
+            model_id_match,
+            model_available,
+            switch_ready: free_gb >= threshold && model_available,
             threshold_gb: threshold,
         });
     }
 
     Ok(DoctorReport {
         free_gb,
-        lm_studio_models: models.len(),
+        mlx_models: runtime_ids.len(),
         roles,
     })
 }
@@ -218,10 +277,8 @@ pub fn auto_route(role: &str) -> Result<()> {
         ));
     }
 
-    // Skip RAM check if model already loaded in memory
-    let already_loaded = list_loaded_models()
-        .unwrap_or_default()
-        .contains(&row.manifest_model);
+    // Skip RAM check if model already loaded in MLX runtime
+    let already_loaded = probe_mlx_runtime().1.contains(&row.manifest_model);
 
     if !row.switch_ready && !already_loaded {
         return Err(anyhow!(
@@ -250,7 +307,13 @@ pub fn doctor_json_report() -> Result<serde_json::Value> {
 pub fn print_doctor_text() -> Result<()> {
     let report = doctor()?;
     println!("FREE_GB={:.2}", report.free_gb);
-    println!("LM_STUDIO_MODELS={}", report.lm_studio_models);
+    println!("MLX_MODELS={}", report.mlx_models);
+    let r0 = report.roles.first();
+    if let Some(r) = r0 {
+        println!("MODEL_PRESENT={}", r.model_present);
+        println!("RUNTIME_READY={}", r.runtime_ready);
+        println!("MODEL_ID_MATCH={}", r.model_id_match);
+    }
     println!();
 
     for row in report.roles {
@@ -265,6 +328,98 @@ pub fn print_doctor_text() -> Result<()> {
     }
 
     Ok(())
+}
+
+// ── MLX-only: load/unload managed by mlx_lm.server ──────────────────────────
+// LM Studio v0 API removed. Use probe_mlx_runtime() or list_models().
+
+#[allow(dead_code)]
+pub fn list_all_models_v0() -> anyhow::Result<Vec<String>> {
+    Err(anyhow::anyhow!(
+        "list_all_models_v0: not available — use probe_mlx_runtime()"
+    ))
+}
+
+/// MLX runtime manages model lifecycle via mlx_lm.server.
+#[allow(dead_code)]
+pub fn load_model(_identifier: &str) -> anyhow::Result<()> {
+    Err(anyhow::anyhow!(
+        "load_model: not supported in MLX architecture"
+    ))
+}
+
+#[allow(dead_code)]
+pub fn unload_model(_identifier: &str) -> anyhow::Result<()> {
+    Err(anyhow::anyhow!(
+        "unload_model: not supported in MLX architecture"
+    ))
+}
+
+// ── smart_switch ──────────────────────────────────────────────────────────────
+
+pub fn smart_switch(target_model: &str, required_gb: f64) -> Result<()> {
+    let free_gb = free_memory_gb_estimate()?;
+    println!(
+        "SMART_SWITCH target={target_model} required_gb={required_gb:.2} free_gb={free_gb:.2}"
+    );
+
+    let (runtime_ready, loaded) = probe_mlx_runtime();
+    println!("MLX_RUNTIME_READY={runtime_ready} LOADED_NOW {:?}", loaded);
+
+    if loaded.contains(&target_model.to_string()) {
+        println!("ALREADY_LOADED model={target_model}");
+        return Ok(());
+    }
+
+    if free_gb < required_gb {
+        return Err(anyhow!(
+            "smart_switch: not enough memory: {free_gb:.2} GB free, {required_gb:.2} GB required. \
+             Restart mlx_lm.server with the target model."
+        ));
+    }
+
+    Err(anyhow!(
+        "smart_switch: model '{target_model}' not loaded in MLX runtime. \
+         Start: mlx_lm.server --model {target_model}"
+    ))
+}
+
+// ── CLI print helpers ─────────────────────────────────────────────────────────
+
+pub fn print_loaded_models() -> Result<()> {
+    let (ready, loaded) = probe_mlx_runtime();
+    if !ready {
+        println!("MLX_RUNTIME_OFFLINE");
+        return Ok(());
+    }
+    if loaded.is_empty() {
+        println!("NO_MODELS_LOADED");
+    } else {
+        for m in &loaded {
+            println!("LOADED model={m}");
+        }
+    }
+    Ok(())
+}
+
+pub fn print_all_models_v0() -> Result<()> {
+    let all = list_models()?;
+    let free_gb = free_memory_gb_estimate()?;
+    println!("FREE_GB={free_gb:.2}  TOTAL_MODELS={}", all.len());
+    println!();
+    for id in &all {
+        println!("  [mlx_runtime ] {id}");
+    }
+    Ok(())
+}
+
+pub async fn send_prompt(role: &str, user_text: &str) -> Result<String> {
+    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        return Ok(format!("[mock] role={role} input={user_text}"));
+    }
+
+    let system_prompt = model_manifest::system_prompt_for_role(role)?;
+    crate::llm::chat_with_role(role, &system_prompt, user_text).await
 }
 
 #[cfg(test)]
@@ -282,7 +437,7 @@ mod tests {
         // The interface layer (main.rs / cli_json) is responsible for wrapping.
         let raw = doctor_json_report().unwrap();
         assert!(raw.get("free_gb").is_some());
-        assert!(raw.get("lm_studio_models").is_some());
+        assert!(raw.get("mlx_models").is_some());
         assert!(raw.get("roles").is_some());
         assert!(raw["roles"].is_array());
 
@@ -296,144 +451,4 @@ mod tests {
             assert!(first.get("threshold_gb").is_some());
         }
     }
-}
-
-const LM_STUDIO_BASE: &str = "http://127.0.0.1:1234";
-
-// ── v0 structs ────────────────────────────────────────────────────────────────
-
-#[derive(Debug, serde::Deserialize, Clone)]
-pub struct V0ModelInfo {
-    pub id: String,
-    pub state: Option<String>,
-    pub arch: Option<String>,
-    pub quantization: Option<String>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct V0ModelsResponse {
-    data: Vec<V0ModelInfo>,
-}
-
-// ── list ──────────────────────────────────────────────────────────────────────
-
-pub fn list_all_models_v0() -> Result<Vec<V0ModelInfo>> {
-    let url = format!("{}/api/v0/models", LM_STUDIO_BASE);
-    let resp = std::thread::spawn(move || reqwest::blocking::get(&url).and_then(|r| r.text()))
-        .join()
-        .map_err(|_| anyhow!("thread panic"))??;
-    let parsed: V0ModelsResponse =
-        serde_json::from_str(&resp).map_err(|e| anyhow!("list_all_models_v0 parse: {e}"))?;
-    Ok(parsed.data)
-}
-
-pub fn list_loaded_models() -> Result<Vec<String>> {
-    Ok(list_all_models_v0()?
-        .into_iter()
-        .filter(|m| m.state.as_deref() == Some("loaded"))
-        .map(|m| m.id)
-        .collect())
-}
-
-// ── load / unload ─────────────────────────────────────────────────────────────
-
-pub fn load_model(identifier: &str) -> Result<()> {
-    let url = format!("{}/api/v0/models/load", LM_STUDIO_BASE);
-    let body = serde_json::json!({ "identifier": identifier });
-    let id = identifier.to_string();
-    std::thread::spawn(move || {
-        reqwest::blocking::Client::new()
-            .post(&url)
-            .json(&body)
-            .send()
-    })
-    .join()
-    .map_err(|_| anyhow!("thread panic"))??;
-    println!("LOAD_OK model={id}");
-    Ok(())
-}
-
-pub fn unload_model(identifier: &str) -> Result<()> {
-    let url = format!("{}/api/v0/models/unload", LM_STUDIO_BASE);
-    let body = serde_json::json!({ "identifier": identifier });
-    let id = identifier.to_string();
-    std::thread::spawn(move || {
-        reqwest::blocking::Client::new()
-            .post(&url)
-            .json(&body)
-            .send()
-    })
-    .join()
-    .map_err(|_| anyhow!("thread panic"))??;
-    println!("UNLOAD_OK model={id}");
-    Ok(())
-}
-
-// ── smart_switch ──────────────────────────────────────────────────────────────
-
-pub fn smart_switch(target_model: &str, required_gb: f64) -> Result<()> {
-    let free_gb = free_memory_gb_estimate()?;
-    println!(
-        "SMART_SWITCH target={target_model} required_gb={required_gb:.2} free_gb={free_gb:.2}"
-    );
-
-    let loaded = list_loaded_models()?;
-    println!("LOADED_NOW {:?}", loaded);
-
-    if loaded.contains(&target_model.to_string()) {
-        println!("ALREADY_LOADED model={target_model}");
-        return Ok(());
-    }
-
-    if free_gb < required_gb {
-        for m in &loaded {
-            println!("UNLOADING_TO_FREE model={m}");
-            unload_model(m)?;
-        }
-        let free_after = free_memory_gb_estimate()?;
-        if free_after < required_gb {
-            return Err(anyhow!(
-                "smart_switch: not enough memory after unload: {free_after:.2} GB < {required_gb:.2} GB"
-            ));
-        }
-    }
-
-    load_model(target_model)
-}
-
-// ── CLI print helpers ─────────────────────────────────────────────────────────
-
-pub fn print_loaded_models() -> Result<()> {
-    let loaded = list_loaded_models()?;
-    if loaded.is_empty() {
-        println!("NO_MODELS_LOADED");
-    } else {
-        for m in &loaded {
-            println!("LOADED model={m}");
-        }
-    }
-    Ok(())
-}
-
-pub fn print_all_models_v0() -> Result<()> {
-    let all = list_all_models_v0()?;
-    let free_gb = free_memory_gb_estimate()?;
-    println!("FREE_GB={free_gb:.2}  TOTAL_MODELS={}", all.len());
-    println!();
-    for m in &all {
-        let state = m.state.as_deref().unwrap_or("?");
-        let arch = m.arch.as_deref().unwrap_or("?");
-        let quant = m.quantization.as_deref().unwrap_or("?");
-        println!("  [{state:^12}] {}  arch={arch} quant={quant}", m.id);
-    }
-    Ok(())
-}
-
-pub async fn send_prompt(role: &str, user_text: &str) -> Result<String> {
-    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
-        return Ok(format!("[mock] role={role} input={user_text}"));
-    }
-
-    let system_prompt = model_manifest::system_prompt_for_role(role)?;
-    crate::llm::chat_with_role(role, &system_prompt, user_text).await
 }

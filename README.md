@@ -51,7 +51,6 @@ This demonstrates the intended loop: analyze -> persist semantic artifact -> ins
 Для реальной проверки LM Studio:
 
 ```bash
-DAK_RUN_LIVE_LM_TESTS=1 cargo test --test lm_control_live_lmstudio -- --nocapture
 ```
 
 ## Useful tests

@@ -89,7 +89,10 @@ pub fn sync_env_for_role(role: &str) -> Result<String> {
         text.push_str(&format!("{env_key}={}\n", model.id));
     }
 
-    fs::write(env_path, text)?;
+    // In mock/test mode, skip writing .env (file may be quarantine-locked)
+    if std::env::var("DAK_LM_BACKEND").as_deref() != Ok("mock") {
+        fs::write(env_path, &text)?;
+    }
     Ok(model.id)
 }
 
@@ -185,7 +188,8 @@ mod tests {
     fn task_planning_model_is_present() {
         let manifest = load_manifest().unwrap();
         assert!(manifest.models.iter().any(|m| {
-            m.id == "huihui-gemma-4-e2b-it-abliterated-mlx" && m.role == "task_planning"
+            m.id == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+                && m.role == "task_planning"
         }));
     }
 
@@ -204,7 +208,10 @@ mod tests {
     #[test]
     fn best_enabled_task_planning_model_prefers_priority_one() {
         let model = best_enabled_model_for_role("task_planning").unwrap();
-        assert_eq!(model.id, "huihui-gemma-4-e2b-it-abliterated-mlx");
+        assert_eq!(
+            model.id,
+            "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+        );
     }
 
     #[test]

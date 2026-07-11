@@ -1,7 +1,7 @@
 {
   "models": [
     {
-      "id": "qwen2.5-coder-3b-instruct-mlx",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "coding_assistant",
       "priority": 1,
       "ram_class": "light",
@@ -10,16 +10,17 @@
       "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
-      "id": "huihui-gemma-4-e2b-it-abliterated-mlx",
+      "id": "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit",
       "role": "task_planning",
       "priority": 1,
       "ram_class": "medium",
       "enabled": true,
       "notes": "Primary task planning model. Verified by planner smoke.",
-      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific."
+      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific.",
+      "model_path": "/Users/denissmoliakov/Models/gemma4-reasoning"
     },
     {
-      "id": "omnicoder-9b-mlx-mxfp8",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "coding_fallback",
       "priority": 2,
       "ram_class": "medium",
@@ -28,7 +29,7 @@
       "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
-      "id": "qwen2.5-14b-instruct-mlx",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "task_planning_fallback",
       "priority": 3,
       "ram_class": "heavy",
@@ -37,7 +38,7 @@
       "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific."
     },
     {
-      "id": "qwen3-vl-8b-instruct-mlx",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "vision",
       "priority": 1,
       "ram_class": "heavy",
@@ -46,7 +47,7 @@
       "system_prompt": "You are a vision-language assistant. Describe images accurately and answer questions about visual content."
     },
     {
-      "id": "qwen2.5-coder-3b-instruct-mlx",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "code_review",
       "priority": 1,
       "ram_class": "light",

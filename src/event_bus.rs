@@ -301,9 +301,16 @@ impl EventBus {
     }
 
     pub fn list_execution_events(&self, task_id: &str) -> Result<Vec<ExecutionEvent>> {
+        // Public execution lifecycle.
+        // Internal effect-ledger events are intentionally hidden.
+        // Replay and effect processing read directly from event_log.
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, task_id, event_type, payload              FROM event_log              WHERE task_id = ?1              ORDER BY causal_unit_id, sequence_in_unit, id"
+            "SELECT id, task_id, event_type, payload \
+             FROM event_log \
+             WHERE task_id = ?1 \
+               AND event_type != 'EFFECT_RESERVED' \
+             ORDER BY causal_unit_id, sequence_in_unit, id",
         )?;
 
         let mapped = stmt.query_map([task_id], |r| {

@@ -22,7 +22,7 @@ fn doctor_json_cli_emits_valid_json_report() {
 
     assert_cli_json_v1(&parsed, "doctor-json");
     assert!(parsed["report"].get("free_gb").is_some());
-    assert!(parsed["report"].get("lm_studio_models").is_some());
+    assert!(parsed["report"].get("mlx_models").is_some());
     assert!(parsed["report"].get("roles").is_some());
     assert!(parsed["report"]["roles"].is_array());
 

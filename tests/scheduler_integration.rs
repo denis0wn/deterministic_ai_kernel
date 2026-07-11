@@ -18,10 +18,12 @@ fn run(db: &Path, args: &[&str]) -> String {
     let out = Command::new("cargo")
         .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
-        .env(
-            "CARGO_TARGET_DIR",
-            std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string()),
-        )
+        .env("CARGO_TARGET_DIR", {
+            let base =
+                std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string());
+            let pid = std::process::id();
+            format!("{base}_{pid}")
+        })
         .args(args)
         .output()
         .expect("failed to run command");
@@ -38,10 +40,12 @@ fn run_expect_fail(db: &Path, args: &[&str]) -> String {
     let out = Command::new("cargo")
         .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
-        .env(
-            "CARGO_TARGET_DIR",
-            std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string()),
-        )
+        .env("CARGO_TARGET_DIR", {
+            let base =
+                std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string());
+            let pid = std::process::id();
+            format!("{base}_{pid}")
+        })
         .args(args)
         .output()
         .expect("failed to run command");

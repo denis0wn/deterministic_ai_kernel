@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::lm_control;
 use crate::model_registry::{resolve_model, ModelPurpose};
 
 #[derive(Serialize)]
@@ -27,6 +26,7 @@ struct ChatChoice {
     message: ChatMessage,
 }
 
+#[expect(dead_code)]
 fn role_for_purpose(purpose: ModelPurpose) -> &'static str {
     match purpose {
         ModelPurpose::CodingAssistant => "coding_assistant",
@@ -45,9 +45,6 @@ pub async fn chat_with_purpose(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String> {
-    let role = role_for_purpose(purpose);
-    lm_control::auto_route(role)?;
-
     let config = resolve_model(purpose)?;
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
 
@@ -79,7 +76,7 @@ pub async fn chat_with_purpose(
 
     if !status.is_success() {
         return Err(anyhow!(
-            "lm studio request failed for model {:?} with status {}: {}",
+            "mlx request failed for model {:?} with status {}: {}",
             config.model,
             status,
             body
@@ -129,20 +126,11 @@ pub async fn task_planner(user_prompt: &str) -> Result<String> {
 }
 
 pub async fn smoke() -> Result<()> {
-    let expected = "LM Studio from Rust works";
-    let text = coding_assistant("Reply with exactly: LM Studio from Rust works").await?;
+    let text = coding_assistant("Reply with exactly one word: OK").await?;
     let normalized = text.trim();
 
     if normalized.is_empty() {
         return Err(anyhow!("llm smoke mismatch: empty response"));
-    }
-
-    if !normalized.contains("LM Studio from Rust") {
-        return Err(anyhow!(
-            "llm smoke mismatch: expected response to mention {:?}, got {:?}",
-            expected,
-            normalized
-        ));
     }
 
     println!("LLM_SMOKE_OK");

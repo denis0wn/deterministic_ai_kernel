@@ -492,21 +492,9 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
         }
     };
 
-    // LM Studio models — try ~/.lmstudio/models or env override
-    let models_dir = std::env::var("LM_STUDIO_MODELS_DIR").unwrap_or_else(|_| {
-        dirs_next_or_home()
-            .join(".lmstudio/models")
-            .to_string_lossy()
-            .into_owned()
-    });
-    let lm_studio_models: Vec<String> = std::fs::read_dir(&models_dir)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .filter(|e| e.path().is_dir())
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .collect()
-        })
-        .unwrap_or_default();
+    // MLX runtime probe via OPENAI_BASE_URL/v1/models
+    let (mlx_runtime_ready, mlx_models) = deterministic_ai_kernel::lm_control::probe_mlx_runtime();
+    let mlx_model_present = deterministic_ai_kernel::lm_control::model_path_present();
 
     // Roles — read from ROLES_MANIFEST_PATH or empty
     let roles: Vec<serde_json::Value> = {
@@ -524,7 +512,8 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
                     std::env::var(format!("{}_MODEL", role.to_uppercase().replace('-', "_")))
                         .unwrap_or_default();
                 let in_sync = manifest_model == env_model && !manifest_model.is_empty();
-                let model_available = lm_studio_models.iter().any(|m| m == &manifest_model);
+                let model_available =
+                    mlx_runtime_ready && mlx_models.iter().any(|m| m == &manifest_model);
                 let threshold_gb = r["threshold_gb"].as_f64().unwrap_or(4.0);
                 let switch_ready = in_sync && model_available && free_gb >= threshold_gb;
                 json!({
@@ -546,7 +535,9 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
         "schema_version": "cli-json-v1",
         "report": {
             "free_gb": free_gb,
-            "lm_studio_models": lm_studio_models,
+            "mlx_models": mlx_models,
+            "mlx_runtime_ready": mlx_runtime_ready,
+            "mlx_model_present": mlx_model_present,
             "roles": roles,
         }
     });
@@ -555,6 +546,7 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn dirs_next_or_home() -> std::path::PathBuf {
     std::env::var("HOME")
         .map(std::path::PathBuf::from)

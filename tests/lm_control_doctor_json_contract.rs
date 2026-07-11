@@ -17,11 +17,13 @@ fn doctor_json_contract_is_stable() {
 
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("\"free_gb\""), "{stdout}");
-    assert!(stdout.contains("\"lm_studio_models\""), "{stdout}");
+    assert!(stdout.contains("\"mlx_models\""), "{stdout}");
     assert!(stdout.contains("\"roles\""), "{stdout}");
     assert!(stdout.contains("\"task_planning\""), "{stdout}");
     assert!(
-        stdout.contains("\"manifest_model\":\"huihui-gemma-4-e2b-it-abliterated-mlx\""),
+        stdout.contains(
+            "\"manifest_model\":\"mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit\""
+        ),
         "{stdout}"
     );
     assert!(stdout.contains("\"threshold_gb\":6.0"), "{stdout}");
