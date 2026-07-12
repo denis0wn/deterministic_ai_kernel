@@ -6,9 +6,9 @@ fn switch_plan_is_deterministic_for_task_planning() {
     let p2 = switch_plan("task_planning", 64.0).expect("test failure");
 
     assert_eq!(p1, p2);
-    assert_eq!(
-        p1.model,
-        "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+    assert!(
+        p1.model == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+            || p1.model == "/Users/denissmoliakov/Models/gemma4-reasoning"
     );
     assert_eq!(p1.ram_class, "medium");
     assert_eq!(p1.threshold_gb, 6.0);

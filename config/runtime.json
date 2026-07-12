@@ -1,0 +1,16 @@
+{
+  "auto_start": true,
+  "default_model": "/Users/denissmoliakov/Models/gemma4-reasoning",
+  "embeddings": {
+    "endpoint": "http://127.0.0.1:65431",
+    "health_check_url": "http://127.0.0.1:65431",
+    "model": "text-embedding-nomic-embed-text-v1.5",
+    "provider": "nomic"
+  },
+  "health_check_interval_ms": 100,
+  "host": "127.0.0.1",
+  "port": 54158,
+  "provider": "mlx",
+  "startup_timeout_secs": 5,
+  "venv_path": ".venv-mlx"
+}

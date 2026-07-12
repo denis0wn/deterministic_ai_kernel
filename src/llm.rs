@@ -1,30 +1,8 @@
-use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
+use anyhow::{anyhow, Result, Context};
 
 use crate::model_registry::{resolve_model, ModelPurpose};
 
-#[derive(Serialize)]
-struct ChatRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    temperature: f32,
-}
 
-#[derive(Serialize, Deserialize)]
-struct ChatMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct ChatResponse {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Deserialize)]
-struct ChatChoice {
-    message: ChatMessage,
-}
 
 #[expect(dead_code)]
 fn role_for_purpose(purpose: ModelPurpose) -> &'static str {
@@ -32,6 +10,25 @@ fn role_for_purpose(purpose: ModelPurpose) -> &'static str {
         ModelPurpose::CodingAssistant => "coding_assistant",
         ModelPurpose::TaskPlanning => "task_planning",
         ModelPurpose::CodeReview => "code_review",
+    }
+}
+
+/// Ensure the MLX runtime is up before making an inference call.
+/// Silently succeeds if `config/runtime.json` doesn't exist (legacy mode).
+fn ensure_runtime_before_call() {
+    // Skip in mock/test mode.
+    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        return;
+    }
+    match crate::runtime_manager::RuntimeManager::load() {
+        Ok(mgr) => {
+            if let Err(e) = mgr.ensure_running() {
+                eprintln!("[llm] RuntimeManager::ensure_running failed: {e}");
+            }
+        }
+        Err(_) => {
+            // No config/runtime.json — legacy mode, user manages the server.
+        }
     }
 }
 
@@ -54,55 +51,104 @@ pub async fn chat_with_model_override(
     user_prompt: &str,
     model_override: Option<&str>,
 ) -> Result<String> {
-    let mut config = resolve_model(purpose)?;
-    if let Some(m) = model_override {
-        config.model = m.to_string();
+    // Ensure runtime is available before the call.
+    ensure_runtime_before_call();
+
+    match do_chat_request(purpose, system_prompt, user_prompt, model_override).await {
+        Ok(text) => Ok(text),
+        Err(e) => {
+            // If it looks like a connection error, try one recovery cycle.
+            let msg = e.to_string();
+            if msg.contains("Connection refused")
+                || msg.contains("connection error")
+                || msg.contains("tcp connect error")
+                || msg.contains("hyper::Error")
+            {
+                eprintln!("[llm] Connection error — attempting runtime recovery…");
+                if let Ok(mgr) = crate::runtime_manager::RuntimeManager::load() {
+                    let _ = mgr.restart();
+                }
+                // Retry once after recovery.
+                do_chat_request(purpose, system_prompt, user_prompt, model_override).await
+            } else {
+                Err(e)
+            }
+        }
     }
-    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+}
 
-    let req = ChatRequest {
-        model: config.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_prompt.to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: user_prompt.to_string(),
-            },
-        ],
-        temperature: 0.0,
-    };
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post(url)
-        .bearer_auth(&config.api_key)
-        .json(&req)
-        .send()
-        .await?;
+/// Inner function that performs the actual TCP native inference request.
+async fn do_chat_request(
+    purpose: ModelPurpose,
+    system_prompt: &str,
+    user_prompt: &str,
+    model_override: Option<&str>,
+) -> Result<String> {
+    let mut model_name = model_override.unwrap_or("").to_string();
+    let mut host = "127.0.0.1".to_string();
+    let mut port = 8080u16;
 
-    let status = response.status();
-    let body = response.text().await?;
-
-    if !status.is_success() {
-        return Err(anyhow!(
-            "mlx request failed for model {:?} with status {}: {}",
-            config.model,
-            status,
-            body
-        ));
+    // Load config dynamically to get host and port
+    if let Ok(mgr) = crate::runtime_manager::RuntimeManager::load() {
+        host = mgr.config().host.clone();
+        port = mgr.config().port;
+        if model_name.is_empty() {
+            model_name = mgr.resolve_runtime_model().unwrap_or_else(|_| mgr.config().default_model.clone());
+        }
     }
 
-    let parsed: ChatResponse = serde_json::from_str(&body)?;
-    let text = parsed
-        .choices
-        .first()
-        .map(|c| c.message.content.clone())
-        .unwrap_or_default();
+    if model_name.is_empty() {
+        if let Ok(config) = resolve_model(purpose) {
+            model_name = config.model;
+        }
+    }
 
-    Ok(text)
+    let addr = format!("{}:{}", host, port);
+    let mut stream = tokio::net::TcpStream::connect(&addr).await
+        .with_context(|| format!("Failed to connect to native inference service at {}", addr))?;
+
+    let req = serde_json::json!({
+        "method": "generate",
+        "params": {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+            ],
+            "temp": 0.0,
+            "max_tokens": 2048
+        }
+    });
+
+    let mut req_str = serde_json::to_string(&req)?;
+    req_str.push('\n');
+
+    stream.write_all(req_str.as_bytes()).await?;
+    stream.flush().await?;
+
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+
+    let resp: serde_json::Value = serde_json::from_str(&line)
+        .with_context(|| format!("Invalid JSON response from native inference: {}", line))?;
+
+    if resp.get("status").and_then(|v| v.as_str()) == Some("ok") {
+        let generated_text = resp.get("text").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Response missing 'text' field"))?;
+        Ok(generated_text.to_string())
+    } else {
+        let err = resp.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+        Err(anyhow!("Generation failed: {}", err))
+    }
 }
 
 const CODING_ASSISTANT_SYSTEM_PROMPT: &str = "You are a concise coding assistant.";

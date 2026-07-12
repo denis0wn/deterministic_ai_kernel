@@ -218,6 +218,13 @@ async fn main() {
         println!("  fail-step [task_id] [worker_id] <step_id> <reason>");
         println!("  complete-step [task_id] [worker_id] <step_id>");
         println!("  rmdb");
+        println!();
+        println!("Runtime management:");
+        println!("  runtime-start");
+        println!("  runtime-stop");
+        println!("  runtime-restart");
+        println!("  runtime-status");
+        println!("  runtime-model");
         return;
     }
 
@@ -703,8 +710,87 @@ async fn main() {
             return;
         }
 
+        Some("runtime-start") => {
+            match deterministic_ai_kernel::runtime_manager::RuntimeManager::load() {
+                Ok(mgr) => match mgr.start() {
+                    Ok(info) => {
+                        println!("Runtime started.");
+                        println!("PID: {}", info.pid.map_or("—".to_string(), |p| p.to_string()));
+                        println!("Model: {}", info.loaded_model.as_deref().unwrap_or("—"));
+                        println!("URL: {}", info.base_url);
+                    }
+                    Err(e) => {
+                        eprintln!("runtime-start failed: {e}");
+                        std::process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to load runtime config: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Some("runtime-stop") => {
+            match deterministic_ai_kernel::runtime_manager::RuntimeManager::load() {
+                Ok(mgr) => {
+                    if let Err(e) = mgr.stop() {
+                        eprintln!("runtime-stop failed: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("Runtime stopped.");
+                }
+                Err(e) => {
+                    eprintln!("Failed to load runtime config: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Some("runtime-restart") => {
+            match deterministic_ai_kernel::runtime_manager::RuntimeManager::load() {
+                Ok(mgr) => match mgr.restart() {
+                    Ok(info) => {
+                        println!("Runtime restarted.");
+                        println!("PID: {}", info.pid.map_or("—".to_string(), |p| p.to_string()));
+                        println!("Model: {}", info.loaded_model.as_deref().unwrap_or("—"));
+                        println!("URL: {}", info.base_url);
+                    }
+                    Err(e) => {
+                        eprintln!("runtime-restart failed: {e}");
+                        std::process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to load runtime config: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Some("runtime-status") => {
+            match deterministic_ai_kernel::runtime_manager::print_runtime_status() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("runtime-status failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Some("runtime-model") => {
+            match deterministic_ai_kernel::runtime_manager::print_runtime_model() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("runtime-model failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
         Some("doctor") => {
-            match deterministic_ai_kernel::lm_control::print_doctor_text() {
+            match deterministic_ai_kernel::lm_control::print_doctor_text().await {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("doctor failed: {e}");

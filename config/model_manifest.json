@@ -10,7 +10,7 @@
       "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
-      "id": "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "task_planning",
       "priority": 1,
       "ram_class": "medium",

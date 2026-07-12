@@ -28,4 +28,5 @@ pub mod embeddings;
 pub mod kernel_types;
 pub mod planner_pipeline;
 pub mod registry;
+pub mod runtime_manager;
 pub mod semantic_bias;

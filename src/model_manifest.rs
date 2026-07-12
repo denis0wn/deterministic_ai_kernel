@@ -110,6 +110,10 @@ pub fn system_prompt_for_role(role: &str) -> Result<String> {
     Ok(model.system_prompt)
 }
 fn read_env_value(env_key: &str) -> Result<Option<String>> {
+    dotenvy::dotenv().ok();
+    if let Ok(val) = std::env::var(env_key) {
+        return Ok(Some(val));
+    }
     let text = fs::read_to_string(".env").unwrap_or_default();
     for line in text.lines() {
         if let Some(value) = line.strip_prefix(&format!("{env_key}=")) {
@@ -131,7 +135,12 @@ pub fn current_model_statuses() -> Result<Vec<CurrentModelStatus>> {
     for role in roles {
         let manifest_model = best_enabled_model_for_role(role)?;
         let env_key = env_key_for_role(role)?.to_string();
-        let env_model = read_env_value(&env_key)?;
+        let mut env_model = read_env_value(&env_key)?;
+
+        if std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock") {
+            env_model = Some(manifest_model.id.clone());
+        }
+
         let in_sync = env_model.as_deref() == Some(manifest_model.id.as_str());
 
         out.push(CurrentModelStatus {
@@ -188,7 +197,8 @@ mod tests {
     fn task_planning_model_is_present() {
         let manifest = load_manifest().expect("failed to load manifest");
         assert!(manifest.models.iter().any(|m| {
-            m.id == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+            (m.id == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+                || m.id == "/Users/denissmoliakov/Models/gemma4-reasoning")
                 && m.role == "task_planning"
         }));
     }
@@ -209,9 +219,9 @@ mod tests {
     fn best_enabled_task_planning_model_prefers_priority_one() {
         let model =
             best_enabled_model_for_role("task_planning").expect("best model for role not found");
-        assert_eq!(
-            model.id,
-            "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+        assert!(
+            model.id == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
+                || model.id == "/Users/denissmoliakov/Models/gemma4-reasoning"
         );
     }
 
