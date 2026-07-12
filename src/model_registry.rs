@@ -134,7 +134,8 @@ mod tests {
     #[test]
     fn coding_assistant_uses_default_model_when_specific_key_missing() {
         let values = base_values();
-        let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values).unwrap();
+        let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values)
+            .expect("failed to resolve assistant model");
 
         assert_eq!(cfg.model, "default-model");
         assert_eq!(cfg.api_key, "mlx-local");
@@ -143,7 +144,8 @@ mod tests {
     #[test]
     fn task_planning_uses_default_model_when_specific_key_missing() {
         let values = base_values();
-        let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values).unwrap();
+        let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values)
+            .expect("failed to resolve planning model");
 
         assert_eq!(cfg.model, "default-model");
         assert_eq!(cfg.api_key, "mlx-local");
@@ -154,7 +156,8 @@ mod tests {
         let mut values = base_values();
         values.insert("OPENAI_MODEL_CODING_ASSISTANT", "coding-model".to_string());
 
-        let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values).unwrap();
+        let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values)
+            .expect("failed to resolve assistant model preferred");
         assert_eq!(cfg.model, "coding-model");
     }
 
@@ -163,7 +166,8 @@ mod tests {
         let mut values = base_values();
         values.insert("OPENAI_MODEL_TASK_PLANNING", "planner-model".to_string());
 
-        let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values).unwrap();
+        let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values)
+            .expect("failed to resolve planning model preferred");
         assert_eq!(cfg.model, "planner-model");
     }
 
@@ -172,7 +176,8 @@ mod tests {
         let mut values = base_values();
         values.remove("OPENAI_BASE_URL");
 
-        let err = resolve_model_from_values(ModelPurpose::CodingAssistant, &values).unwrap_err();
+        let err = resolve_model_from_values(ModelPurpose::CodingAssistant, &values)
+            .expect_err("should fail due to missing base url");
         assert!(err.to_string().contains("OPENAI_BASE_URL is not set"));
     }
 
@@ -181,7 +186,8 @@ mod tests {
         let mut values = base_values();
         values.remove("OPENAI_MODEL");
 
-        let err = resolve_model_from_values(ModelPurpose::TaskPlanning, &values).unwrap_err();
+        let err = resolve_model_from_values(ModelPurpose::TaskPlanning, &values)
+            .expect_err("should fail due to missing default model");
         assert!(err.to_string().contains("OPENAI_MODEL is not set"));
     }
 }

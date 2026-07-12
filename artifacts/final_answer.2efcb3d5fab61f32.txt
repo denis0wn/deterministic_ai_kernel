@@ -1,0 +1,12 @@
+Validate the plan, resolve each step by name, and build a list of `StepExecution` objects with the required fields.
+
+```python
+def plan_execution(plan, steps):
+    plan_executions = []
+    for step_name, params in plan.items():
+        if step_name not in steps:
+            raise ValueError(f"Step {step_name} not found in steps")
+        step = steps[step_name]
+        plan_executions.append(StepExecution(step=step, params=params, result=None))
+    return plan_executions
+```

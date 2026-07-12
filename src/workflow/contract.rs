@@ -15,6 +15,27 @@ pub enum StepKind {
     ValidatePatch,
 }
 
+impl StepKind {
+    pub fn to_primitive_kind(&self) -> crate::execution_abi::primitives::PrimitiveKind {
+        use crate::execution_abi::primitives::PrimitiveKind;
+        match self {
+            StepKind::TightenPlannerPrompt => PrimitiveKind::Compute,
+            StepKind::NormalizePlannerOutput => PrimitiveKind::Compute,
+            StepKind::AddLlmFallbackHandling => PrimitiveKind::Compute,
+            StepKind::AddPlannerTestCoverage => PrimitiveKind::Compute,
+            StepKind::ValidatePlannerOutput => PrimitiveKind::Route,
+            StepKind::AnalyzeTask => PrimitiveKind::Compute,
+            StepKind::PlanExecution => PrimitiveKind::Compute,
+            StepKind::ExecuteChanges => PrimitiveKind::Compute,
+            StepKind::ReadRepository => PrimitiveKind::Read,
+            StepKind::LocateBug => PrimitiveKind::Compute,
+            StepKind::PatchCode => PrimitiveKind::Write,
+            StepKind::RunTests => PrimitiveKind::Compute,
+            StepKind::ValidatePatch => PrimitiveKind::Route,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
     pub kind: StepKind,
@@ -54,6 +75,231 @@ pub enum TaskClass {
     Generic,
     PlannerHardening,
     CodeFix,
+}
+
+impl TaskClass {
+    pub fn to_exec_spec(&self, detail: Option<&str>) -> crate::exec_spec::ExecSpec {
+        let specs = task_class_to_flow(*self);
+        let steps_lowered = step_specs_to_steps(&specs, detail);
+        steps_to_exec_spec(&steps_lowered)
+    }
+}
+
+fn extract_path(desc: &str) -> Option<String> {
+    let parts: Vec<&str> = desc.split_whitespace().collect();
+    for (i, &word) in parts.iter().enumerate() {
+        let wl = word.to_lowercase();
+        if (wl == "file" || wl == "read" || wl == "write" || wl == "create") && i + 1 < parts.len()
+        {
+            let next = parts[i + 1].trim_matches(|c| c == '\'' || c == '"' || c == '`');
+            let next_lower = next.to_lowercase();
+            if next_lower == "file" && i + 2 < parts.len() {
+                let after_file = parts[i + 2].trim_matches(|c| c == '\'' || c == '"' || c == '`');
+                if !after_file.is_empty() {
+                    return Some(after_file.to_string());
+                }
+            } else if !next.is_empty() && next_lower != "file" {
+                return Some(next.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_content(desc: &str) -> Option<String> {
+    let lower = desc.to_lowercase();
+    if let Some(idx) = lower.find(" with ") {
+        let content = desc[idx + 6..]
+            .trim()
+            .trim_matches(|c| c == '\'' || c == '"' || c == '`');
+        return Some(content.to_string());
+    }
+    None
+}
+
+fn extract_command(desc: &str) -> Option<String> {
+    let lower = desc.to_lowercase();
+    if let Some(idx) = lower.find("command ") {
+        return Some(desc[idx + 8..].to_string());
+    }
+    if let Some(idx) = lower.find("run ") {
+        return Some(desc[idx + 4..].to_string());
+    }
+    if let Some(idx) = lower.find("execute ") {
+        return Some(desc[idx + 8..].to_string());
+    }
+    None
+}
+
+pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
+    let mut steps_specs = Vec::new();
+    let mut transitions = Vec::new();
+
+    for (i, step) in steps.iter().enumerate() {
+        let slug = match step.kind {
+            StepKind::TightenPlannerPrompt => "tighten_planner_prompt",
+            StepKind::NormalizePlannerOutput => "normalize_planner_output",
+            StepKind::AddLlmFallbackHandling => "add_llm_fallback_handling",
+            StepKind::AddPlannerTestCoverage => "add_planner_test_coverage",
+            StepKind::ValidatePlannerOutput => "validate_planner_output",
+            StepKind::AnalyzeTask => "analyze_task",
+            StepKind::PlanExecution => "plan_execution",
+            StepKind::ExecuteChanges => "execute_changes",
+            StepKind::ReadRepository => "read_repository",
+            StepKind::LocateBug => "locate_bug",
+            StepKind::PatchCode => "patch_code",
+            StepKind::RunTests => "run_tests",
+            StepKind::ValidatePatch => "validate_patch",
+        };
+        let step_id = format!("{:02}_{}", i, slug);
+
+        let cap = required_capability_for_step(&step.kind);
+        let required_capability = format!("{:?}", cap);
+
+        let constraint = crate::exec_spec::Constraint {
+            target: "worker".to_string(),
+            key: "required_capability".to_string(),
+            value: required_capability.clone(),
+        };
+
+        let primitive_kind = step.kind.to_primitive_kind();
+        let requires_llm = matches!(
+            step.kind,
+            StepKind::ExecuteChanges
+                | StepKind::PatchCode
+                | StepKind::PlanExecution
+                | StepKind::LocateBug
+        );
+        let is_analyze = step.kind == StepKind::AnalyzeTask;
+
+        let raw_detail = step.detail.as_deref().unwrap_or("");
+        let detail_lower = raw_detail.to_lowercase();
+        let (prim_kind, prim_payload) =
+            if detail_lower.contains("read file") || detail_lower.contains("read ") {
+                let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
+                (
+                    crate::execution_abi::primitives::PrimitiveKind::Read,
+                    serde_json::json!({
+                        "path": path,
+                        "detail": step.detail.clone(),
+                        "step_kind": format!("{:?}", step.kind)
+                    }),
+                )
+            } else if detail_lower.contains("write file")
+                || detail_lower.contains("write ")
+                || detail_lower.contains("create file")
+            {
+                let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
+                let content =
+                    extract_content(raw_detail).unwrap_or_else(|| "dummy content".to_string());
+                (
+                    crate::execution_abi::primitives::PrimitiveKind::Write,
+                    serde_json::json!({
+                        "path": path,
+                        "content": content,
+                        "detail": step.detail.clone(),
+                        "step_kind": format!("{:?}", step.kind)
+                    }),
+                )
+            } else if detail_lower.contains("run command")
+                || detail_lower.contains("run ")
+                || detail_lower.contains("execute ")
+            {
+                let cmd = extract_command(raw_detail).unwrap_or_else(|| "echo 'hello'".to_string());
+                (
+                    crate::execution_abi::primitives::PrimitiveKind::Compute,
+                    serde_json::json!({
+                        "command": cmd,
+                        "detail": step.detail.clone(),
+                        "step_kind": format!("{:?}", step.kind)
+                    }),
+                )
+            } else {
+                (
+                    primitive_kind,
+                    serde_json::json!({
+                        "requires_llm": requires_llm,
+                        "operation": if is_analyze { "semantic_embedding" } else { "none" },
+                        "detail": step.detail.clone(),
+                        "step_kind": format!("{:?}", step.kind)
+                    }),
+                )
+            };
+
+        let primitive = Some(crate::execution_abi::primitives::PrimitiveSpec {
+            id: crate::execution_abi::primitives::PrimitiveId(step_id.clone()),
+            kind: prim_kind,
+            payload: prim_payload,
+        });
+
+        let inputs = match step.kind {
+            StepKind::AnalyzeTask => vec!["task_description".to_string()],
+            StepKind::PlanExecution => vec!["analysis_seed".to_string()],
+            StepKind::ExecuteChanges => vec!["execution_plan".to_string()],
+            _ => vec![],
+        };
+        let outputs = match step.kind {
+            StepKind::AnalyzeTask => vec!["analysis_seed".to_string()],
+            StepKind::PlanExecution => vec!["execution_plan".to_string()],
+            StepKind::ExecuteChanges => vec!["changes_committed".to_string()],
+            _ => vec![],
+        };
+        let metadata = serde_json::json!({
+            "step_kind": format!("{:?}", step.kind)
+        });
+
+        steps_specs.push(crate::exec_spec::StepSpec {
+            step_id: step_id.clone(),
+            required_capability,
+            detail: step.detail.clone(),
+            primitive,
+            constraints: vec![constraint],
+            artifact_requirements: vec![],
+            inputs,
+            outputs,
+            metadata,
+        });
+
+        if i > 0 {
+            let prev_slug = match steps[i - 1].kind {
+                StepKind::TightenPlannerPrompt => "tighten_planner_prompt",
+                StepKind::NormalizePlannerOutput => "normalize_planner_output",
+                StepKind::AddLlmFallbackHandling => "add_llm_fallback_handling",
+                StepKind::AddPlannerTestCoverage => "add_planner_test_coverage",
+                StepKind::ValidatePlannerOutput => "validate_planner_output",
+                StepKind::AnalyzeTask => "analyze_task",
+                StepKind::PlanExecution => "plan_execution",
+                StepKind::ExecuteChanges => "execute_changes",
+                StepKind::ReadRepository => "read_repository",
+                StepKind::LocateBug => "locate_bug",
+                StepKind::PatchCode => "patch_code",
+                StepKind::RunTests => "run_tests",
+                StepKind::ValidatePatch => "validate_patch",
+            };
+            let prev_id = format!("{:02}_{}", i - 1, prev_slug);
+            transitions.push(crate::exec_spec::TransitionRule {
+                step_id,
+                depends_on: vec![prev_id],
+            });
+        }
+    }
+
+    let mut dependencies = Vec::new();
+    for t in &transitions {
+        dependencies.push(crate::exec_spec::Dependency {
+            step_id: t.step_id.clone(),
+            depends_on: t.depends_on.clone(),
+        });
+    }
+
+    crate::exec_spec::ExecSpec::new(
+        1,
+        steps_specs,
+        transitions,
+        dependencies,
+        vec![],
+        std::collections::BTreeMap::new(),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

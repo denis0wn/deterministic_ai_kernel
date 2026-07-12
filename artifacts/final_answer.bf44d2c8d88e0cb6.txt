@@ -1,0 +1,5 @@
+Plan:
+1. Audit event emission for ordering guarantees (e.g. sequence numbers).
+2. Verify projection workers are idempotent and order-respecting.
+3. Check replay paths for non-deterministic sources (time, random).
+4. Verify command submission uses a sequencer or optimistic locking.

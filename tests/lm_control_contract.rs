@@ -6,7 +6,7 @@ fn run(args: &[&str]) -> String {
         .env("DAK_FREE_GB_OVERRIDE", "16.0")
         .args(args)
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         out.status.success(),
@@ -15,7 +15,7 @@ fn run(args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    String::from_utf8(out.stdout).unwrap()
+    String::from_utf8(out.stdout).expect("test failure")
 }
 
 #[test]

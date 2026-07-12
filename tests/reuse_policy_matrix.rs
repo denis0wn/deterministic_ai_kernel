@@ -27,6 +27,7 @@ fn run_graph(
 ) -> std::process::ExitStatus {
     let mut cmd = Command::new("./scripts/run_verification_graph.sh");
     cmd.current_dir(repo_root())
+        .env("DAK_FAST_TEST", "1")
         .arg("--pipeline")
         .arg(pipeline)
         .arg("--out")
@@ -58,8 +59,11 @@ fn mutate_plan_fingerprint(src: &Path, dst: &Path) {
     json["plan_hash"] = serde_json::Value::String(
         "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
     );
-    fs::write(dst, serde_json::to_string_pretty(&json).unwrap() + "\n")
-        .expect("failed to write mutated plan");
+    fs::write(
+        dst,
+        serde_json::to_string_pretty(&json).expect("test failure") + "\n",
+    )
+    .expect("failed to write mutated plan");
 }
 
 #[test]
@@ -107,7 +111,7 @@ fn reuse_policy_matrix() {
         },
     ];
 
-    fs::create_dir_all(artifacts_dir()).unwrap();
+    fs::create_dir_all(artifacts_dir()).expect("test failure");
 
     for case in cases {
         let base_plan =
@@ -120,6 +124,7 @@ fn reuse_policy_matrix() {
 
         let warmup = Command::new("./scripts/run_verification_graph.sh")
             .current_dir(repo_root())
+            .env("DAK_FAST_TEST", "1")
             .arg("--pipeline")
             .arg(case.reuse_pipeline)
             .arg("--plan-out")

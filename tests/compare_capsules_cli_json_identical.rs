@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -41,24 +41,24 @@ fn compare_capsules_json_reports_identical() {
     let db = unique_db_path("compare_capsules_cli_json_identical");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
     bus.append_event(
         "task-identical-json",
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_event(
         "task-identical-json",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
-    let capsule = build_replay_capsule(&bus, "task-identical-json").unwrap();
-    bus.save_replay_capsule(&capsule).unwrap();
+    let capsule = build_replay_capsule(&bus, "task-identical-json").expect("test failure");
+    bus.save_replay_capsule(&capsule).expect("test failure");
 
     let (out, success) = run_kernel(
         &db,
@@ -80,14 +80,14 @@ fn compare_capsules_json_reports_identical() {
     assert_eq!(
         parsed["report"]["diff"]["event_ids"]["left_only"]
             .as_array()
-            .unwrap()
+            .expect("test failure")
             .len(),
         0
     );
     assert_eq!(
         parsed["report"]["diff"]["event_ids"]["right_only"]
             .as_array()
-            .unwrap()
+            .expect("test failure")
             .len(),
         0
     );

@@ -180,13 +180,13 @@ mod tests {
 
     #[test]
     fn manifest_loads() {
-        let manifest = load_manifest().unwrap();
+        let manifest = load_manifest().expect("failed to load manifest");
         assert!(!manifest.models.is_empty());
     }
 
     #[test]
     fn task_planning_model_is_present() {
-        let manifest = load_manifest().unwrap();
+        let manifest = load_manifest().expect("failed to load manifest");
         assert!(manifest.models.iter().any(|m| {
             m.id == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
                 && m.role == "task_planning"
@@ -195,19 +195,20 @@ mod tests {
 
     #[test]
     fn embedding_model_is_not_marked_as_chat_role() {
-        let manifest = load_manifest().unwrap();
+        let manifest = load_manifest().expect("failed to load manifest");
         let embedding = manifest
             .models
             .iter()
             .find(|m| m.id == "text-embedding-nomic-embed-text-v1.5")
-            .unwrap();
+            .expect("embedding model not found in manifest");
 
         assert_eq!(embedding.role, "embeddings");
     }
 
     #[test]
     fn best_enabled_task_planning_model_prefers_priority_one() {
-        let model = best_enabled_model_for_role("task_planning").unwrap();
+        let model =
+            best_enabled_model_for_role("task_planning").expect("best model for role not found");
         assert_eq!(
             model.id,
             "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
@@ -216,14 +217,23 @@ mod tests {
 
     #[test]
     fn threshold_mapping_is_stable() {
-        assert_eq!(threshold_gb_for_ram_class("light").unwrap(), 2.0);
-        assert_eq!(threshold_gb_for_ram_class("medium").unwrap(), 6.0);
-        assert_eq!(threshold_gb_for_ram_class("heavy").unwrap(), 10.0);
+        assert_eq!(
+            threshold_gb_for_ram_class("light").expect("missing light ram class"),
+            2.0
+        );
+        assert_eq!(
+            threshold_gb_for_ram_class("medium").expect("missing medium ram class"),
+            6.0
+        );
+        assert_eq!(
+            threshold_gb_for_ram_class("heavy").expect("missing heavy ram class"),
+            10.0
+        );
     }
 
     #[test]
     fn current_models_reports_known_roles() {
-        let rows = current_model_statuses().unwrap();
+        let rows = current_model_statuses().expect("failed to get current model statuses");
         assert!(rows.iter().any(|r| r.role == "coding_assistant"));
         assert!(rows.iter().any(|r| r.role == "task_planning"));
         assert!(rows.iter().any(|r| r.role == "embeddings"));

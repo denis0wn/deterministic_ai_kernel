@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS generations (
 
 CREATE TABLE IF NOT EXISTS event_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT UNIQUE,
     system_generation BIGINT NOT NULL,
     causal_unit_id BIGINT NOT NULL,
     sequence_in_unit INTEGER NOT NULL,
@@ -76,7 +77,8 @@ CREATE TABLE IF NOT EXISTS semantic_artifacts (
 
 CREATE TABLE IF NOT EXISTS tasks (
     task_id TEXT PRIMARY KEY,
-    task_class TEXT NOT NULL CHECK(task_class IN ('Generic','PlannerHardening','CodeFix'))
+    task_class TEXT NOT NULL CHECK(task_class IN ('Generic','PlannerHardening','CodeFix')),
+    exec_spec TEXT
 );
 
 CREATE TABLE IF NOT EXISTS step_dependencies (
@@ -128,3 +130,12 @@ ON step_dependencies(task_id, step_id, depends_on_step_id);
 
 CREATE INDEX IF NOT EXISTS idx_status_task
 ON step_status(task_id, step_id, status);
+
+CREATE TABLE IF NOT EXISTS execution_cache (
+    cache_key TEXT PRIMARY KEY,
+    execution_result TEXT NOT NULL,
+    output_hash TEXT NOT NULL,
+    duration_ms BIGINT NOT NULL,
+    metadata TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

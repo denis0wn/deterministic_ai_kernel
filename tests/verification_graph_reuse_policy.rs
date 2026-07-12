@@ -10,10 +10,11 @@ fn verification_graph_rejects_invalid_reuse_when_environment_fingerprint_differs
     let fake_plan_path = artifacts_dir.join("verification_plan.invalid_env.json");
     let verdict_path = artifacts_dir.join("verification_verdict.invalid_reuse.json");
 
-    fs::create_dir_all(&artifacts_dir).unwrap();
+    fs::create_dir_all(&artifacts_dir).expect("test failure");
 
     let warmup = Command::new("./scripts/run_verification_graph.sh")
         .current_dir(repo_root)
+        .env("DAK_FAST_TEST", "1")
         .args(["--pipeline", "fast"])
         .status()
         .expect("failed to run verification graph warmup");
@@ -33,19 +34,20 @@ fn verification_graph_rejects_invalid_reuse_when_environment_fingerprint_differs
 
     fs::write(
         &fake_plan_path,
-        serde_json::to_string_pretty(&plan_json).unwrap() + "\n",
+        serde_json::to_string_pretty(&plan_json).expect("test failure") + "\n",
     )
     .expect("failed to write fake reuse plan");
 
     let rerun = Command::new("./scripts/run_verification_graph.sh")
         .current_dir(repo_root)
+        .env("DAK_FAST_TEST", "1")
         .args([
             "--pipeline",
             "fast",
             "--reuse-plan",
-            fake_plan_path.to_str().unwrap(),
+            fake_plan_path.to_str().expect("test failure"),
             "--out",
-            verdict_path.to_str().unwrap(),
+            verdict_path.to_str().expect("test failure"),
         ])
         .status()
         .expect("failed to run verification graph with reuse plan");

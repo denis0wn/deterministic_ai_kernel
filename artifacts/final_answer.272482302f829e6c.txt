@@ -1,0 +1,9 @@
+Use a lock to apply each `(key, value)` pair to the shared state. Later updates to the same key overwrite earlier ones.
+
+```python
+def execute_changes(shared_state, changes):
+    with lock:
+        for key, value in changes:
+            shared_state[key] = value
+    return shared_state
+```

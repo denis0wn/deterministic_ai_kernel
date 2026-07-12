@@ -6,8 +6,8 @@ use std::process::Command;
 
 #[test]
 fn doctor_json_cli_emits_valid_json_report() {
-    let out = Command::new("cargo")
-        .args(["run", "--quiet", "--bin", "run", "--", "doctor-json"])
+    let out = Command::new(env!("CARGO_BIN_EXE_run"))
+        .arg("doctor-json")
         .output()
         .expect("failed to run doctor-json");
 

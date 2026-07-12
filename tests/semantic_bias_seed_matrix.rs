@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db(name: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("deterministic_ai_kernel_{}_{}.db", name, nanos))
@@ -28,7 +28,7 @@ fn emit_and_fetch(db: &str, task: &str, step: &str, steps: &[&str]) -> Value {
         .env("KERNEL_DB_PATH", db)
         .args(&args)
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         out.status.success(),
         "emit failed: {}",
@@ -39,13 +39,13 @@ fn emit_and_fetch(db: &str, task: &str, step: &str, steps: &[&str]) -> Value {
         .env("KERNEL_DB_PATH", db)
         .args(["latest-bias-artifact", task, step])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(fetch.status.success());
 
-    let stdout = String::from_utf8(fetch.stdout).unwrap();
+    let stdout = String::from_utf8(fetch.stdout).expect("test failure");
     let line = stdout.lines().next().expect("expected artifact row");
     let cols: Vec<&str> = line.splitn(6, '\t').collect();
-    serde_json::from_str(cols[5]).unwrap()
+    serde_json::from_str(cols[5]).expect("test failure")
 }
 
 #[test]

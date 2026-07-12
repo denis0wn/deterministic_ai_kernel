@@ -12,7 +12,7 @@ use deterministic_ai_kernel::planner_pipeline::execution_engine::{ExecutionEngin
 use deterministic_ai_kernel::planner_pipeline::persistence::{PersistenceStore, StoreConfig};
 use deterministic_ai_kernel::planner_pipeline::pipeline::Pipeline;
 use deterministic_ai_kernel::planner_pipeline::plan_diff::{PlanDiff, StepChange};
-use deterministic_ai_kernel::planner_pipeline::replay::ReplayTape;
+use deterministic_ai_kernel::planner_pipeline::replay::{ReplayTape, Replayer};
 use deterministic_ai_kernel::planner_pipeline::PipelineContext;
 use deterministic_ai_kernel::planner_pipeline::Plan;
 use deterministic_ai_kernel::semantic_bias::{BiasConfiguration, BiasVersion, SemanticBiasRule};
@@ -35,7 +35,11 @@ fn make_store(dir: &str) -> Result<PersistenceStore> {
 
 fn print_usage(code: i32) -> ! {
     println!("Usage:");
-    println!("  run run      --payload <text> --seed <u64> [--store <dir>]");
+    println!("  run execute  --payload <text> --seed <u64> [--store <dir>]");
+    println!("  run run      --payload <text> --seed <u64> [--store <dir>] (backward compatible)");
+    println!("  run inspect  <task_id>");
+    println!("  run replay   <task_id>");
+    println!("  run status   <task_id>");
     println!("  run verify   --store <dir>");
     println!("  run diff                  --store <dir> <PLAN_ID_A> <PLAN_ID_B>");
     println!("  run emit-bias-artifact    <task_bias_id> <step_bias_id> [preferred...]");
@@ -44,26 +48,302 @@ fn print_usage(code: i32) -> ! {
     std::process::exit(code);
 }
 
-// -- subcommand: run ----------------------------------------------------------
+// -- sub-subcommands of run ---------------------------------------------------
+
+fn has_json_flag(args: &[String]) -> bool {
+    args.iter().any(|s| s == "--json")
+}
+
+fn filter_json_flag(args: &[String]) -> Vec<String> {
+    args.iter().filter(|s| *s != "--json").cloned().collect()
+}
+
+fn cmd_run_inspect(args: &[String]) -> Result<()> {
+    let is_json = has_json_flag(args);
+    let clean_args = filter_json_flag(args);
+    if clean_args.is_empty() {
+        bail!("inspect requires a <task_id>");
+    }
+    let task_id = &clean_args[0];
+
+    let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+    let conn = rusqlite::Connection::open(&db_path)?;
+
+    // Execution graph query
+    let mut stmt = conn
+        .prepare("SELECT step_id, depends_on_step_id FROM step_dependencies WHERE task_id = ?1")?;
+    let rows = stmt.query_map([task_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut dependencies = vec![];
+    for (step_id, depends_on) in rows.flatten() {
+        dependencies.push(serde_json::json!({
+            "step_id": step_id,
+            "depends_on": depends_on
+        }));
+    }
+
+    // Event timeline query
+    let mut stmt2 = conn.prepare("SELECT system_generation, event_type, payload FROM event_log WHERE task_id = ?1 ORDER BY id ASC")?;
+    let event_rows = stmt2.query_map([task_id], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut events = vec![];
+    for (gen, event_type, payload_str) in event_rows.flatten() {
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_str).unwrap_or(serde_json::json!(payload_str));
+        events.push(serde_json::json!({
+            "generation": gen,
+            "event_type": event_type,
+            "payload": payload
+        }));
+    }
+
+    if is_json {
+        let inspect_json = serde_json::json!({
+            "task_id": task_id,
+            "dependencies": dependencies,
+            "events": events
+        });
+        println!("{}", serde_json::to_string_pretty(&inspect_json)?);
+    } else {
+        println!("=== EXECUTION GRAPH ===");
+        if dependencies.is_empty() {
+            println!("  (No explicit dependencies found in DB. Sequential fallback.)");
+        } else {
+            for dep in &dependencies {
+                println!(
+                    "  {} -> {}",
+                    dep["depends_on"].as_str().unwrap_or(""),
+                    dep["step_id"].as_str().unwrap_or("")
+                );
+            }
+        }
+
+        println!("\n=== EVENT TIMELINE ===");
+        if events.is_empty() {
+            println!("  (No events recorded for this task.)");
+        } else {
+            for ev in &events {
+                println!(
+                    "  [Gen {:>2}] {} -- {}",
+                    ev["generation"].as_i64().unwrap_or(0),
+                    ev["event_type"].as_str().unwrap_or(""),
+                    ev["payload"]
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_run_replay(args: &[String]) -> Result<()> {
+    let is_json = has_json_flag(args);
+    let clean_args = filter_json_flag(args);
+    if clean_args.is_empty() {
+        bail!("replay requires a <task_id>");
+    }
+    let task_id = &clean_args[0];
+    let mut store_dir = "./runs".to_string();
+    let mut i = 0;
+    while i < clean_args.len() {
+        if clean_args[i] == "--store" && i + 1 < clean_args.len() {
+            store_dir = clean_args[i + 1].clone();
+            break;
+        }
+        i += 1;
+    }
+
+    let store = make_store(&store_dir)?;
+    let tape = store.load_tape().unwrap_or_else(|_| ReplayTape::new());
+
+    let mut found = false;
+    for entry in tape.entries() {
+        let entry_task_id = format!(
+            "task_{}",
+            &blake3::hash(entry.payload.as_bytes()).to_hex()[..16]
+        );
+        if entry_task_id == *task_id || entry.plan_id == *task_id {
+            found = true;
+            let verifier = Replayer::new(Pipeline::new(default_bias()));
+            let single = {
+                let mut t = ReplayTape::new();
+                t.record(&entry.payload, entry.seed, &entry.plan_id);
+                t
+            };
+            match verifier.verify(&single) {
+                Ok(_) => {
+                    if is_json {
+                        let out_json = serde_json::json!({
+                            "task_id": task_id,
+                            "replay_status": "PASSED",
+                            "drift_report": null
+                        });
+                        println!("{}", serde_json::to_string_pretty(&out_json)?);
+                    } else {
+                        println!("Replaying task/plan: {} (seed={})", task_id, entry.seed);
+                        println!("Replay status : PASSED");
+                        println!("Drift         : 0");
+                    }
+                }
+                Err(err) => {
+                    if is_json {
+                        let out_json = serde_json::json!({
+                            "task_id": task_id,
+                            "replay_status": "FAILED",
+                            "drift_report": err.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&out_json)?);
+                    } else {
+                        println!("Replaying task/plan: {} (seed={})", task_id, entry.seed);
+                        println!("Replay status : FAILED");
+                        println!("{}", err);
+                    }
+                }
+            }
+        }
+    }
+
+    if !found {
+        if is_json {
+            let out_json = serde_json::json!({
+                "task_id": task_id,
+                "replay_status": "NOT_FOUND",
+                "drift_report": format!("No replay tape entry found for task/plan: {}", task_id)
+            });
+            println!("{}", serde_json::to_string_pretty(&out_json)?);
+        } else {
+            println!("No replay tape entry found for task/plan: {}", task_id);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_run_status(args: &[String]) -> Result<()> {
+    let is_json = has_json_flag(args);
+    let clean_args = filter_json_flag(args);
+    if clean_args.is_empty() {
+        bail!("status requires a <task_id>");
+    }
+    let task_id = &clean_args[0];
+
+    let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+    let conn = rusqlite::Connection::open(&db_path)?;
+
+    // Determine state
+    let task_state =
+        deterministic_ai_kernel::planner_pipeline::execution_engine::get_current_task_state(
+            task_id,
+        )
+        .unwrap_or(deterministic_ai_kernel::planner_pipeline::execution_engine::TaskState::None);
+    let state_str = format!("{:?}", task_state);
+
+    // Get steps status list
+    let mut stmt = conn.prepare("SELECT step_id, status FROM step_status WHERE task_id = ?1")?;
+    let rows = stmt.query_map([task_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut steps_list = Vec::new();
+    for (step_id, status) in rows.flatten() {
+        steps_list.push(serde_json::json!({
+            "step_id": step_id,
+            "status": status
+        }));
+    }
+
+    // Get events count
+    let events_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM event_log WHERE task_id = ?1",
+            [task_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    // Check replay valid
+    let replay_valid_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = 'REPLAY_VALIDATED'",
+            [task_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let replay_valid = replay_valid_count > 0;
+
+    if is_json {
+        let out_json = serde_json::json!({
+            "task_id": task_id,
+            "state": state_str,
+            "steps": steps_list,
+            "events_count": events_count,
+            "replay_valid": replay_valid
+        });
+        println!("{}", serde_json::to_string_pretty(&out_json)?);
+    } else {
+        println!("=== STEP STATUS ===");
+        for step in &steps_list {
+            println!(
+                "  {:<20} : {}",
+                step["step_id"].as_str().unwrap_or(""),
+                step["status"].as_str().unwrap_or("")
+            );
+        }
+
+        println!("\n=== LEASES ===");
+        let mut stmt2 = conn
+            .prepare("SELECT lease_id, step_id, worker_id, state FROM leases WHERE task_id = ?1")?;
+        let lease_rows = stmt2.query_map([task_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        for (lease_id, step_id, worker_id, state) in lease_rows.flatten() {
+            println!(
+                "  Lease {} for {} claimed by {} [{}]",
+                lease_id, step_id, worker_id, state
+            );
+        }
+    }
+    Ok(())
+}
 
 fn cmd_run(args: &[String]) -> Result<()> {
+    if let Some(sub) = args.first() {
+        match sub.as_str() {
+            "inspect" => return cmd_run_inspect(&args[1..]),
+            "replay" => return cmd_run_replay(&args[1..]),
+            "status" => return cmd_run_status(&args[1..]),
+            _ => {}
+        }
+    }
+
+    let is_json = has_json_flag(args);
+    let clean_args = filter_json_flag(args);
+
     let mut payload = None;
     let mut seed: Option<u64> = None;
     let mut store_dir = "./runs".to_string();
     let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
+    while i < clean_args.len() {
+        match clean_args[i].as_str() {
             "--payload" => {
                 i += 1;
-                payload = Some(args[i].clone());
+                payload = Some(clean_args[i].clone());
             }
             "--seed" => {
                 i += 1;
-                seed = Some(args[i].parse()?);
+                seed = Some(clean_args[i].parse()?);
             }
             "--store" => {
                 i += 1;
-                store_dir = args[i].clone();
+                store_dir = clean_args[i].clone();
             }
             other => bail!("unknown argument: {other}"),
         }
@@ -72,9 +352,11 @@ fn cmd_run(args: &[String]) -> Result<()> {
     let payload = payload.ok_or_else(|| anyhow::anyhow!("--payload required"))?;
     let seed = seed.ok_or_else(|| anyhow::anyhow!("--seed required"))?;
 
+    let task_id = format!("task_{}", &blake3::hash(payload.as_bytes()).to_hex()[..16]);
     let ctx = PipelineContext {
         seed,
         bias_version: BiasVersion::V1,
+        task_id: Some(task_id),
     };
     let engine = ExecutionEngine::with_default_executor(Pipeline::new(default_bias()));
     let store = make_store(&store_dir)?;
@@ -84,22 +366,26 @@ fn cmd_run(args: &[String]) -> Result<()> {
     store.save_report(&report)?;
     store.save_tape(&tape)?;
 
-    println!("plan_id : {}", report.plan_id);
-    println!("seed    : {}", report.seed);
-    println!("steps   : {}", report.steps.len());
-    println!("success : {}", report.success);
-    println!("time_ms : {}", report.total_duration_ms);
-    println!();
-    for s in &report.steps {
-        let status = match &s.status {
-            StepStatus::Ok => "ok".to_string(),
-            StepStatus::Skipped => "skip".to_string(),
-            StepStatus::Failed(e) => format!("FAIL: {e}"),
-        };
-        println!("  [{:>2}] {} -- {}", s.index, status, s.description);
+    if is_json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("plan_id : {}", report.plan_id);
+        println!("seed    : {}", report.seed);
+        println!("steps   : {}", report.steps.len());
+        println!("success : {}", report.success);
+        println!("time_ms : {}", report.total_duration_ms);
+        println!();
+        for s in &report.steps {
+            let status = match &s.status {
+                StepStatus::Ok => "ok".to_string(),
+                StepStatus::Skipped => "skip".to_string(),
+                StepStatus::Failed(e) => format!("FAIL: {e}"),
+            };
+            println!("  [{:>2}] {} -- {}", s.index, status, s.description);
+        }
+        println!();
+        println!("tape    : {} entries  (store: {store_dir})", tape.len());
     }
-    println!();
-    println!("tape    : {} entries  (store: {store_dir})", tape.len());
     if !report.success {
         std::process::exit(1);
     }
@@ -145,6 +431,7 @@ fn cmd_verify(args: &[String]) -> Result<()> {
         let ctx = PipelineContext {
             seed: entry.seed,
             bias_version: BiasVersion::V1,
+            task_id: None,
         };
         let out = pipeline.run(entry.payload.clone(), &ctx)?;
         let actual = out.plan.id.clone();
@@ -179,6 +466,7 @@ fn cmd_verify(args: &[String]) -> Result<()> {
         let ctx = PipelineContext {
             seed,
             bias_version: BiasVersion::V1,
+            task_id: None,
         };
         let actual = pipeline.run(payload.clone(), &ctx)?;
 
@@ -298,7 +586,10 @@ fn main() -> Result<()> {
     let rest = if args.len() > 2 { &args[2..] } else { &[] };
 
     match subcmd {
-        "run" => cmd_run(rest),
+        "run" | "execute" => cmd_run(rest),
+        "inspect" => cmd_run_inspect(rest),
+        "replay" => cmd_run_replay(rest),
+        "status" => cmd_run_status(rest),
         "verify" => cmd_verify(rest),
         "diff" => cmd_diff(rest),
         "emit-bias-artifact" => cmd_emit_bias_artifact(rest),
@@ -313,7 +604,6 @@ fn main() -> Result<()> {
 // -- subcommand: emit-bias-artifact ------------------------------------------
 
 fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
-    use rusqlite::{params, Connection};
     use std::collections::HashMap;
 
     if args.len() < 2 {
@@ -324,20 +614,6 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
     let preferred: Vec<&str> = args[2..].iter().map(|s| s.as_str()).collect();
 
     let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
-
-    let conn = Connection::open(&db_path)?;
-    conn.execute_batch(
-        "
-        CREATE TABLE IF NOT EXISTS bias_artifacts (
-            id            TEXT PRIMARY KEY,
-            task_bias_id  TEXT NOT NULL,
-            step_bias_id  TEXT NOT NULL,
-            created_at    INTEGER NOT NULL,
-            artifact_type TEXT NOT NULL,
-            payload       TEXT NOT NULL
-        );
-    ",
-    )?;
 
     // build payload
     let weights: HashMap<&str, f64> = preferred.iter().map(|k| (*k, 1.0_f64)).collect();
@@ -370,19 +646,16 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
 
-    conn.execute(
-        "INSERT OR REPLACE INTO bias_artifacts
-         (id, task_bias_id, step_bias_id, created_at, artifact_type, payload)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            id,
-            task_bias_id,
-            step_bias_id,
-            now,
-            "semantic_bias_v1",
-            serde_json::to_string(&payload)?
-        ],
+    deterministic_ai_kernel::providers::get_storage().set_override_path(Some(db_path));
+    deterministic_ai_kernel::providers::get_storage().emit_bias_artifact(
+        &id,
+        task_bias_id,
+        step_bias_id,
+        now,
+        "semantic_bias_v1",
+        &serde_json::to_string(&payload)?,
     )?;
+    deterministic_ai_kernel::providers::get_storage().set_override_path(None);
 
     println!("ok\t{id}");
     Ok(())
@@ -391,8 +664,6 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
 // -- subcommand: latest-bias-artifact ----------------------------------------
 
 fn cmd_latest_bias_artifact(args: &[String]) -> Result<()> {
-    use rusqlite::Connection;
-
     if args.len() < 2 {
         bail!("latest-bias-artifact <task_bias_id> <step_bias_id>");
     }
@@ -401,27 +672,11 @@ fn cmd_latest_bias_artifact(args: &[String]) -> Result<()> {
 
     let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
 
-    let conn = Connection::open(&db_path)?;
-
-    let mut stmt = conn.prepare(
-        "SELECT id, task_bias_id, step_bias_id, created_at, artifact_type, payload
-         FROM bias_artifacts
-         WHERE task_bias_id = ?1 AND step_bias_id = ?2
-         ORDER BY created_at DESC LIMIT 1",
-    )?;
-
-    let row = stmt
-        .query_row(rusqlite::params![task_bias_id, step_bias_id], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, String>(5)?,
-            ))
-        })
+    deterministic_ai_kernel::providers::get_storage().set_override_path(Some(db_path));
+    let row = deterministic_ai_kernel::providers::get_storage()
+        .latest_bias_artifact(task_bias_id, step_bias_id)
         .map_err(|_| anyhow::anyhow!("no artifact found for {task_bias_id}/{step_bias_id}"))?;
+    deterministic_ai_kernel::providers::get_storage().set_override_path(None);
 
     println!(
         "{}\t{}\t{}\t{}\t{}\t{}",
@@ -456,6 +711,7 @@ fn cmd_analyze_task(args: &[String]) -> Result<()> {
     let ctx = PipelineContext {
         seed,
         bias_version: BiasVersion::V1,
+        task_id: None,
     };
     let pipeline = Pipeline::new(default_bias());
     let out = pipeline.run(payload, &ctx)?;
@@ -479,7 +735,8 @@ fn cmd_doctor_json(_args: &[String]) -> Result<()> {
         {
             use std::mem::MaybeUninit;
             let mut stat: libc::statvfs = unsafe { MaybeUninit::zeroed().assume_init() };
-            let path = std::ffi::CString::new("/").unwrap();
+            let path = std::ffi::CString::new("/")
+                .map_err(|e| anyhow::anyhow!("CString::new failed: {}", e))?;
             if unsafe { libc::statvfs(path.as_ptr(), &mut stat) } == 0 {
                 (stat.f_bavail as f64 * stat.f_frsize as f64) / 1_073_741_824.0
             } else {

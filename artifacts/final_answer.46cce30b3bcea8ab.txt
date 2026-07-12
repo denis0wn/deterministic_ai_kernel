@@ -1,0 +1,12 @@
+### Root Cause Analysis
+
+| Hypothesis | Symptoms Explained | Evidence to Confirm | Evidence to Reject |
+| :--- | :--- | :--- | :--- |
+| **Model/Kernel Bug** | Stalled GPU (low util), 60s timeouts, restart helps | Profiler shows stalled CUDA kernels or infinite loops | GPU utilization remains low with no stalled kernels ||
+| **Memory Leak** | Increasing latency, stalled workers, restart helps | Growing GPU/host memory over time | Constant memory footprint ||
+| **Batching/Scheduling** | Latency/util mismatch | Incorrect batch shapes/quantization settings | Correct shapes/quantization ||
+
+### Investigation Order
+
+1. **GPU Kernel Profiling**: Highest probability. Check for stalled kernels, deadlocks, or NaN propagation.
+2. **Memory Tracking**: Monitor GPU/host memory growth

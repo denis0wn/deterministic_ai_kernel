@@ -1,0 +1,14 @@
+```python
+def analyze_task(task_name):
+    task = find_task_by_name(task_name)
+    if not task:
+        return {"error": "Invalid task name"}
+
+    if not task.steps:
+        return {"error": "No steps to analyze"}
+
+    return [
+        {"step_name": step.name, "description": step.description}
+        for step in task.steps
+    ]
+```

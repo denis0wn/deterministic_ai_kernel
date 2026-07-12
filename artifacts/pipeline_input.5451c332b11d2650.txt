@@ -1,0 +1,28 @@
+
+CUSTOMER REQUEST:
+
+Hello, I need help solving a logic problem.
+
+Problem:
+There are three baskets:
+- one contains only apples;
+- one contains only oranges;
+- one contains both apples and oranges.
+
+All three baskets have incorrect labels.
+
+You may take exactly one fruit from exactly one basket without looking inside.
+
+Task:
+Determine the correct label for all three baskets.
+
+Requirements:
+1. Provide a deterministic reasoning process.
+2. Explain why the selected basket gives enough information.
+3. Check all possible cases.
+4. Return the final mapping:
+   basket -> contents.
+
+This is a production customer request.
+Do not guess.
+Validate the solution before returning the final answer.

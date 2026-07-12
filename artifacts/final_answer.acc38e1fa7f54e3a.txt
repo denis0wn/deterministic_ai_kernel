@@ -1,0 +1,8 @@
+The root cause is at-least-once message delivery combined with worker crashes and network retries: multiple workers can receive and process the same transaction ID. The symptoms are duplicate database entries and double charges; the underlying cause is a lack of idempotency at the worker/database boundary.
+
+The fix is idempotent transaction processing using the transaction ID as a unique key. A `processed_transactions` table (or a unique constraint on `transaction_id`) ensures that each transaction can only be recorded once. Workers wrap the entire flow—recording the transaction and marking it as processed—in a single database transaction. If a worker retries a message whose ID already exists, the insert fails and the worker can safely acknowledge the message without re-charging the customer.
+
+Implementation plan:
+1. Add a unique constraint on `transaction_id` in the database.
+2. Update worker logic to wrap the entire flow (record creation + processing flag) in a single DB transaction.
+3. Rollout: Deploy the

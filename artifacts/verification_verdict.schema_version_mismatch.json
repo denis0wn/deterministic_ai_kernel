@@ -1,0 +1,32 @@
+{
+  "ok": false,
+  "status": "invalid_reuse",
+  "reason": "reuse plan incompatible: graph_schema_version differed",
+  "artifact_error": "SCHEMA_VERSION_MISMATCH",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "node_count": 0,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [],
+  "expected_graph_schema_version": 999,
+  "actual_graph_schema_version": 2
+}

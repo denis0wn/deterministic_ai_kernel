@@ -31,8 +31,8 @@ fn sync_all_roles_makes_statuses_in_sync() {
     let _guard = EnvGuard::capture();
     let _ = fs::remove_file(".env");
 
-    sync_all_roles().unwrap();
-    let rows = current_model_statuses().unwrap();
+    sync_all_roles().expect("test failure");
+    let rows = current_model_statuses().expect("test failure");
 
     assert!(!rows.is_empty());
     assert!(rows.iter().all(|r| r.in_sync));

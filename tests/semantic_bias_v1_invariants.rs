@@ -6,7 +6,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -34,7 +34,7 @@ fn semantic_bias_v1_contract_remains_sealed() {
             "ExecuteChanges",
         ])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         emit.status.success(),
@@ -46,7 +46,7 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .env("KERNEL_DB_PATH", db)
         .args(["latest-bias-artifact", "task-sealed", "step-sealed"])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         latest.status.success(),
@@ -54,15 +54,15 @@ fn semantic_bias_v1_contract_remains_sealed() {
         String::from_utf8_lossy(&latest.stderr)
     );
 
-    let latest_stdout = String::from_utf8(latest.stdout).unwrap();
+    let latest_stdout = String::from_utf8(latest.stdout).expect("test failure");
     let line = latest_stdout.lines().next().expect("expected a row");
     let cols: Vec<&str> = line.splitn(6, '\t').collect();
-    let payload: Value = serde_json::from_str(cols[5]).unwrap();
+    let payload: Value = serde_json::from_str(cols[5]).expect("test failure");
 
     let expected_keys = ["version", "seed", "preferred", "weights", "lines"];
     let mut keys: Vec<&str> = payload
         .as_object()
-        .unwrap()
+        .expect("test failure")
         .keys()
         .map(|k| k.as_str())
         .collect();
@@ -75,7 +75,7 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .env("KERNEL_DB_PATH", db)
         .args(["snapshot", "task-sealed"])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         snapshot.status.success(),
@@ -87,7 +87,7 @@ fn semantic_bias_v1_contract_remains_sealed() {
         .env("KERNEL_DB_PATH", db)
         .args(["restore", "task-sealed"])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         restore.status.success(),
@@ -95,17 +95,17 @@ fn semantic_bias_v1_contract_remains_sealed() {
         String::from_utf8_lossy(&restore.stderr)
     );
 
-    let restore_stdout = String::from_utf8(restore.stdout).unwrap();
+    let restore_stdout = String::from_utf8(restore.stdout).expect("test failure");
     let json_line = restore_stdout
         .lines()
         .find(|l| l.trim_start().starts_with('{'))
         .expect("expected JSON payload");
 
-    let snapshot_payload: Value = serde_json::from_str(json_line).unwrap();
+    let snapshot_payload: Value = serde_json::from_str(json_line).expect("test failure");
 
     let mut artifact_keys: Vec<&str> = snapshot_payload["artifacts"]
         .as_object()
-        .unwrap()
+        .expect("test failure")
         .keys()
         .map(|k| k.as_str())
         .collect();

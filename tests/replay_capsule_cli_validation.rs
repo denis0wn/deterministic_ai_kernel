@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",

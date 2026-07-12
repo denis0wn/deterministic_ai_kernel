@@ -66,10 +66,10 @@ fn worker_is_ownership_only() {
 fn execution_is_execution_only() {
     let dir = Path::new("src/execution");
     if dir.exists() {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
+        for entry in fs::read_dir(dir).expect("test failure") {
+            let path = entry.expect("test failure").path();
             if path.extension().is_some_and(|e| e == "rs") {
-                let content = fs::read_to_string(&path).unwrap();
+                let content = fs::read_to_string(&path).expect("test failure");
                 assert!(
                     !has_import(&content, "scheduler"),
                     "{:?} must not import scheduler",

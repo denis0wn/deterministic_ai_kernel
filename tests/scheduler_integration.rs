@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -15,15 +15,8 @@ fn unique_db_path(test_name: &str) -> PathBuf {
 }
 
 fn run(db: &Path, args: &[&str]) -> String {
-    let out = Command::new("cargo")
-        .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
+    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db.as_os_str())
-        .env("CARGO_TARGET_DIR", {
-            let base =
-                std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string());
-            let pid = std::process::id();
-            format!("{base}_{pid}")
-        })
         .args(args)
         .output()
         .expect("failed to run command");
@@ -37,15 +30,8 @@ fn run(db: &Path, args: &[&str]) -> String {
 }
 
 fn run_expect_fail(db: &Path, args: &[&str]) -> String {
-    let out = Command::new("cargo")
-        .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
+    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db.as_os_str())
-        .env("CARGO_TARGET_DIR", {
-            let base =
-                std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "/tmp/dak_target".to_string());
-            let pid = std::process::id();
-            format!("{base}_{pid}")
-        })
         .args(args)
         .output()
         .expect("failed to run command");
@@ -120,11 +106,12 @@ CREATE TABLE IF NOT EXISTS leases (
 
 CREATE TABLE IF NOT EXISTS tasks (
   task_id TEXT PRIMARY KEY,
-  task_class TEXT NOT NULL
+  task_class TEXT NOT NULL,
+  exec_spec TEXT
 );
 
-INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES
-('{0}','Generic');
+INSERT OR IGNORE INTO tasks (task_id, task_class, exec_spec) VALUES
+('{0}','Generic', NULL);
 
 INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES
 ('{0}','00_analyze_task','pending'),
@@ -379,19 +366,10 @@ fn blocked_failure_returns_step_to_pending() {
 
 #[test]
 fn cli_compile_error_routes_to_codefix_flow() {
-    let out = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--bin",
-            "deterministic_ai_kernel",
-            "--",
-            "plan-task",
-            "--compile-error",
-            "dummy.log",
-        ])
+    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
+        .args(["plan-task", "--compile-error", "dummy.log"])
         .output()
-        .expect("failed to run cargo plan-task");
+        .expect("failed to run plan-task");
 
     assert!(
         out.status.success(),

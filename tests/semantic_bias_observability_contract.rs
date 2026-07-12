@@ -6,7 +6,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -35,7 +35,7 @@ fn semantic_bias_observability_contract_is_consistent() {
             "RunTests",
         ])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         emit.status.success(),
         "emit stderr=\n{}",
@@ -46,14 +46,14 @@ fn semantic_bias_observability_contract_is_consistent() {
         .env("KERNEL_DB_PATH", db)
         .args(["latest-bias-artifact", "task-observe", "step-observe"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         latest.status.success(),
         "latest stderr=\n{}",
         String::from_utf8_lossy(&latest.stderr)
     );
 
-    let latest_stdout = String::from_utf8(latest.stdout).unwrap();
+    let latest_stdout = String::from_utf8(latest.stdout).expect("test failure");
     let latest_line = latest_stdout
         .lines()
         .next()
@@ -63,13 +63,13 @@ fn semantic_bias_observability_contract_is_consistent() {
     assert_eq!(latest_cols[2], "step-observe");
     assert_eq!(latest_cols[4], "semantic_bias_v1");
 
-    let latest_payload: Value = serde_json::from_str(latest_cols[5]).unwrap();
+    let latest_payload: Value = serde_json::from_str(latest_cols[5]).expect("test failure");
 
     let snapshot = Command::new(bin)
         .env("KERNEL_DB_PATH", db)
         .args(["snapshot", "task-observe"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         snapshot.status.success(),
         "snapshot stderr=\n{}",
@@ -80,28 +80,29 @@ fn semantic_bias_observability_contract_is_consistent() {
         .env("KERNEL_DB_PATH", db)
         .args(["snapshot-artifacts", "task-observe"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         snapshot_artifacts.status.success(),
         "snapshot-artifacts stderr=\n{}",
         String::from_utf8_lossy(&snapshot_artifacts.stderr)
     );
 
-    let snapshot_artifacts_stdout = String::from_utf8(snapshot_artifacts.stdout).unwrap();
+    let snapshot_artifacts_stdout =
+        String::from_utf8(snapshot_artifacts.stdout).expect("test failure");
     assert!(snapshot_artifacts_stdout.contains("ARTIFACT_REF\tsemantic_bias_v1\t"));
 
     let restore = Command::new(bin)
         .env("KERNEL_DB_PATH", db)
         .args(["restore", "task-observe"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         restore.status.success(),
         "restore stderr=\n{}",
         String::from_utf8_lossy(&restore.stderr)
     );
 
-    let restore_stdout = String::from_utf8(restore.stdout).unwrap();
+    let restore_stdout = String::from_utf8(restore.stdout).expect("test failure");
     assert!(restore_stdout.contains("ARTIFACT_REF\tsemantic_bias_v1\t"));
 
     let json_line = restore_stdout
@@ -109,7 +110,7 @@ fn semantic_bias_observability_contract_is_consistent() {
         .find(|l| l.trim_start().starts_with('{'))
         .expect("expected JSON payload in restore output");
 
-    let restore_payload: Value = serde_json::from_str(json_line).unwrap();
+    let restore_payload: Value = serde_json::from_str(json_line).expect("test failure");
 
     assert_eq!(restore_payload["task_id"], "task-observe");
     assert!(restore_payload["artifacts"]["semantic_bias_v1"].is_number());
@@ -124,7 +125,10 @@ fn semantic_bias_observability_contract_is_consistent() {
     let lines = latest_payload["lines"]
         .as_array()
         .expect("lines must be an array");
-    let rendered: Vec<&str> = lines.iter().map(|v| v.as_str().unwrap()).collect();
+    let rendered: Vec<&str> = lines
+        .iter()
+        .map(|v| v.as_str().expect("test failure"))
+        .collect();
     assert!(rendered.contains(&"bias.version=v1"));
     assert!(rendered.contains(&"bias.meta.preferred_count=3"));
     assert!(rendered.contains(&"bias.weight.AnalyzeTask=1.000000"));

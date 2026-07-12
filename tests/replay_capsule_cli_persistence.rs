@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -32,21 +32,21 @@ fn capture_capsule_save_and_latest_capsule_work_via_cli() {
     let db = unique_db_path("replay_capsule_cli_persistence");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
     bus.append_event(
         "task-cli-persist",
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_event(
         "task-cli-persist",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     let (out, success) = run_kernel(&db, &["capture-capsule-save", "task-cli-persist"]);
     assert!(success, "capture-capsule-save failed: {}", out);

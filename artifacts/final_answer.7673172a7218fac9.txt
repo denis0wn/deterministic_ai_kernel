@@ -1,0 +1,4 @@
+```python
+def plan_execution(plan, completed, in_progress):
+    return [task for task in plan if task not in completed and task not in in_progress]
+```

@@ -6,7 +6,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -33,7 +33,7 @@ fn semantic_bias_v1_survives_replay_paths() {
             "RunTests",
         ])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         emit.status.success(),
@@ -45,11 +45,11 @@ fn semantic_bias_v1_survives_replay_paths() {
         .env("KERNEL_DB_PATH", db)
         .args(["latest-bias-artifact", "task-replay", "step-replay"])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(latest.status.success());
 
-    let stdout = String::from_utf8(latest.stdout).unwrap();
+    let stdout = String::from_utf8(latest.stdout).expect("test failure");
     let line = stdout.lines().next().expect("expected a bias row");
     let cols: Vec<&str> = line.splitn(6, '\t').collect();
 
@@ -57,7 +57,7 @@ fn semantic_bias_v1_survives_replay_paths() {
     assert_eq!(cols[2], "step-replay");
     assert_eq!(cols[4], "semantic_bias_v1");
 
-    let payload: Value = serde_json::from_str(cols[5]).unwrap();
+    let payload: Value = serde_json::from_str(cols[5]).expect("test failure");
     assert_eq!(payload["version"], "v1");
     assert_eq!(payload["seed"], 0);
     assert_eq!(

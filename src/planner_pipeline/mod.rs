@@ -1,10 +1,45 @@
 use crate::semantic_bias::BiasVersion;
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+pub fn get_environment_fingerprint() -> String {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    let rustc_version = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+
+    let kernel_version = std::process::Command::new("uname")
+        .arg("-r")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .unwrap_or_else(|| "unknown_kernel".to_string());
+
+    let mlx_model_dir = std::env::var("MLX_MODEL_DIR").unwrap_or_default();
+    let cargo_pkg_name = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
+
+    let raw = format!(
+        "os:{};arch:{};rustc:{};kernel:{};mlx_model_dir:{};cargo_pkg_name:{}",
+        os,
+        arch,
+        rustc_version.trim(),
+        kernel_version.trim(),
+        mlx_model_dir,
+        cargo_pkg_name
+    );
+    blake3::hash(raw.as_bytes()).to_hex().to_string()
+}
+
+#[derive(Clone, Debug)]
 pub struct PipelineContext {
     pub seed: u64,
     pub bias_version: BiasVersion,
+    pub task_id: Option<String>,
 }
 
 pub trait PipelineStage {
@@ -23,11 +58,12 @@ pub struct IntermediateRepresentation {
     pub steps: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Plan {
     pub id: String,
     pub steps: Vec<String>,
     pub seed: u64,
+    pub spec: crate::exec_spec::ExecSpec,
 }
 
 impl Plan {
@@ -39,7 +75,26 @@ impl Plan {
             hasher.update(step.as_bytes());
         }
         let id = hasher.finalize().to_hex()[..16].to_string();
-        Plan { id, steps, seed }
+
+        let workflow_steps: Vec<crate::workflow::contract::Step> = steps
+            .iter()
+            .map(|desc| {
+                let kind = crate::workflow::planner::normalize_step(desc)
+                    .unwrap_or(crate::workflow::contract::StepKind::ExecuteChanges);
+                crate::workflow::contract::Step {
+                    kind,
+                    detail: Some(desc.clone()),
+                }
+            })
+            .collect();
+        let spec = crate::workflow::contract::steps_to_exec_spec(&workflow_steps);
+
+        Plan {
+            id,
+            steps,
+            seed,
+            spec,
+        }
     }
 }
 
@@ -159,6 +214,7 @@ pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
     let ctx = PipelineContext {
         seed,
         bias_version: BiasVersion::V1,
+        task_id: None,
     };
     let bias = BiasConfiguration::new("default", vec![]);
     let raw = RawInput {
@@ -209,7 +265,7 @@ pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
     replay_tape.record(payload, seed, &plan.id);
 
     Ok(PipelineReport {
-        fingerprint: plan.id.clone(),
+        fingerprint: get_environment_fingerprint(),
         plan,
         critic_report,
         replay_tape,

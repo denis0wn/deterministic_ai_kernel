@@ -1,0 +1,9 @@
+Each worker appends its change to a shared list, so the result is the concatenation of all submitted changes.
+
+```python
+def ExecuteChanges(worker_changes):
+    result = []
+    for change in worker_changes:
+        result.append(change)
+    return result
+```

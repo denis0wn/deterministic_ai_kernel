@@ -4,7 +4,7 @@ use deterministic_ai_kernel::lm_control::doctor;
 fn doctor_contract_is_stable() {
     std::env::set_var("DAK_LM_BACKEND", "mock");
     std::env::set_var("DAK_FREE_GB_OVERRIDE", "16.0");
-    let report = doctor().unwrap();
+    let report = doctor().expect("test failure");
 
     assert!(report.free_gb > 0.0);
     let _ = report.mlx_models; // mlx_models is usize, always valid

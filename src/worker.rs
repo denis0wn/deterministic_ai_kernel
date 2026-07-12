@@ -1,320 +1,24 @@
-use anyhow::{anyhow, Result};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::json;
-
-use crate::workflow::contract::{
-    required_capability_for_step, StepKind, StepOutcome, WorkerCapability,
-};
-
-fn parse_step_kind_from_step_id(step_id: &str) -> Result<StepKind> {
-    let slug = step_id
-        .split_once('_')
-        .map(|(_, rest)| rest)
-        .unwrap_or(step_id);
-
-    match slug {
-        "tighten_planner_prompt" => Ok(StepKind::TightenPlannerPrompt),
-        "normalize_planner_output" => Ok(StepKind::NormalizePlannerOutput),
-        "add_llm_fallback_handling" => Ok(StepKind::AddLlmFallbackHandling),
-        "add_planner_test_coverage" => Ok(StepKind::AddPlannerTestCoverage),
-        "validate_planner_output" => Ok(StepKind::ValidatePlannerOutput),
-        "analyze_task" => Ok(StepKind::AnalyzeTask),
-        "plan_execution" => Ok(StepKind::PlanExecution),
-        "execute_changes" => Ok(StepKind::ExecuteChanges),
-        "read_repository" => Ok(StepKind::ReadRepository),
-        "locate_bug" => Ok(StepKind::LocateBug),
-        "patch_code" => Ok(StepKind::PatchCode),
-        "run_tests" => Ok(StepKind::RunTests),
-        "validate_patch" => Ok(StepKind::ValidatePatch),
-        _ => Err(anyhow!("unknown step id: {}", step_id)),
-    }
-}
-
-fn is_ai_worker(worker_id: &str) -> bool {
-    let lower = worker_id.to_ascii_lowercase();
-    lower == "ai"
-        || lower.contains("worker-ai")
-        || lower.contains("ai-worker")
-        || lower.starts_with("ai-")
-        || lower.starts_with("ai_")
-}
-
-fn capability_for_worker_id(worker_id: &str) -> Result<WorkerCapability> {
-    let lower = worker_id.to_ascii_lowercase();
-
-    if is_ai_worker(worker_id) {
-        return Ok(WorkerCapability::LegacyGeneric);
-    }
-
-    if lower.contains("planner") {
-        return Ok(WorkerCapability::Planner);
-    }
-
-    if lower.contains("executor") {
-        return Ok(WorkerCapability::Executor);
-    }
-
-    if lower.contains("verifier") {
-        return Ok(WorkerCapability::Verifier);
-    }
-
-    if lower.starts_with("worker-") || lower.starts_with("worker_") {
-        return Ok(WorkerCapability::LegacyGeneric);
-    }
-
-    Err(anyhow!("worker has no declared capability: {}", worker_id))
-}
-
-fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
-    match outcome {
-        StepOutcome::Success => "STEP_COMPLETED",
-        StepOutcome::RetryableFailure | StepOutcome::TerminalFailure | StepOutcome::Blocked => {
-            "STEP_FAILED"
-        }
-    }
-}
-
-fn classify_failure_outcome(reason: &str) -> StepOutcome {
-    let lower = reason.trim().to_ascii_lowercase();
-
-    if lower.starts_with("retry:")
-        || lower.starts_with("transient:")
-        || lower.starts_with("timeout")
-    {
-        return StepOutcome::RetryableFailure;
-    }
-
-    if lower.starts_with("blocked:")
-        || lower.starts_with("waiting_on:")
-        || lower.starts_with("dependency:")
-    {
-        return StepOutcome::Blocked;
-    }
-
-    StepOutcome::TerminalFailure
-}
+use anyhow::Result;
 
 pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
-    let mut conn = Connection::open(db)?;
-    let tx = conn.transaction()?;
-
-    let row: Option<(String, String)> = tx
-        .query_row(
-            "SELECT l.lease_id, l.step_id
-             FROM leases l
-             JOIN step_status s
-               ON s.task_id = l.task_id
-              AND s.step_id = l.step_id
-             WHERE l.task_id = ?1
-               AND l.state = 'active'
-               AND s.status = 'dispatched'
-               AND l.worker_id = 'worker-scheduler'
-             ORDER BY l.acquired_generation, l.step_id
-             LIMIT 1",
-            [task_id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        )
-        .optional()?;
-
-    let (lease_id, step_id) = row.ok_or_else(|| anyhow!("no dispatchable active lease found"))?;
-
-    let current_owner: String = tx.query_row(
-        "SELECT worker_id
-         FROM leases
-         WHERE lease_id = ?1
-           AND state = 'active'",
-        [lease_id.clone()],
-        |r| r.get(0),
-    )?;
-
-    if current_owner == worker_id {
-        tx.commit()?;
-        return Ok(());
-    }
-
-    if current_owner != "worker-scheduler" {
-        return Err(anyhow!(
-            "lease already owned by {}",
-            current_owner
-        ));
-    }
-
-    let updated = tx.execute(
-        "UPDATE leases
-         SET worker_id = ?1
-         WHERE lease_id = ?2
-           AND state = 'active'
-           AND worker_id = 'worker-scheduler'",
-        params![worker_id, lease_id],
-    )?;
-
-    if updated == 0 {
-        return Err(anyhow!("lease claim lost"));
-    }
-
-    let next_generation: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-        [],
-        |r| r.get(0),
-    )?;
-
-    let claim_payload = json!({
-        "lease_id": lease_id,
-        "worker_id": worker_id
-    });
-
-    tx.execute(
-        "INSERT INTO event_log
-         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'WORKER_CLAIMED', ?5, ?6)",
-        params![
-            next_generation,
-            next_generation,
-            task_id,
-            step_id,
-            serde_json::to_string(&claim_payload)?,
-            next_generation
-        ],
-    )?;
-
-    tx.commit()?;
-
-    println!("STEP_CLAIMED: {}", step_id);
-    println!("WORKER: {}", worker_id);
-    println!("TASK: {}", task_id);
-    Ok(())
+    crate::providers::get_storage().set_override_path(Some(db.to_string()));
+    let res = crate::providers::get_storage().claim_worker(task_id, worker_id);
+    crate::providers::get_storage().set_override_path(None);
+    res
 }
 
 pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
-    let step_kind = parse_step_kind_from_step_id(step_id)?;
-    let worker_capability = capability_for_worker_id(worker_id)?;
-    let required_capability = required_capability_for_step(&step_kind);
-
-    if worker_capability != required_capability
-        && worker_capability != WorkerCapability::LegacyGeneric
-    {
-        return Err(anyhow!(
-            "worker capability mismatch for step: worker={:?}, required={:?}, step_id={}",
-            worker_capability,
-            required_capability,
-            step_id
-        ));
-    }
-
-    let mut conn = Connection::open(db)?;
-    let tx = conn.transaction()?;
-
-    let lease_id: String = tx
-        .query_row(
-            "SELECT lease_id
-             FROM leases
-             WHERE task_id = ?1
-               AND step_id = ?2
-               AND worker_id = ?3
-               AND state = 'active'
-             ORDER BY acquired_generation DESC
-             LIMIT 1",
-            params![task_id, step_id, worker_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
-
-    let next_generation: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-        [],
-        |r| r.get(0),
-    )?;
-
-    let payload = json!({
-        "lease_id": lease_id,
-        "worker_id": worker_id
-    });
-
-    tx.execute(
-        "INSERT INTO event_log
-         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'STEP_STARTED', ?5, ?6)",
-        params![
-            next_generation,
-            next_generation,
-            task_id,
-            step_id,
-            serde_json::to_string(&payload)?,
-            next_generation
-        ],
-    )?;
-
-    tx.commit()?;
-
-    println!("STEP_RUNNING_OK");
-    println!("WORKER: {}", worker_id);
-    println!("STEP: {}", step_id);
-    Ok(())
+    crate::providers::get_storage().set_override_path(Some(db.to_string()));
+    let res = crate::providers::get_storage().start_step(task_id, worker_id, step_id);
+    crate::providers::get_storage().set_override_path(None);
+    res
 }
 
 pub fn heartbeat(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
-    let mut conn = Connection::open(db)?;
-    let tx = conn.transaction()?;
-
-    let lease_id: String = tx
-        .query_row(
-            "SELECT lease_id
-             FROM leases
-             WHERE task_id = ?1
-               AND step_id = ?2
-               AND worker_id = ?3
-               AND state = 'active'
-             ORDER BY acquired_generation DESC
-             LIMIT 1",
-            params![task_id, step_id, worker_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
-
-    let current_generation: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
-        [],
-        |r| r.get(0),
-    )?;
-
-    tx.execute(
-        "UPDATE leases
-         SET expires_at_generation = ?1
-         WHERE lease_id = ?2
-           AND worker_id = ?3
-           AND state = 'active'",
-        params![current_generation + 2, lease_id, worker_id],
-    )?;
-
-    let next_generation: i64 = current_generation + 1;
-    let payload = json!({
-        "lease_id": lease_id,
-        "worker_id": worker_id,
-        "expires_at_generation": current_generation + 2
-    });
-
-    tx.execute(
-        "INSERT INTO event_log
-         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'WORKER_HEARTBEAT', ?5, ?6)",
-        params![
-            next_generation,
-            next_generation,
-            task_id,
-            step_id,
-            serde_json::to_string(&payload)?,
-            next_generation
-        ],
-    )?;
-
-    tx.commit()?;
-
-    println!("WORKER_HEARTBEAT_OK");
-    println!("WORKER: {}", worker_id);
-    println!("STEP: {}", step_id);
-    Ok(())
+    crate::providers::get_storage().set_override_path(Some(db.to_string()));
+    let res = crate::providers::get_storage().heartbeat(task_id, worker_id, step_id);
+    crate::providers::get_storage().set_override_path(None);
+    res
 }
 
 pub fn fail_step(
@@ -324,185 +28,51 @@ pub fn fail_step(
     step_id: &str,
     reason: &str,
 ) -> Result<()> {
-    let mut conn = Connection::open(db)?;
-    let tx = conn.transaction()?;
-
-    let lease_id: String = tx
-        .query_row(
-            "SELECT lease_id
-             FROM leases
-             WHERE task_id = ?1
-               AND step_id = ?2
-               AND worker_id = ?3
-               AND state = 'active'
-             ORDER BY acquired_generation DESC
-             LIMIT 1",
-            params![task_id, step_id, worker_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
-
-    let next_generation: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-        [],
-        |r| r.get(0),
-    )?;
-
-    let outcome = classify_failure_outcome(reason);
-    let fail_payload = json!({
-        "lease_id": lease_id,
-        "worker_id": worker_id,
-        "reason": reason,
-        "outcome": format!("{:?}", outcome)
-    });
-
-    tx.execute(
-        "INSERT INTO event_log
-         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            next_generation,
-            next_generation,
-            task_id,
-            step_id,
-            outcome_to_event_type(outcome),
-            serde_json::to_string(&fail_payload)?,
-            next_generation
-        ],
-    )?;
-
-    let new_status = match outcome {
-        StepOutcome::RetryableFailure | StepOutcome::Blocked => "pending",
-        _ => "rejected",
-    };
-
-    tx.execute(
-        "UPDATE step_status
-         SET status = ?3
-         WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
-        params![task_id, step_id, new_status],
-    )?;
-
-    tx.execute(
-        "UPDATE leases
-         SET state = 'released'
-         WHERE lease_id = ?1
-           AND worker_id = ?2
-           AND state = 'active'",
-        params![lease_id, worker_id],
-    )?;
-
-    tx.commit()?;
-
-    println!("STEP_FAIL_OK");
-    println!("WORKER: {}", worker_id);
-    println!("STEP_FAILED_BY_WORKER: {}", step_id);
-    println!("REASON: {}", reason);
-    Ok(())
+    crate::providers::get_storage().set_override_path(Some(db.to_string()));
+    let res = crate::providers::get_storage().fail_step(task_id, worker_id, step_id, reason);
+    crate::providers::get_storage().set_override_path(None);
+    res
 }
 
 pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
-    let mut conn = Connection::open(db)?;
-    let tx = conn.transaction()?;
-
-    let lease_id: String = tx
-        .query_row(
-            "SELECT lease_id
-             FROM leases
-             WHERE task_id = ?1
-               AND step_id = ?2
-               AND worker_id = ?3
-               AND state = 'active'
-             ORDER BY acquired_generation DESC
-             LIMIT 1",
-            params![task_id, step_id, worker_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
-
-    let next_generation: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-        [],
-        |r| r.get(0),
-    )?;
-
-    let outcome = StepOutcome::Success;
-    let effect_id = format!("effect/{}/{}", task_id, step_id);
-
-    let reserve_payload = json!({
-        "effect_id": effect_id,
-        "lease_id": lease_id,
-        "worker_id": worker_id
-    });
-
-    tx.execute(
-        "INSERT INTO event_log
-         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, 'EFFECT_RESERVED', ?5, ?6)",
-        params![
-            next_generation,
-            next_generation,
-            task_id,
-            step_id,
-            serde_json::to_string(&reserve_payload)?,
-            next_generation
-        ],
-    )?;
-
-    let complete_generation = next_generation + 1;
-    let complete_payload = json!({
-        "effect_id": effect_id,
-        "lease_id": lease_id,
-        "worker_id": worker_id,
-        "result": "ok",
-        "outcome": format!("{:?}", outcome)
-    });
-
-    tx.execute(
-        "INSERT INTO event_log
-         (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-         VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            complete_generation,
-            complete_generation,
-            task_id,
-            step_id,
-            outcome_to_event_type(outcome),
-            serde_json::to_string(&complete_payload)?,
-            complete_generation
-        ],
-    )?;
-
-    tx.execute(
-        "UPDATE step_status
-         SET status = 'committed'
-         WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
-        params![task_id, step_id],
-    )?;
-
-    tx.execute(
-        "UPDATE leases
-         SET state = 'completed'
-         WHERE lease_id = ?1
-           AND worker_id = ?2
-           AND state = 'active'",
-        params![lease_id, worker_id],
-    )?;
-
-    tx.commit()?;
-
-    println!("STEP_COMPLETE_OK");
-    println!("WORKER: {}", worker_id);
-    println!("STEP_COMPLETED_BY_WORKER: {}", step_id);
-    Ok(())
+    crate::providers::get_storage().set_override_path(Some(db.to_string()));
+    let res = crate::providers::get_storage().complete_step(task_id, worker_id, step_id);
+    crate::providers::get_storage().set_override_path(None);
+    res
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_failure_outcome, outcome_to_event_type};
     use crate::workflow::contract::StepOutcome;
+
+    fn classify_failure_outcome(reason: &str) -> StepOutcome {
+        let lower = reason.trim().to_ascii_lowercase();
+
+        if lower.starts_with("retry:")
+            || lower.starts_with("transient:")
+            || lower.starts_with("timeout")
+        {
+            return StepOutcome::RetryableFailure;
+        }
+
+        if lower.starts_with("blocked:")
+            || lower.starts_with("waiting_on:")
+            || lower.starts_with("dependency:")
+        {
+            return StepOutcome::Blocked;
+        }
+
+        StepOutcome::TerminalFailure
+    }
+
+    fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
+        match outcome {
+            StepOutcome::Success => "STEP_COMPLETED",
+            StepOutcome::RetryableFailure | StepOutcome::TerminalFailure | StepOutcome::Blocked => {
+                "STEP_FAILED"
+            }
+        }
+    }
 
     #[test]
     fn classify_failure_outcome_maps_retry_prefixes() {

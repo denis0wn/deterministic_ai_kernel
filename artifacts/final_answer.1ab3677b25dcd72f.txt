@@ -1,0 +1,9 @@
+```python
+def AnalyzeTask(tasks):
+    results = []
+    for task in tasks:
+        total_ops = len(task.operations)
+        concurrent_ops = sum(1 for op in task.operations if op.is_concurrent)
+        results.append(concurrent_ops / total_ops if total_ops > 0 else 0.0)
+    return results
+```

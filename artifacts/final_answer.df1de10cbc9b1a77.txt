@@ -1,0 +1,7 @@
+```python
+def analyze_task(task_name):
+    task = task_registry.get(task_name)
+    if not task:
+        return f"Error: Task {task_name} not found."
+    return task
+```

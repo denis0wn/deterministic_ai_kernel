@@ -97,6 +97,16 @@ impl Workflow {
         validate_steps(step_specs_to_steps(&specs, None))
     }
 
+    pub fn compile(input: &TaskInput) -> crate::exec_spec::ExecSpec {
+        let steps = Self::build_steps(input);
+        crate::workflow::contract::steps_to_exec_spec(&steps)
+    }
+
+    pub async fn compile_from_task_llm(input: &TaskInput) -> Result<crate::exec_spec::ExecSpec> {
+        let steps = Self::build_from_task_llm(input).await?;
+        Ok(crate::workflow::contract::steps_to_exec_spec(&steps))
+    }
+
     pub fn build_steps(input: &TaskInput) -> Vec<Step> {
         let task_class = input.task_class();
         let step_specs = task_class_to_flow(task_class);
@@ -251,5 +261,19 @@ mod tests {
 
         assert_eq!(compile_kinds, test_kinds);
         assert_eq!(test_kinds, lint_kinds);
+    }
+
+    #[test]
+    fn workflow_compile_emits_valid_exec_spec() {
+        let spec = Workflow::compile(&TaskInput::generic("Refactor scheduler"));
+        assert_eq!(spec.version, 1);
+        assert_eq!(spec.steps.len(), 3);
+        assert_eq!(spec.steps[0].step_id, "00_analyze_task");
+        assert_eq!(spec.dependencies.len(), 2);
+        assert_eq!(spec.dependencies[0].step_id, "01_plan_execution");
+        assert_eq!(
+            spec.dependencies[0].depends_on,
+            vec!["00_analyze_task".to_string()]
+        );
     }
 }

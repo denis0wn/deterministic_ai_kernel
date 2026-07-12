@@ -56,6 +56,7 @@ mod tests {
         PipelineContext {
             seed: 42,
             bias_version: BiasVersion::V1,
+            task_id: None,
         }
     }
 
@@ -81,7 +82,7 @@ mod tests {
                 "normal step".into(),
             ],
         };
-        let out = mapper().run(ir, &ctx()).unwrap();
+        let out = mapper().run(ir, &ctx()).expect("test failure");
         assert_eq!(out.steps[0], "critical step");
     }
 
@@ -90,8 +91,8 @@ mod tests {
         let ir = IntermediateRepresentation {
             steps: vec!["step a".into(), "critical b".into(), "step c".into()],
         };
-        let out1 = mapper().run(ir.clone(), &ctx()).unwrap();
-        let out2 = mapper().run(ir, &ctx()).unwrap();
+        let out1 = mapper().run(ir.clone(), &ctx()).expect("test failure");
+        let out2 = mapper().run(ir, &ctx()).expect("test failure");
         assert_eq!(out1.steps, out2.steps);
     }
 }

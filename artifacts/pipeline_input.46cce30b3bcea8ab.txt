@@ -1,0 +1,58 @@
+
+CUSTOMER REQUEST:
+
+You are a senior reliability engineer.
+
+A company operates a distributed AI inference platform.
+
+Architecture:
+- 5 inference servers;
+- shared model storage;
+- request router;
+- asynchronous job queue;
+- GPU workers;
+- result cache;
+- monitoring system.
+
+Incident:
+
+After deploying a new model version:
+
+1. Average latency increased by 40%.
+2. GPU utilization decreased from 90% to 35%.
+3. Some requests complete successfully.
+4. Some requests timeout after exactly 60 seconds.
+5. Restarting workers temporarily improves performance.
+6. No hardware failures are reported.
+7. Database metrics are normal.
+8. Network latency between services is unchanged.
+
+Constraints:
+
+- Cannot rollback the model version.
+- Cannot add new hardware.
+- Cannot stop production.
+- Must keep existing API compatibility.
+- Must support future traffic growth.
+
+Task:
+
+Design a deterministic incident investigation and remediation plan.
+
+Requirements:
+
+1. Identify the most likely root causes.
+2. Separate symptoms from causes.
+3. Explain what evidence would confirm or reject each hypothesis.
+4. Provide investigation order from highest probability to lowest probability.
+5. Provide immediate mitigation steps.
+6. Provide long-term architectural improvements.
+7. Explain possible failure scenarios after each change.
+8. Define production validation metrics.
+
+Rules:
+
+Do not guess.
+Do not propose replacing the whole system.
+Reason like a senior distributed systems engineer.
+Return a structured engineering answer.

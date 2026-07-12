@@ -1,0 +1,56 @@
+
+CUSTOMER REQUEST:
+
+You are working as a senior systems architect.
+
+A company runs a distributed payment processing system.
+
+Current architecture:
+- 3 application servers;
+- PostgreSQL primary database;
+- asynchronous message queue;
+- payment workers processing transactions;
+- monitoring exists but has incomplete tracing.
+
+Observed incident:
+
+During peak load:
+1. Some payments appear twice in the database.
+2. Some customers are charged twice.
+3. Application logs show the same transaction ID processed by multiple workers.
+4. Database integrity is not corrupted.
+5. The message queue guarantees at-least-once delivery.
+6. Workers can crash at any moment.
+7. Network communication can be delayed or duplicated.
+
+Constraints:
+- The company cannot replace PostgreSQL.
+- The company cannot replace the message queue.
+- The company cannot stop production for more than 10 minutes.
+- The fix must be backward compatible.
+- The solution must handle future traffic growth.
+
+Task:
+
+Design a deterministic remediation plan.
+
+Requirements:
+
+1. Identify the root cause.
+2. Separate symptoms from actual causes.
+3. Provide a step-by-step implementation plan.
+4. Include database changes if required.
+5. Include worker logic changes.
+6. Explain failure scenarios before and after the fix.
+7. Define how to verify the fix in production.
+8. Provide rollback strategy.
+
+Validation requirements:
+- Do not propose replacing the entire architecture.
+- Do not assume exactly-once delivery exists.
+- Consider race conditions.
+- Consider crash recovery.
+- Consider replay of failed messages.
+
+This is a production customer request.
+Return a structured engineering answer.

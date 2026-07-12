@@ -3,7 +3,7 @@ use crate::planner_pipeline::{
     normalizer::Normalizer,
     parser::Parser,
     semantic_mapper::SemanticMapper,
-    PipelineContext, PipelineStage, Plan, RawInput,
+    IntermediateRepresentation, PipelineContext, PipelineStage, Plan, RawInput,
 };
 use crate::semantic_bias::BiasConfiguration;
 use anyhow::Result;
@@ -15,6 +15,94 @@ pub struct Pipeline {
 pub struct PipelineOutput {
     pub plan: Plan,
     pub report: CriticReport,
+}
+
+fn query_mlx_server(payload: &str) -> Option<Vec<String>> {
+    // 1. Check if backend is mocked
+    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        return None;
+    }
+
+    // 2. Resolve model config
+    let config =
+        crate::model_registry::resolve_model(crate::model_registry::ModelPurpose::TaskPlanning)
+            .ok()?;
+
+    // 3. Build blocking client with a short timeout
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .ok()?;
+
+    // 4. Test reachability (GET base_url/models)
+    let models_url = format!("{}/models", config.base_url.trim_end_matches('/'));
+    client.get(&models_url).send().ok()?;
+
+    // 5. Send completions request
+    let completions_url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+    let payload_json = serde_json::json!({
+        "model": config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a concise task planning assistant. Follow output constraints exactly. Return one step per line without numbering or bullet points."
+            },
+            {
+                "role": "user",
+                "content": format!("Generate short task execution steps for: {}", payload)
+            }
+        ],
+        "temperature": 0.0
+    });
+
+    let res = client
+        .post(completions_url)
+        .bearer_auth(&config.api_key)
+        .json(&payload_json)
+        .send()
+        .ok()?;
+
+    if !res.status().is_success() {
+        return None;
+    }
+
+    // 6. Parse response
+    #[derive(serde::Deserialize)]
+    struct Choice {
+        message: Message,
+    }
+    #[derive(serde::Deserialize)]
+    struct Message {
+        content: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Response {
+        choices: Vec<Choice>,
+    }
+
+    let body = res.json::<Response>().ok()?;
+    let text = body.choices.first()?.message.content.clone();
+
+    let mut steps = Vec::new();
+    for line in text.lines() {
+        let trimmed = line
+            .trim()
+            .trim_start_matches(|c: char| {
+                c.is_ascii_digit() || c == '.' || c == '-' || c == ')' || c.is_whitespace()
+            })
+            .trim()
+            .trim_end_matches('.')
+            .to_string();
+        if !trimmed.is_empty() {
+            steps.push(trimmed);
+        }
+    }
+
+    if steps.is_empty() {
+        None
+    } else {
+        Some(steps)
+    }
 }
 
 impl Pipeline {
@@ -30,8 +118,16 @@ impl Pipeline {
         // Stage 1: Normalize
         let normalized = Normalizer.run(raw, ctx)?;
 
-        // Stage 2: Parse
-        let ir = Parser.run(normalized, ctx)?;
+        // Stage 2: Parse (or query MLX Server)
+        let mut steps = None;
+        if let Some(mlx_steps) = query_mlx_server(&normalized.payload) {
+            steps = Some(mlx_steps);
+        }
+
+        let ir = match steps {
+            Some(s) => IntermediateRepresentation { steps: s },
+            None => Parser.run(normalized, ctx)?,
+        };
 
         // Stage 3: Semantic mapping (bias + seed ordering)
         let mapped = SemanticMapper {
@@ -99,6 +195,7 @@ mod tests {
         PipelineContext {
             seed: 42,
             bias_version: BiasVersion::V1,
+            task_id: None,
         }
     }
 
@@ -114,7 +211,7 @@ mod tests {
         let pipeline = Pipeline::new(bias());
         let out = pipeline
             .run("step one\nstep two\ncritical step", &ctx())
-            .unwrap();
+            .expect("test failure");
         assert!(out.report.passed);
         assert_eq!(out.plan.steps.len(), 3);
         assert_eq!(out.plan.seed, 42);
@@ -123,8 +220,12 @@ mod tests {
     #[test]
     fn pipeline_id_is_stable_across_runs() {
         let pipeline = Pipeline::new(bias());
-        let out1 = pipeline.run("step one\nstep two", &ctx()).unwrap();
-        let out2 = pipeline.run("step one\nstep two", &ctx()).unwrap();
+        let out1 = pipeline
+            .run("step one\nstep two", &ctx())
+            .expect("test failure");
+        let out2 = pipeline
+            .run("step one\nstep two", &ctx())
+            .expect("test failure");
         assert_eq!(out1.plan.id, out2.plan.id);
     }
 
@@ -133,7 +234,7 @@ mod tests {
         let pipeline = Pipeline::new(bias());
         let out = pipeline
             .run("  STEP ONE  \n\n  STEP TWO  ", &ctx())
-            .unwrap();
+            .expect("test failure");
         assert!(out
             .plan
             .steps
@@ -154,35 +255,66 @@ mod tests {
         let ctx1 = PipelineContext {
             seed: 1,
             bias_version: BiasVersion::V1,
+            task_id: None,
         };
         let ctx2 = PipelineContext {
             seed: 2,
             bias_version: BiasVersion::V1,
+            task_id: None,
         };
-        let out1 = pipeline.run("step one\nstep two", &ctx1).unwrap();
-        let out2 = pipeline.run("step one\nstep two", &ctx2).unwrap();
+        let out1 = pipeline
+            .run("step one\nstep two", &ctx1)
+            .expect("test failure");
+        let out2 = pipeline
+            .run("step one\nstep two", &ctx2)
+            .expect("test failure");
         assert_ne!(out1.plan.id, out2.plan.id);
     }
 
     #[test]
     fn publish_output_writes_to_event_bus() {
-        let bus = EventBus::new(":memory:").unwrap();
+        let unique_db = |label: &str| -> String {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("test failure")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("dak_test_{}_{}.db", label, nanos));
+            let path_str = path.display().to_string();
+            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(format!("{}-wal", path_str));
+            let _ = std::fs::remove_file(format!("{}-shm", path_str));
+            path_str
+        };
+
+        let db_path = unique_db("publish_output");
+        let bus = EventBus::new(&db_path).expect("test failure");
         let pipeline = Pipeline::new(bias());
         let ctx = ctx();
         let output = pipeline
             .run("step one\nstep two\ncritical step", &ctx)
-            .unwrap();
+            .expect("test failure");
 
-        let gen = pipeline.publish_output(&output, "task-42", &bus).unwrap();
+        let gen = pipeline
+            .publish_output(&output, "task-42", &bus)
+            .expect("test failure");
         assert!(gen > 0);
 
         // EventBus содержит запись о pipeline_report
-        let latest = bus.latest_generation_for_task("task-42").unwrap();
+        let latest = bus
+            .latest_generation_for_task("task-42")
+            .expect("test failure");
         assert_eq!(latest, gen);
 
         // Semantic artifacts созданы для каждого шага
-        let artifacts = bus.list_semantic_artifacts("task-42", None).unwrap();
+        let artifacts = bus
+            .list_semantic_artifacts("task-42", None)
+            .expect("test failure");
         assert_eq!(artifacts.len(), output.plan.steps.len());
         assert!(artifacts.iter().all(|a| a.artifact_type == "pipeline_step"));
+
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(format!("{}-wal", db_path));
+        let _ = std::fs::remove_file(format!("{}-shm", db_path));
     }
 }

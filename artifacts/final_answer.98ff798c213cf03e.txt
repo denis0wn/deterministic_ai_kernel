@@ -1,0 +1,23 @@
+Use a shared counter with a lock to safely increment from multiple threads, then return the final sum.
+
+```python
+import threading
+
+def ExecuteChanges(num_threads=10, increments_per_thread=100):
+    counter = 0
+    lock = threading.Lock()
+
+    def worker():
+        nonlocal counter
+        for _ in range(increments_per_thread):
+            with lock:
+                counter += 1
+
+    threads = [threading.Thread(target=worker) for _ in range(num_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    return counter
+```

@@ -5,7 +5,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -33,7 +33,7 @@ fn snapshot_artifacts_cli_prints_latest_snapshot_artifact_refs() {
             "ExecuteChanges",
         ])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         emit.status.success(),
         "stderr=\n{}",
@@ -44,7 +44,7 @@ fn snapshot_artifacts_cli_prints_latest_snapshot_artifact_refs() {
         .env("KERNEL_DB_PATH", db)
         .args(["snapshot", "task-artifacts"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         snapshot.status.success(),
         "stderr=\n{}",
@@ -55,14 +55,14 @@ fn snapshot_artifacts_cli_prints_latest_snapshot_artifact_refs() {
         .env("KERNEL_DB_PATH", db)
         .args(["snapshot-artifacts", "task-artifacts"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         out.status.success(),
         "stderr=\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
 
-    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stdout = String::from_utf8(out.stdout).expect("test failure");
     assert!(stdout.contains("ARTIFACT_REF\tsemantic_bias_v1\t"));
 
     let _ = fs::remove_file(db);

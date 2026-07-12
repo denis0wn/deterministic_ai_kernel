@@ -1,0 +1,2364 @@
+use crate::exec_spec::ExecSpec;
+use crate::workflow::contract::{StepOutcome, TaskClass, WorkerCapability};
+use anyhow::{anyhow, Result};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+
+pub trait StorageProvider: Send + Sync {
+    fn load_exec_spec(&self, task_id: &str) -> Result<ExecSpec>;
+    fn update_step_status(&self, task_id: &str, step_id: &str, status: &str) -> Result<()>;
+    fn get_step_status(&self, task_id: &str, step_id: &str) -> Result<Option<String>>;
+    fn get_latest_snapshot_payload(&self, task_id: &str) -> Result<Option<String>>;
+
+    fn append_event(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+        event_type: &str,
+        payload: &Value,
+    ) -> Result<i64>;
+    fn append_semantic_artifact(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        generation: i64,
+        artifact_type: &str,
+        payload: &Value,
+    ) -> Result<()>;
+    fn latest_generation_for_task(&self, task_id: &str) -> Result<i64>;
+
+    // Leases & workers
+    fn claim_worker(&self, task_id: &str, worker_id: &str) -> Result<()>;
+    fn get_active_lease(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        worker_id: &str,
+    ) -> Result<Option<String>>;
+    fn update_lease_state(&self, lease_id: &str, state: &str) -> Result<()>;
+    fn heartbeat_lease(
+        &self,
+        lease_id: &str,
+        worker_id: &str,
+        expires_at_generation: i64,
+    ) -> Result<()>;
+
+    // For effects.rs
+    fn process_effects_ledger(&self, task_id: &str) -> Result<()>;
+    fn find_dispatched_step(&self, task_id: &str) -> Result<Option<String>>;
+
+    // Snapshots
+    fn rebuild_snapshot(&self, task_id: &str, quiet: bool) -> Result<()>;
+    fn restore_snapshot(&self, task_id: &str, quiet: bool) -> Result<()>;
+
+    // Override helper
+    fn set_override_path(&self, path: Option<String>);
+
+    // CLI helpers
+    fn print_stats(&self) -> Result<(i64, i64, i64, i64)>;
+    fn table_exists(&self, table: &str) -> bool;
+    fn reset_db(&self) -> Result<()>;
+    fn vacuum_db(&self) -> Result<()>;
+    fn insert_task(&self, task_id: &str, task_class: &str, exec_spec: &str) -> Result<()>;
+    fn get_semantic_bias_payload(&self, task_id: &str) -> Result<String>;
+    fn emit_bias_artifact(
+        &self,
+        id: &str,
+        task_bias_id: &str,
+        step_bias_id: &str,
+        created_at: i64,
+        artifact_type: &str,
+        payload: &str,
+    ) -> Result<()>;
+    fn latest_bias_artifact(
+        &self,
+        task_bias_id: &str,
+        step_bias_id: &str,
+    ) -> Result<(String, String, String, i64, String, String)>;
+
+    // New Storage Boundaries
+    fn list_event_log(&self, task_id: &str) -> Result<Vec<(i64, Option<String>, String, String)>>;
+    fn seed_dependencies(&self, task_id: &str) -> Result<()>;
+    fn reconcile_scheduler(&self, task_id: &str) -> Result<BTreeMap<String, String>>;
+    fn schedule_next_steps(&self, task_id: &str) -> Result<BTreeMap<String, String>>;
+    fn get_next_ready_step(&self, task_id: &str) -> Result<Option<String>>;
+    fn get_current_status_map(&self, task_id: &str) -> Result<BTreeMap<String, String>>;
+    fn unlock_ready_steps_by_db(&self, task_id: &str) -> Result<()>;
+    fn seed_demo_leases(&self, task_id: &str) -> Result<()>;
+    fn expire_leases(&self, task_id: &str) -> Result<()>;
+    fn list_semantic_artifacts(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+    ) -> Result<Vec<crate::event_bus::SemanticArtifactRow>>;
+
+    fn start_step(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()>;
+    fn heartbeat(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()>;
+    fn fail_step(&self, task_id: &str, worker_id: &str, step_id: &str, reason: &str) -> Result<()>;
+    fn complete_step(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()>;
+    fn replay_validate(&self, task_id: &str) -> bool;
+
+    // EventBus methods migrated to StorageProvider boundary
+    fn commit_causal_unit(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        events: Vec<(String, Value)>,
+    ) -> Result<i64>;
+    fn query_events(&self, task_id: &str) -> Result<Vec<crate::event_bus::EventRow>>;
+    fn list_execution_events(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<crate::kernel_types::ExecutionEvent>>;
+    fn save_replay_capsule(&self, capsule: &crate::kernel_types::ReplayCapsule) -> Result<()>;
+    fn latest_replay_capsule(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<crate::kernel_types::ReplayCapsule>>;
+    fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>>;
+    fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()>;
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CacheRecord {
+    pub execution_result: String,
+    pub output_hash: String,
+    pub duration_ms: i64,
+    pub metadata: String,
+}
+
+thread_local! {
+    static OVERRIDE_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+}
+
+pub struct DefaultStorage {
+    db_path: String,
+}
+
+impl DefaultStorage {
+    pub fn new() -> Self {
+        let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+        Self { db_path }
+    }
+
+    fn conn(&self) -> Result<Connection> {
+        let target_path = OVERRIDE_PATH
+            .with(|p| p.borrow().clone())
+            .unwrap_or_else(|| self.db_path.clone());
+        if let Some(parent) = std::path::Path::new(&target_path).parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        let conn = Connection::open(&target_path)?;
+        conn.execute_batch(include_str!("../../event_bus/schema.sql"))?;
+        Ok(conn)
+    }
+}
+
+// Helpers from scheduler.rs / worker.rs
+fn ordered_step_ids(conn: &Connection, task_id: &str) -> Result<Vec<String>> {
+    let row: Option<(Option<String>, String)> = conn
+        .query_row(
+            "SELECT exec_spec, task_class FROM tasks WHERE task_id = ?1",
+            [task_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+
+    let (exec_spec_opt, task_class_str) =
+        row.ok_or_else(|| anyhow!("missing task record for task_id '{}'", task_id))?;
+
+    let spec = if let Some(json_str) = exec_spec_opt {
+        if !json_str.trim().is_empty() {
+            serde_json::from_str::<ExecSpec>(&json_str)?
+        } else {
+            let task_class = match task_class_str.as_str() {
+                "Generic" => TaskClass::Generic,
+                "PlannerHardening" => TaskClass::PlannerHardening,
+                "CodeFix" => TaskClass::CodeFix,
+                other => anyhow::bail!("unknown task_class '{}'", other),
+            };
+            task_class.to_exec_spec(None)
+        }
+    } else {
+        let task_class = match task_class_str.as_str() {
+            "Generic" => TaskClass::Generic,
+            "PlannerHardening" => TaskClass::PlannerHardening,
+            "CodeFix" => TaskClass::CodeFix,
+            other => anyhow::bail!("unknown task_class '{}'", other),
+        };
+        task_class.to_exec_spec(None)
+    };
+
+    Ok(spec.steps.iter().map(|s| s.step_id.clone()).collect())
+}
+
+fn status_outcome(status: &str) -> Option<StepOutcome> {
+    match status {
+        "committed" => Some(StepOutcome::Success),
+        "rejected" => Some(StepOutcome::TerminalFailure),
+        _ => None,
+    }
+}
+
+fn terminal_outcome(outcome: &StepOutcome) -> bool {
+    matches!(outcome, StepOutcome::Success | StepOutcome::TerminalFailure)
+}
+
+fn failed_step_status_from_payload(payload: &str) -> &'static str {
+    let outcome = serde_json::from_str::<Value>(payload)
+        .ok()
+        .and_then(|v| {
+            v.get("outcome").map(|o| match o.as_str() {
+                Some("RetryableFailure") => StepOutcome::RetryableFailure,
+                Some("Blocked") => StepOutcome::Blocked,
+                _ => StepOutcome::TerminalFailure,
+            })
+        })
+        .unwrap_or(StepOutcome::TerminalFailure);
+
+    match outcome {
+        StepOutcome::RetryableFailure | StepOutcome::Blocked => "pending",
+        _ => "rejected",
+    }
+}
+
+fn replay_events(conn: &Connection, task_id: &str) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT step_id, event_type, payload
+         FROM event_log
+         WHERE task_id = ?1 AND step_id IS NOT NULL
+         ORDER BY causal_unit_id, sequence_in_unit, id",
+    )?;
+
+    let rows = stmt.query_map([task_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+
+    for row in rows.filter_map(|r| r.ok()) {
+        let (step_id, event_type, payload) = row;
+
+        match event_type.as_str() {
+            "STEP_COMPLETED" | "PrimitiveCompleted" => {
+                conn.execute(
+                    "UPDATE step_status SET status = 'committed'
+                     WHERE task_id = ?1 AND step_id = ?2",
+                    params![task_id, step_id],
+                )?;
+                conn.execute(
+                    "UPDATE leases
+                     SET state = 'completed'
+                     WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
+                    params![task_id, step_id],
+                )?;
+            }
+            "STEP_FAILED" | "PrimitiveFailed" => {
+                conn.execute(
+                    "UPDATE step_status SET status = ?3
+                     WHERE task_id = ?1 AND step_id = ?2",
+                    params![task_id, step_id, failed_step_status_from_payload(&payload)],
+                )?;
+                conn.execute(
+                    "UPDATE leases
+                     SET state = 'released'
+                     WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
+                    params![task_id, step_id],
+                )?;
+            }
+            "STEP_DISPATCHED" | "PrimitiveScheduled" => {
+                let current: String = conn.query_row(
+                    "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                    params![task_id, step_id],
+                    |r| r.get(0),
+                )?;
+                if !status_outcome(&current)
+                    .as_ref()
+                    .map(terminal_outcome)
+                    .unwrap_or(false)
+                {
+                    conn.execute(
+                        "UPDATE step_status SET status = 'dispatched'
+                         WHERE task_id = ?1 AND step_id = ?2",
+                        params![task_id, step_id],
+                    )?;
+                }
+            }
+            "LEASE_EXPIRED" => {
+                let current: String = conn.query_row(
+                    "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                    params![task_id, step_id],
+                    |r| r.get(0),
+                )?;
+                if !status_outcome(&current)
+                    .as_ref()
+                    .map(terminal_outcome)
+                    .unwrap_or(false)
+                {
+                    conn.execute(
+                        "UPDATE step_status SET status = 'pending'
+                         WHERE task_id = ?1 AND step_id = ?2",
+                        params![task_id, step_id],
+                    )?;
+                    conn.execute(
+                        "UPDATE leases
+                         SET state = 'expired'
+                         WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
+                        params![task_id, step_id],
+                    )?;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn unlock_ready_steps(conn: &Connection, task_id: &str) -> Result<()> {
+    let all_steps = ordered_step_ids(conn, task_id)?;
+
+    for step_id in &all_steps {
+        let current: String = conn.query_row(
+            "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, step_id],
+            |r| r.get(0),
+        )?;
+
+        if status_outcome(&current)
+            .as_ref()
+            .map(terminal_outcome)
+            .unwrap_or(false)
+            || current == "dispatched"
+            || current == "ready"
+        {
+            continue;
+        }
+
+        let dep_total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM step_dependencies WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, step_id],
+            |r| r.get(0),
+        )?;
+
+        if dep_total == 0 {
+            conn.execute(
+                "UPDATE step_status SET status = 'ready'
+                 WHERE task_id = ?1 AND step_id = ?2 AND status = 'pending'",
+                params![task_id, step_id],
+            )?;
+            continue;
+        }
+
+        let dep_satisfied: i64 = conn.query_row(
+            "SELECT COUNT(*)
+             FROM step_dependencies d
+             JOIN step_status s
+               ON s.task_id = d.task_id
+              AND s.step_id = d.depends_on_step_id
+             WHERE d.task_id = ?1
+               AND d.step_id = ?2
+               AND s.status = 'committed'",
+            params![task_id, step_id],
+            |r| r.get(0),
+        )?;
+
+        if dep_satisfied == dep_total {
+            conn.execute(
+                "UPDATE step_status SET status = 'ready'
+                 WHERE task_id = ?1 AND step_id = ?2 AND status = 'pending'",
+                params![task_id, step_id],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn classify_failure_outcome(reason: &str) -> StepOutcome {
+    if reason.starts_with("retry:") || reason.contains("timeout waiting for lock") {
+        return StepOutcome::RetryableFailure;
+    }
+    if reason.starts_with("blocked:") {
+        return StepOutcome::Blocked;
+    }
+    StepOutcome::TerminalFailure
+}
+
+fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
+    match outcome {
+        StepOutcome::Success => "STEP_COMPLETED",
+        StepOutcome::TerminalFailure => "STEP_FAILED",
+        StepOutcome::RetryableFailure | StepOutcome::Blocked => "STEP_FAILED",
+    }
+}
+
+fn is_ai_worker(worker_id: &str) -> bool {
+    let lower = worker_id.to_ascii_lowercase();
+    lower == "ai"
+        || lower.contains("worker-ai")
+        || lower.contains("ai-worker")
+        || lower.starts_with("ai-")
+        || lower.starts_with("ai_")
+}
+
+fn capability_for_worker_id(worker_id: &str) -> Result<WorkerCapability> {
+    let lower = worker_id.to_ascii_lowercase();
+
+    if is_ai_worker(worker_id) {
+        return Ok(WorkerCapability::LegacyGeneric);
+    }
+
+    if lower.contains("planner") {
+        return Ok(WorkerCapability::Planner);
+    }
+
+    if lower.contains("executor") {
+        return Ok(WorkerCapability::Executor);
+    }
+
+    if lower.contains("verifier") {
+        return Ok(WorkerCapability::Verifier);
+    }
+
+    if lower.starts_with("worker-") || lower.starts_with("worker_") {
+        return Ok(WorkerCapability::LegacyGeneric);
+    }
+
+    Err(anyhow!("worker has no declared capability: {}", worker_id))
+}
+
+fn canonical_json(value: &Value) -> Result<String> {
+    let mut ordered = BTreeMap::new();
+    if let Value::Object(map) = value {
+        for (k, v) in map {
+            ordered.insert(k.clone(), v.clone());
+        }
+        Ok(serde_json::to_string(&ordered)?)
+    } else {
+        Ok(serde_json::to_string(value)?)
+    }
+}
+
+// StorageProvider Implementation
+impl StorageProvider for DefaultStorage {
+    fn get_latest_snapshot_payload(&self, task_id: &str) -> Result<Option<String>> {
+        let conn = self.conn()?;
+        let payload: Option<String> = conn
+            .query_row(
+                "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(payload)
+    }
+
+    fn load_exec_spec(&self, task_id: &str) -> Result<ExecSpec> {
+        let conn = self.conn()?;
+        let row: Option<(Option<String>, String)> = conn
+            .query_row(
+                "SELECT exec_spec, task_class FROM tasks WHERE task_id = ?1",
+                [task_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+
+        let (exec_spec_opt, task_class_str) =
+            row.ok_or_else(|| anyhow!("missing task record for task_id '{}'", task_id))?;
+
+        if let Some(json_str) = exec_spec_opt {
+            if !json_str.trim().is_empty() {
+                if let Ok(spec) = serde_json::from_str::<ExecSpec>(&json_str) {
+                    return Ok(spec);
+                }
+            }
+        }
+
+        let task_class = match task_class_str.as_str() {
+            "Generic" => TaskClass::Generic,
+            "PlannerHardening" => TaskClass::PlannerHardening,
+            "CodeFix" => TaskClass::CodeFix,
+            other => anyhow::bail!("unknown task_class '{}'", other),
+        };
+        Ok(task_class.to_exec_spec(None))
+    }
+
+    fn update_step_status(&self, task_id: &str, step_id: &str, status: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE step_status SET status = ?3 WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, step_id, status],
+        )?;
+        Ok(())
+    }
+
+    fn get_step_status(&self, task_id: &str, step_id: &str) -> Result<Option<String>> {
+        let conn = self.conn()?;
+        let status: Option<String> = conn
+            .query_row(
+                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                [task_id, step_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(status)
+    }
+
+    fn append_event(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+        event_type: &str,
+        payload: &Value,
+    ) -> Result<i64> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let unit_gen: i64 = tx.query_row(
+            "INSERT INTO generations DEFAULT VALUES RETURNING id",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let event_id = payload
+            .get("event_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                format!(
+                    "evt_{}",
+                    &blake3::hash(format!("{}:{}:{}", task_id, event_type, unit_gen).as_bytes())
+                        .to_hex()[..16]
+                )
+            });
+
+        let payload_str = canonical_json(payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (event_id, system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                event_id,
+                unit_gen,
+                unit_gen,
+                task_id,
+                step_id,
+                event_type,
+                payload_str,
+                unit_gen
+            ],
+        )?;
+
+        tx.commit()?;
+        Ok(unit_gen)
+    }
+
+    fn append_semantic_artifact(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        generation: i64,
+        artifact_type: &str,
+        payload: &Value,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        let max_gen: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(source_generation), -1) FROM semantic_artifacts WHERE task_id = ?1 AND step_id = ?2",
+            params![task_id, step_id],
+            |r| r.get(0),
+        )?;
+        if generation < max_gen {
+            return Err(anyhow!(
+                "generation fence: source_generation {} <= existing max {}",
+                generation,
+                max_gen
+            ));
+        }
+        let payload_str = canonical_json(payload)?;
+        conn.execute(
+            "INSERT INTO semantic_artifacts
+             (task_id, step_id, source_generation, artifact_type, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![task_id, step_id, generation, artifact_type, payload_str],
+        )?;
+        Ok(())
+    }
+
+    fn latest_generation_for_task(&self, task_id: &str) -> Result<i64> {
+        let conn = self.conn()?;
+        let generation = conn.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) FROM event_log WHERE task_id = ?1",
+            [task_id],
+            |r| r.get(0),
+        )?;
+        Ok(generation)
+    }
+
+    fn claim_worker(&self, task_id: &str, worker_id: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let row: Option<(String, String)> = tx
+            .query_row(
+                "SELECT l.lease_id, l.step_id
+                 FROM leases l
+                 JOIN step_status s
+                   ON s.task_id = l.task_id
+                  AND s.step_id = l.step_id
+                 WHERE l.task_id = ?1
+                   AND l.state = 'active'
+                   AND s.status = 'dispatched'
+                   AND l.worker_id = 'worker-scheduler'
+                 ORDER BY l.acquired_generation, l.step_id
+                 LIMIT 1",
+                [task_id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()?;
+
+        let (lease_id, step_id) =
+            row.ok_or_else(|| anyhow!("no dispatchable active lease found"))?;
+
+        let current_owner: String = tx.query_row(
+            "SELECT worker_id FROM leases WHERE lease_id = ?1 AND state = 'active'",
+            [lease_id.clone()],
+            |r| r.get(0),
+        )?;
+
+        if current_owner == worker_id {
+            tx.commit()?;
+            return Ok(());
+        }
+
+        if current_owner != "worker-scheduler" {
+            return Err(anyhow!("lease already owned by {}", current_owner));
+        }
+
+        let updated = tx.execute(
+            "UPDATE leases
+             SET worker_id = ?1
+             WHERE lease_id = ?2
+               AND state = 'active'
+               AND worker_id = 'worker-scheduler'",
+            params![worker_id, lease_id],
+        )?;
+
+        if updated == 0 {
+            return Err(anyhow!("lease claim lost"));
+        }
+
+        let next_generation: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let claim_payload = json!({
+            "lease_id": lease_id,
+            "worker_id": worker_id
+        });
+        let claim_payload_str = canonical_json(&claim_payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, 0, ?3, ?4, 'WORKER_CLAIMED', ?5, ?6)",
+            params![
+                next_generation,
+                next_generation,
+                task_id,
+                step_id,
+                claim_payload_str,
+                next_generation
+            ],
+        )?;
+
+        tx.commit()?;
+        println!("WORKER_CLAIM_OK");
+        println!("WORKER: {}", worker_id);
+        println!("STEP_CLAIMED: {}", step_id);
+        Ok(())
+    }
+
+    fn get_active_lease(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        worker_id: &str,
+    ) -> Result<Option<String>> {
+        let conn = self.conn()?;
+        let lease_id: Option<String> = conn
+            .query_row(
+                "SELECT lease_id
+                 FROM leases
+                 WHERE task_id = ?1
+                   AND step_id = ?2
+                   AND worker_id = ?3
+                   AND state = 'active'
+                 ORDER BY acquired_generation DESC
+                 LIMIT 1",
+                params![task_id, step_id, worker_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(lease_id)
+    }
+
+    fn update_lease_state(&self, lease_id: &str, state: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE leases SET state = ?2 WHERE lease_id = ?1",
+            params![lease_id, state],
+        )?;
+        Ok(())
+    }
+
+    fn heartbeat_lease(
+        &self,
+        lease_id: &str,
+        worker_id: &str,
+        expires_at_generation: i64,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE leases
+             SET expires_at_generation = ?3
+             WHERE lease_id = ?1
+               AND worker_id = ?2
+               AND state = 'active'",
+            params![lease_id, worker_id, expires_at_generation],
+        )?;
+        Ok(())
+    }
+
+    fn find_dispatched_step(&self, task_id: &str) -> Result<Option<String>> {
+        let conn = self.conn()?;
+        let step_id: Option<String> = conn
+            .query_row(
+                "SELECT step_id
+                 FROM step_status
+                 WHERE task_id = ?1 AND status = 'dispatched'
+                 ORDER BY step_id
+                 LIMIT 1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(step_id)
+    }
+
+    fn process_effects_ledger(&self, task_id: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let mut reserve_stmt = tx.prepare(
+            "SELECT step_id, payload
+             FROM event_log
+             WHERE task_id = ?1 AND event_type IN ('EFFECT_RESERVED', 'ArtifactProduced')
+             ORDER BY id",
+        )?;
+        let reserve_rows = reserve_stmt.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut reserved = Vec::new();
+        for r in reserve_rows {
+            reserved.push(r?);
+        }
+        drop(reserve_stmt);
+
+        for (step_id, payload) in reserved {
+            let v: serde_json::Value = serde_json::from_str(&payload)?;
+            if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
+                tx.execute(
+                    "INSERT OR IGNORE INTO effect_ledger
+                     (effect_id, task_id, step_id, reservation_generation, state)
+                     VALUES (?1, ?2, ?3, 0, 'reserved')",
+                    params![effect_id, task_id, step_id],
+                )?;
+            }
+        }
+
+        let mut complete_stmt = tx.prepare(
+            "SELECT step_id, payload
+             FROM event_log
+             WHERE task_id = ?1 AND event_type IN ('STEP_COMPLETED', 'PrimitiveCompleted')
+             ORDER BY id",
+        )?;
+        let complete_rows = complete_stmt.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut completed = Vec::new();
+        for r in complete_rows {
+            completed.push(r?);
+        }
+        drop(complete_stmt);
+
+        for (step_id, payload) in completed {
+            let v: serde_json::Value = serde_json::from_str(&payload)?;
+            if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
+                tx.execute(
+                    "UPDATE effect_ledger
+                     SET state = 'committed'
+                     WHERE effect_id = ?1 AND task_id = ?2 AND step_id = ?3",
+                    params![effect_id, task_id, step_id],
+                )?;
+            }
+        }
+
+        let mut fail_stmt = tx.prepare(
+            "SELECT step_id, payload
+             FROM event_log
+             WHERE task_id = ?1 AND event_type IN ('STEP_FAILED', 'PrimitiveFailed')
+             ORDER BY id",
+        )?;
+        let fail_rows = fail_stmt.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut failed = Vec::new();
+        for r in fail_rows {
+            failed.push(r?);
+        }
+        drop(fail_stmt);
+
+        for (step_id, payload) in failed {
+            let v: serde_json::Value = serde_json::from_str(&payload)?;
+            if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
+                tx.execute(
+                    "UPDATE effect_ledger
+                     SET state = 'rejected'
+                     WHERE effect_id = ?1 AND task_id = ?2 AND step_id = ?3",
+                    params![effect_id, task_id, step_id],
+                )?;
+            }
+        }
+
+        let mut ext_stmt = tx.prepare(
+            "SELECT e.effect_id, e.task_id, e.step_id, e.state
+             FROM effect_ledger e
+             LEFT JOIN external_effects x ON x.effect_id = e.effect_id
+             WHERE e.task_id = ?1
+               AND e.state IN ('committed','rejected')
+               AND x.effect_id IS NULL
+             ORDER BY e.effect_id",
+        )?;
+        let rows = ext_stmt.query_map([task_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut unprocessed = Vec::new();
+        for r in rows {
+            unprocessed.push(r?);
+        }
+        drop(ext_stmt);
+
+        let mut count = 0_i64;
+        for (effect_id, task_id, step_id, observed_state) in unprocessed {
+            let result_payload = if observed_state == "committed" {
+                serde_json::json!({
+                    "effect_id": effect_id,
+                    "action": "send_to_external_system",
+                    "status": "executed"
+                })
+            } else {
+                serde_json::json!({
+                    "effect_id": effect_id,
+                    "action": "skip_external_side_effect",
+                    "status": "suppressed_due_to_rejection"
+                })
+            };
+            let result_payload_str = canonical_json(&result_payload)?;
+
+            tx.execute(
+                "INSERT INTO external_effects
+                 (effect_id, task_id, step_id, observed_state, result_payload)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    effect_id,
+                    task_id,
+                    step_id,
+                    observed_state,
+                    result_payload_str
+                ],
+            )?;
+            count += 1;
+        }
+
+        tx.commit()?;
+        println!("EFFECT_EXECUTION_OK");
+        println!("EXECUTED_EFFECT_ROWS: {}", count);
+        Ok(())
+    }
+
+    fn rebuild_snapshot(&self, task_id: &str, quiet: bool) -> Result<()> {
+        let conn = self.conn()?;
+
+        let latest = conn.query_row(
+            "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
+            [task_id],
+            |r| r.get::<_, String>(0),
+        ).optional()?;
+
+        let (base_generation, mut steps, mut done) = match latest {
+            Some(payload_str) => {
+                let payload: Value = serde_json::from_str(&payload_str)?;
+                let last_generation = payload
+                    .get("last_generation")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let done = payload
+                    .get("done")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let mut steps = BTreeMap::new();
+                if let Some(obj) = payload.get("steps").and_then(|v| v.as_object()) {
+                    for (k, v) in obj {
+                        if let Some(s) = v.as_str() {
+                            steps.insert(k.clone(), s.to_string());
+                        }
+                    }
+                }
+                (last_generation, steps, done)
+            }
+            None => (0, BTreeMap::new(), false),
+        };
+
+        let mut stmt = conn.prepare(
+            "SELECT system_generation, step_id, event_type, payload
+             FROM event_log
+             WHERE task_id = ?1 AND system_generation > ?2
+             ORDER BY causal_unit_id, sequence_in_unit",
+        )?;
+
+        let rows = stmt.query_map(params![task_id, base_generation], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+
+        let mut last_generation = base_generation;
+        for row in rows {
+            let (generation, step_id, event_type, _payload) = row?;
+            last_generation = generation;
+
+            match event_type.as_str() {
+                "STEP_COMPLETED" | "PrimitiveCompleted" => {
+                    if let Some(step_id) = step_id {
+                        steps.insert(step_id, "committed".to_string());
+                    }
+                }
+                "STEP_FAILED" | "PrimitiveFailed" => {
+                    if let Some(step_id) = step_id {
+                        steps.insert(step_id, "rejected".to_string());
+                    }
+                }
+                "STEP_DISPATCHED" | "PrimitiveScheduled" => {
+                    if let Some(step_id) = step_id {
+                        steps
+                            .entry(step_id)
+                            .or_insert_with(|| "dispatched".to_string());
+                    }
+                }
+                "LEASE_ACQUIRED" => {
+                    if let Some(step_id) = step_id {
+                        steps.entry(step_id).or_insert_with(|| "leased".to_string());
+                    }
+                }
+                "DONE" => {
+                    done = true;
+                }
+                _ => {}
+            }
+        }
+
+        let mut artifact_refs: BTreeMap<String, Value> = BTreeMap::new();
+        let mut stmt2 = conn.prepare(
+            "SELECT artifact_type, artifact_id FROM semantic_artifacts WHERE task_id = ?1 ORDER BY artifact_id DESC",
+        )?;
+        let rows2 = stmt2.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        for row in rows2 {
+            let (artifact_type, artifact_id) = row?;
+            artifact_refs
+                .entry(artifact_type)
+                .or_insert_with(|| json!(artifact_id));
+        }
+
+        let state_payload = json!({
+            "task_id": task_id,
+            "last_generation": last_generation,
+            "done": done,
+            "steps": steps,
+            "artifacts": artifact_refs
+        });
+
+        let created_at = last_generation;
+        let state_hash = serde_json::to_string(&state_payload)?.len() as u64;
+
+        let payload = json!({
+            "snapshot_version": 1,
+            "schema_version": 1,
+            "created_at": created_at,
+            "state_hash": state_hash,
+            "state": state_payload,
+            "task_id": task_id,
+            "last_generation": last_generation,
+            "done": done,
+            "steps": steps,
+            "artifacts": artifact_refs
+        });
+
+        conn.execute(
+            "INSERT INTO state_snapshots (task_id, last_generation, payload) VALUES (?1, ?2, ?3)",
+            params![task_id, last_generation, serde_json::to_string(&payload)?],
+        )?;
+
+        if !quiet {
+            println!("SNAPSHOT OK");
+            println!("SNAPSHOT_BASE_GENERATION: {}", base_generation);
+            println!("SNAPSHOT_GENERATION: {}", last_generation);
+        }
+        Ok(())
+    }
+
+    fn restore_snapshot(&self, task_id: &str, quiet: bool) -> Result<()> {
+        let conn = self.conn()?;
+
+        let (snapshot_id, last_generation, payload): (i64, i64, String) = conn.query_row(
+            "SELECT snapshot_id, last_generation, payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
+            [task_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+
+        let payload_json: Value = serde_json::from_str(&payload)?;
+        let snapshot_version = payload_json
+            .get("snapshot_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1);
+        let schema_version = payload_json
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1);
+
+        if snapshot_version > 1 {
+            return Err(anyhow!(
+                "unsupported future snapshot_version: {}",
+                snapshot_version
+            ));
+        }
+        if schema_version > 1 {
+            return Err(anyhow!(
+                "unsupported future schema_version: {}",
+                schema_version
+            ));
+        }
+
+        if !quiet {
+            println!("RESTORE OK");
+            println!("SNAPSHOT_ID: {}", snapshot_id);
+            println!("SNAPSHOT_GENERATION: {}", last_generation);
+
+            if let Some(artifacts) = payload_json.get("artifacts").and_then(|v| v.as_object()) {
+                for (artifact_type, artifact_id) in artifacts {
+                    println!("ARTIFACT_REF\t{}\t{}", artifact_type, artifact_id);
+                }
+            }
+            println!("{}", payload);
+        }
+        Ok(())
+    }
+
+    fn set_override_path(&self, path: Option<String>) {
+        OVERRIDE_PATH.with(|p| {
+            *p.borrow_mut() = path;
+        });
+    }
+
+    fn list_event_log(&self, task_id: &str) -> Result<Vec<(i64, Option<String>, String, String)>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT system_generation, step_id, event_type, payload
+             FROM event_log
+             WHERE task_id = ?1
+             ORDER BY system_generation, id",
+        )?;
+
+        let rows = stmt.query_map([task_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+
+        let mut res = Vec::new();
+        for r in rows {
+            res.push(r?);
+        }
+        Ok(res)
+    }
+
+    fn seed_dependencies(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn()?;
+        let ordered = ordered_step_ids(&conn, task_id)?;
+
+        for window in ordered.windows(2) {
+            let dep = &window[0];
+            let step = &window[1];
+            conn.execute(
+                "INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id)
+                 VALUES (?1, ?2, ?3)",
+                params![task_id, step, dep],
+            )?;
+        }
+
+        for step in ordered {
+            conn.execute(
+                "INSERT OR IGNORE INTO step_status (task_id, step_id, status)
+                 VALUES (?1, ?2, 'pending')",
+                params![task_id, step],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn reconcile_scheduler(&self, task_id: &str) -> Result<BTreeMap<String, String>> {
+        let conn = self.conn()?;
+        self.seed_dependencies(task_id)?;
+
+        conn.execute(
+            "UPDATE step_status SET status = 'pending' WHERE task_id = ?1",
+            [task_id],
+        )?;
+
+        replay_events(&conn, task_id)?;
+        unlock_ready_steps(&conn, task_id)?;
+
+        let mut status: BTreeMap<String, String> = BTreeMap::new();
+        let mut stmt = conn.prepare(
+            "SELECT step_id, status FROM step_status WHERE task_id = ?1 ORDER BY step_id",
+        )?;
+        let rows = stmt.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+
+        for row in rows.filter_map(|r| r.ok()) {
+            status.insert(row.0, row.1);
+        }
+
+        println!("RECONCILE OK");
+        println!("STEP_STATUS: {:?}", status);
+        Ok(status)
+    }
+
+    fn schedule_next_steps(&self, task_id: &str) -> Result<BTreeMap<String, String>> {
+        let mut conn = self.conn()?;
+        self.seed_dependencies(task_id)?;
+        let tx = conn.transaction()?;
+
+        tx.execute(
+            "UPDATE step_status
+             SET status = 'pending'
+             WHERE task_id = ?1
+               AND status NOT IN ('dispatched','committed','rejected')",
+            [task_id],
+        )?;
+
+        tx.execute(
+            "UPDATE step_status
+             SET status = 'ready'
+             WHERE task_id = ?1
+               AND status = 'dispatched'
+               AND NOT EXISTS (
+                   SELECT 1 FROM leases
+                   WHERE task_id = ?1
+                     AND step_id = step_status.step_id
+                     AND state = 'active'
+               )",
+            [task_id],
+        )?;
+
+        replay_events(&tx, task_id)?;
+        unlock_ready_steps(&tx, task_id)?;
+
+        let ready: Vec<String> = ordered_step_ids(&tx, task_id)?
+            .into_iter()
+            .filter(|step_id| {
+                let status: Option<String> = tx
+                    .query_row(
+                        "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                        params![task_id, step_id],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+
+                if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
+                    return false;
+                }
+
+                let active_lease: Option<i64> = tx
+                    .query_row(
+                        "SELECT 1 FROM leases WHERE task_id = ?1 AND step_id = ?2 AND state = 'active' LIMIT 1",
+                        params![task_id, step_id],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+
+                active_lease.is_none()
+            })
+            .collect();
+        println!("READY_QUEUE: {:?}", ready);
+
+        for step_id in ready {
+            let current_generation: i64 = tx.query_row(
+                "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
+                [],
+                |r| r.get(0),
+            )?;
+
+            let lease_seq: i64 = tx.query_row(
+                "SELECT COALESCE(COUNT(*), 0) + 1 FROM leases WHERE task_id = ?1 AND step_id = ?2",
+                params![task_id, step_id],
+                |r| r.get(0),
+            )?;
+            let lease_id = format!("{task_id}/{step_id}/lease/{lease_seq}");
+
+            let inserted = tx.execute(
+                "INSERT INTO leases
+                 (lease_id, task_id, step_id, worker_id, acquired_generation, expires_at_generation, state)
+                 SELECT ?1, ?2, ?3, 'worker-scheduler', ?4, ?5, 'active'
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM leases
+                     WHERE task_id = ?2 AND step_id = ?3 AND state = 'active'
+                 )",
+                params![lease_id, task_id, step_id, current_generation, current_generation + 2],
+            )?;
+
+            if inserted == 0 {
+                continue;
+            }
+
+            tx.execute(
+                "UPDATE step_status
+                 SET status = 'dispatched'
+                 WHERE task_id = ?1 AND step_id = ?2 AND status = 'ready'",
+                params![task_id, step_id],
+            )?;
+
+            let causal_unit_id = current_generation + 1;
+
+            let lease_payload = json!({
+                "lease_id": lease_id,
+                "worker_id": "worker-scheduler",
+                "acquired_generation": current_generation,
+                "expires_at_generation": current_generation + 2
+            });
+            let lease_payload_str = canonical_json(&lease_payload)?;
+
+            tx.execute(
+                "INSERT INTO event_log
+                 (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, 0, ?3, ?4, 'LEASE_ACQUIRED', ?5, ?6)",
+                params![
+                    causal_unit_id,
+                    causal_unit_id,
+                    task_id,
+                    step_id,
+                    lease_payload_str,
+                    causal_unit_id
+                ],
+            )?;
+
+            let dispatch_payload = json!({
+                "lease_id": lease_id,
+                "worker_id": "worker-scheduler"
+            });
+            let dispatch_payload_str = canonical_json(&dispatch_payload)?;
+
+            tx.execute(
+                "INSERT INTO event_log
+                 (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, 1, ?3, ?4, 'STEP_DISPATCHED', ?5, ?6)",
+                params![
+                    causal_unit_id,
+                    causal_unit_id,
+                    task_id,
+                    step_id,
+                    dispatch_payload_str,
+                    causal_unit_id
+                ],
+            )?;
+
+            println!("DISPATCHED: {}", step_id);
+        }
+
+        tx.commit()?;
+
+        let mut status: BTreeMap<String, String> = BTreeMap::new();
+        let conn2 = self.conn()?;
+        let mut stmt = conn2.prepare(
+            "SELECT step_id, status FROM step_status WHERE task_id = ?1 ORDER BY step_id",
+        )?;
+        let rows = stmt.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+
+        for row in rows.filter_map(|r| r.ok()) {
+            status.insert(row.0, row.1);
+        }
+
+        println!("STEP_STATUS: {:?}", status);
+        Ok(status)
+    }
+
+    fn get_next_ready_step(&self, task_id: &str) -> Result<Option<String>> {
+        let conn = self.conn()?;
+        for step_id in ordered_step_ids(&conn, task_id)? {
+            let status: Option<String> = conn
+                .query_row(
+                    "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
+                    params![task_id, step_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+
+            if !matches!(status.as_deref(), Some("ready") | Some("dispatched")) {
+                continue;
+            }
+
+            let active_lease: Option<i64> = conn
+                .query_row(
+                    "SELECT 1 FROM leases WHERE task_id = ?1 AND step_id = ?2 AND state = 'active' LIMIT 1",
+                    params![task_id, step_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+
+            if active_lease.is_none() {
+                return Ok(Some(step_id));
+            }
+        }
+        Ok(None)
+    }
+
+    fn get_current_status_map(&self, task_id: &str) -> Result<BTreeMap<String, String>> {
+        let conn = self.conn()?;
+        let mut out = BTreeMap::new();
+        let mut stmt = conn.prepare(
+            "SELECT step_id, status FROM step_status WHERE task_id = ?1 ORDER BY step_id",
+        )?;
+        let rows = stmt.query_map([task_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+
+        for row in rows.filter_map(|r| r.ok()) {
+            out.insert(row.0, row.1);
+        }
+        Ok(out)
+    }
+
+    fn unlock_ready_steps_by_db(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn()?;
+        unlock_ready_steps(&conn, task_id)
+    }
+
+    fn seed_demo_leases(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn()?;
+        let current_generation: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        conn.execute(
+            "INSERT OR IGNORE INTO leases
+             (lease_id, task_id, step_id, worker_id, acquired_generation, expires_at_generation, state)
+             VALUES (?1, ?2, ?3, 'worker-demo', ?4, ?5, 'active')",
+            params![
+                format!("{task_id}/step_2/lease"),
+                task_id,
+                "step_2",
+                current_generation,
+                current_generation - 1
+            ],
+        )?;
+
+        println!("LEASE_SEED_OK");
+        Ok(())
+    }
+
+    fn expire_leases(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn()?;
+        let current_generation: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let mut stmt = conn.prepare(
+            "SELECT lease_id, step_id FROM leases WHERE task_id = ?1 AND state = 'active' AND expires_at_generation <= ?2 ORDER BY step_id",
+        )?;
+
+        let rows = stmt.query_map(params![task_id, current_generation], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+
+        let expired: Vec<(String, String)> = rows.filter_map(|r| r.ok()).collect();
+
+        for (lease_id, step_id) in &expired {
+            conn.execute(
+                "UPDATE leases SET state = 'expired' WHERE lease_id = ?1 AND state = 'active'",
+                [lease_id],
+            )?;
+
+            let payload = json!({
+                "lease_id": lease_id,
+                "reason": "generation_timeout"
+            });
+            let payload_str = canonical_json(&payload)?;
+
+            conn.execute(
+                "INSERT INTO event_log
+                 (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, 0, ?3, ?4, 'LEASE_EXPIRED', ?5, ?6)",
+                params![
+                    current_generation + 1,
+                    current_generation + 1,
+                    task_id,
+                    step_id,
+                    payload_str,
+                    current_generation + 1
+                ],
+            )?;
+
+            conn.execute(
+                "UPDATE step_status SET status = 'ready' WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
+                params![task_id, step_id],
+            )?;
+        }
+
+        println!("LEASE_EXPIRE_OK");
+        println!("EXPIRED_LEASES: {}", expired.len());
+        Ok(())
+    }
+
+    fn list_semantic_artifacts(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+    ) -> Result<Vec<crate::event_bus::SemanticArtifactRow>> {
+        let conn = self.conn()?;
+        let rows = if let Some(sid) = step_id {
+            let mut stmt = conn.prepare(
+                "SELECT artifact_id, task_id, step_id, source_generation, artifact_type, payload, created_at
+                 FROM semantic_artifacts
+                 WHERE task_id = ?1 AND step_id = ?2
+                 ORDER BY source_generation DESC, artifact_id DESC",
+            )?;
+            let mapped = stmt.query_map(params![task_id, sid], |r| {
+                Ok(crate::event_bus::SemanticArtifactRow {
+                    artifact_id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    step_id: r.get(2)?,
+                    source_generation: r.get(3)?,
+                    artifact_type: r.get(4)?,
+                    payload: r.get(5)?,
+                    created_at: r.get(6)?,
+                })
+            })?;
+            let mut res = Vec::new();
+            for r in mapped {
+                res.push(r?);
+            }
+            res
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT artifact_id, task_id, step_id, source_generation, artifact_type, payload, created_at
+                 FROM semantic_artifacts
+                 WHERE task_id = ?1
+                 ORDER BY source_generation DESC, artifact_id DESC",
+            )?;
+            let mapped = stmt.query_map([task_id], |r| {
+                Ok(crate::event_bus::SemanticArtifactRow {
+                    artifact_id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    step_id: r.get(2)?,
+                    source_generation: r.get(3)?,
+                    artifact_type: r.get(4)?,
+                    payload: r.get(5)?,
+                    created_at: r.get(6)?,
+                })
+            })?;
+            let mut res = Vec::new();
+            for r in mapped {
+                res.push(r?);
+            }
+            res
+        };
+        Ok(rows)
+    }
+
+    fn start_step(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
+        let required_capability = if let Ok(spec) = self.load_exec_spec(task_id) {
+            if let Some(step_spec) = spec.steps.iter().find(|s| s.step_id == step_id) {
+                let cap_constraint = step_spec
+                    .constraints
+                    .iter()
+                    .find(|c| c.key == "required_capability");
+                if let Some(c) = cap_constraint {
+                    match c.value.as_str() {
+                        "Planner" => Some(WorkerCapability::Planner),
+                        "Executor" => Some(WorkerCapability::Executor),
+                        "Verifier" => Some(WorkerCapability::Verifier),
+                        "LegacyGeneric" => Some(WorkerCapability::LegacyGeneric),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let required_capability = if let Some(cap) = required_capability {
+            cap
+        } else {
+            let slug = step_id
+                .split_once('_')
+                .map(|(_, rest)| rest)
+                .unwrap_or(step_id);
+            let step_kind = match slug {
+                "tighten_planner_prompt" => {
+                    crate::workflow::contract::StepKind::TightenPlannerPrompt
+                }
+                "normalize_planner_output" => {
+                    crate::workflow::contract::StepKind::NormalizePlannerOutput
+                }
+                "add_llm_fallback_handling" => {
+                    crate::workflow::contract::StepKind::AddLlmFallbackHandling
+                }
+                "add_planner_test_coverage" => {
+                    crate::workflow::contract::StepKind::AddPlannerTestCoverage
+                }
+                "validate_planner_output" => {
+                    crate::workflow::contract::StepKind::ValidatePlannerOutput
+                }
+                "analyze_task" => crate::workflow::contract::StepKind::AnalyzeTask,
+                "plan_execution" => crate::workflow::contract::StepKind::PlanExecution,
+                "execute_changes" => crate::workflow::contract::StepKind::ExecuteChanges,
+                "read_repository" => crate::workflow::contract::StepKind::ReadRepository,
+                "locate_bug" => crate::workflow::contract::StepKind::LocateBug,
+                "patch_code" => crate::workflow::contract::StepKind::PatchCode,
+                "run_tests" => crate::workflow::contract::StepKind::RunTests,
+                "validate_patch" => crate::workflow::contract::StepKind::ValidatePatch,
+                _ => return Err(anyhow!("unknown step id: {}", step_id)),
+            };
+            crate::workflow::contract::required_capability_for_step(&step_kind)
+        };
+
+        let worker_capability = capability_for_worker_id(worker_id)?;
+
+        if worker_capability != required_capability
+            && worker_capability != WorkerCapability::LegacyGeneric
+        {
+            return Err(anyhow!(
+                "worker capability mismatch for step: worker={:?}, required={:?}, step_id={}",
+                worker_capability,
+                required_capability,
+                step_id
+            ));
+        }
+
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let lease_id: String = tx
+            .query_row(
+                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                params![task_id, step_id, worker_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
+
+        let next_generation: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let payload = json!({
+            "lease_id": lease_id,
+            "worker_id": worker_id
+        });
+        let payload_str = canonical_json(&payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, 0, ?3, ?4, 'STEP_STARTED', ?5, ?6)",
+            params![
+                next_generation,
+                next_generation,
+                task_id,
+                step_id,
+                payload_str,
+                next_generation
+            ],
+        )?;
+
+        tx.commit()?;
+        println!("STEP_RUNNING_OK");
+        println!("WORKER: {}", worker_id);
+        println!("STEP: {}", step_id);
+        Ok(())
+    }
+
+    fn heartbeat(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let lease_id: String = tx
+            .query_row(
+                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                params![task_id, step_id, worker_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
+
+        let current_generation: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
+            [],
+            |r| r.get(0),
+        )?;
+
+        tx.execute(
+            "UPDATE leases
+             SET expires_at_generation = ?1
+             WHERE lease_id = ?2 AND worker_id = ?3 AND state = 'active'",
+            params![current_generation + 2, lease_id, worker_id],
+        )?;
+
+        let next_generation: i64 = current_generation + 1;
+        let payload = json!({
+            "lease_id": lease_id,
+            "worker_id": worker_id,
+            "expires_at_generation": current_generation + 2
+        });
+        let payload_str = canonical_json(&payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, 0, ?3, ?4, 'WORKER_HEARTBEAT', ?5, ?6)",
+            params![
+                next_generation,
+                next_generation,
+                task_id,
+                step_id,
+                payload_str,
+                next_generation
+            ],
+        )?;
+
+        tx.commit()?;
+        println!("WORKER_HEARTBEAT_OK");
+        println!("WORKER: {}", worker_id);
+        println!("STEP: {}", step_id);
+        Ok(())
+    }
+
+    fn fail_step(&self, task_id: &str, worker_id: &str, step_id: &str, reason: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let lease_id: String = tx
+            .query_row(
+                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                params![task_id, step_id, worker_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
+
+        let next_generation: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let outcome = classify_failure_outcome(reason);
+        let fail_payload = json!({
+            "lease_id": lease_id,
+            "worker_id": worker_id,
+            "reason": reason,
+            "outcome": format!("{:?}", outcome)
+        });
+        let fail_payload_str = canonical_json(&fail_payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                next_generation,
+                next_generation,
+                task_id,
+                step_id,
+                outcome_to_event_type(outcome),
+                fail_payload_str,
+                next_generation
+            ],
+        )?;
+
+        let new_status = match outcome {
+            StepOutcome::RetryableFailure | StepOutcome::Blocked => "pending",
+            _ => "rejected",
+        };
+
+        tx.execute(
+            "UPDATE step_status SET status = ?3 WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
+            params![task_id, step_id, new_status],
+        )?;
+
+        tx.execute(
+            "UPDATE leases SET state = 'released' WHERE lease_id = ?1 AND worker_id = ?2 AND state = 'active'",
+            params![lease_id, worker_id],
+        )?;
+
+        tx.commit()?;
+        println!("STEP_FAIL_OK");
+        println!("WORKER: {}", worker_id);
+        println!("STEP_FAILED_BY_WORKER: {}", step_id);
+        println!("REASON: {}", reason);
+        Ok(())
+    }
+
+    fn complete_step(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let lease_id: String = tx
+            .query_row(
+                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                params![task_id, step_id, worker_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
+
+        let next_generation: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let outcome = StepOutcome::Success;
+        let effect_id = format!("effect/{}/{}", task_id, step_id);
+
+        let reserve_payload = json!({
+            "effect_id": effect_id,
+            "lease_id": lease_id,
+            "worker_id": worker_id
+        });
+        let reserve_payload_str = canonical_json(&reserve_payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, 0, ?3, ?4, 'EFFECT_RESERVED', ?5, ?6)",
+            params![
+                next_generation,
+                next_generation,
+                task_id,
+                step_id,
+                reserve_payload_str,
+                next_generation
+            ],
+        )?;
+
+        let complete_generation = next_generation + 1;
+        let complete_payload = json!({
+            "effect_id": effect_id,
+            "lease_id": lease_id,
+            "worker_id": worker_id,
+            "result": "ok",
+            "outcome": format!("{:?}", outcome)
+        });
+        let complete_payload_str = canonical_json(&complete_payload)?;
+
+        tx.execute(
+            "INSERT INTO event_log
+             (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+             VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                complete_generation,
+                complete_generation,
+                task_id,
+                step_id,
+                outcome_to_event_type(outcome),
+                complete_payload_str,
+                complete_generation
+            ],
+        )?;
+
+        tx.execute(
+            "UPDATE step_status SET status = 'committed' WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
+            params![task_id, step_id],
+        )?;
+
+        tx.execute(
+            "UPDATE leases SET state = 'completed' WHERE lease_id = ?1 AND worker_id = ?2 AND state = 'active'",
+            params![lease_id, worker_id],
+        )?;
+
+        tx.commit()?;
+        println!("STEP_COMPLETE_OK");
+        println!("WORKER: {}", worker_id);
+        println!("STEP_COMPLETED_BY_WORKER: {}", step_id);
+        Ok(())
+    }
+
+    fn replay_validate(&self, task_id: &str) -> bool {
+        let conn = match self.conn() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        let mut stmt = match conn.prepare(
+            "SELECT causal_unit_id, sequence_in_unit, event_type
+             FROM event_log
+             WHERE task_id = ?1
+             ORDER BY causal_unit_id, sequence_in_unit",
+        ) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+
+        let rows = match stmt.query_map([task_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) {
+            Ok(r) => r,
+            Err(_) => return false,
+        };
+
+        let mut units: BTreeMap<i64, Vec<(i64, String)>> = BTreeMap::new();
+        for row in rows.filter_map(|r| r.ok()) {
+            units.entry(row.0).or_default().push((row.1, row.2));
+        }
+
+        let mut ok = true;
+        for (unit_id, events) in &units {
+            for (i, (seq, _)) in events.iter().enumerate() {
+                if *seq != i as i64 {
+                    eprintln!("INVALID unit {}: gap at {}", unit_id, i);
+                    ok = false;
+                }
+            }
+
+            let types: Vec<&str> = events.iter().map(|(_, t)| t.as_str()).collect();
+            let pos = |name: &str| types.iter().position(|&t| t == name);
+
+            let pos_reserved = || pos("EFFECT_RESERVED").or_else(|| pos("ArtifactProduced"));
+            let pos_dispatched = || pos("STEP_DISPATCHED").or_else(|| pos("PrimitiveScheduled"));
+            let pos_completed = || pos("STEP_COMPLETED").or_else(|| pos("PrimitiveCompleted"));
+            let pos_failed = || pos("STEP_FAILED").or_else(|| pos("PrimitiveFailed"));
+
+            if let (Some(a), Some(b)) = (pos("LEASE_ACQUIRED"), pos_reserved()) {
+                if a >= b {
+                    eprintln!(
+                        "INVALID unit {}: LEASE_ACQUIRED must precede EFFECT_RESERVED",
+                        unit_id
+                    );
+                    ok = false;
+                }
+            }
+
+            if let (Some(a), Some(b)) = (pos_reserved(), pos_dispatched()) {
+                if a >= b {
+                    eprintln!(
+                        "INVALID unit {}: EFFECT_RESERVED must precede STEP_DISPATCHED",
+                        unit_id
+                    );
+                    ok = false;
+                }
+            }
+
+            let completed = pos_completed();
+            let failed = pos_failed();
+
+            if completed.is_some() && failed.is_some() {
+                eprintln!(
+                    "INVALID unit {}: both STEP_COMPLETED and STEP_FAILED present",
+                    unit_id
+                );
+                ok = false;
+            }
+
+            if completed.is_none()
+                && failed.is_none()
+                && (types.contains(&"STEP_DISPATCHED") || types.contains(&"PrimitiveScheduled"))
+            {
+                eprintln!(
+                    "INVALID unit {}: dispatched step has no terminal event",
+                    unit_id
+                );
+                ok = false;
+            }
+        }
+
+        let reserved: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'reserved'",
+                [task_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let committed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'committed'",
+                [task_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let rejected: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'rejected'",
+                [task_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        if reserved != 0 {
+            eprintln!(
+                "INVALID task {}: {} reserved effects remain",
+                task_id, reserved
+            );
+            ok = false;
+        }
+
+        println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
+        println!("COMMITTED_EFFECTS: {}", committed);
+        println!("REJECTED_EFFECTS: {}", rejected);
+        ok
+    }
+
+    fn commit_causal_unit(
+        &self,
+        task_id: &str,
+        step_id: &str,
+        events: Vec<(String, Value)>,
+    ) -> Result<i64> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        let unit_gen: i64 = tx.query_row(
+            "INSERT INTO generations DEFAULT VALUES RETURNING id",
+            [],
+            |r| r.get(0),
+        )?;
+
+        for (seq, (event_type, payload)) in events.iter().enumerate() {
+            if event_type == "EFFECT_RESERVED" || event_type == "ArtifactProduced" {
+                let effect_id = payload
+                    .get("effect_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        anyhow!("missing effect_id in EFFECT_RESERVED/ArtifactProduced payload")
+                    })?;
+
+                tx.execute(
+                    "INSERT INTO effect_ledger
+                     (effect_id, task_id, step_id, reservation_generation, state)
+                     VALUES (?1, ?2, ?3, ?4, 'reserved')",
+                    params![effect_id, task_id, step_id, unit_gen],
+                )
+                .map_err(|e| anyhow!("reserve effect {effect_id}: {e}"))?;
+            }
+
+            if event_type == "STEP_COMPLETED" || event_type == "PrimitiveCompleted" {
+                let effect_id = payload
+                    .get("effect_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        anyhow!("missing effect_id in STEP_COMPLETED/PrimitiveCompleted payload")
+                    })?;
+
+                tx.execute(
+                    "UPDATE effect_ledger
+                     SET state = 'committed'
+                     WHERE effect_id = ?1 AND task_id = ?2 AND step_id = ?3 AND state = 'reserved'",
+                    params![effect_id, task_id, step_id],
+                )
+                .map_err(|e| anyhow!("commit effect {effect_id}: {e}"))?;
+            }
+
+            if event_type == "STEP_FAILED" || event_type == "PrimitiveFailed" {
+                let effect_id = payload
+                    .get("effect_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        anyhow!("missing effect_id in STEP_FAILED/PrimitiveFailed payload")
+                    })?;
+
+                tx.execute(
+                    "UPDATE effect_ledger
+                     SET state = 'rejected'
+                     WHERE effect_id = ?1 AND task_id = ?2 AND step_id = ?3 AND state = 'reserved'",
+                    params![effect_id, task_id, step_id],
+                )
+                .map_err(|e| anyhow!("reject effect {effect_id}: {e}"))?;
+            }
+
+            let payload_str = canonical_json(payload)?;
+
+            tx.execute(
+                "INSERT INTO event_log
+                 (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    unit_gen,
+                    unit_gen,
+                    seq as i64,
+                    task_id,
+                    step_id,
+                    event_type,
+                    payload_str,
+                    unit_gen
+                ],
+            )
+            .map_err(|e| anyhow!("insert event seq={seq}: {e}"))?;
+        }
+
+        tx.commit()?;
+        Ok(unit_gen)
+    }
+
+    fn query_events(&self, task_id: &str) -> Result<Vec<crate::event_bus::EventRow>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT event_id, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload
+             FROM event_log
+             WHERE task_id = ?1
+             ORDER BY causal_unit_id, sequence_in_unit",
+        )?;
+
+        let rows = stmt.query_map([task_id], |r| {
+            Ok(crate::event_bus::EventRow {
+                event_id: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                causal_unit_id: r.get(1)?,
+                sequence_in_unit: r.get(2)?,
+                task_id: r.get(3)?,
+                step_id: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                event_type: r.get(5)?,
+                payload: r.get(6)?,
+            })
+        })?;
+
+        let mut res = Vec::new();
+        for r in rows {
+            res.push(r?);
+        }
+        Ok(res)
+    }
+
+    fn list_execution_events(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<crate::kernel_types::ExecutionEvent>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, event_type, payload \
+             FROM event_log \
+             WHERE task_id = ?1 \
+               AND event_type != 'EFFECT_RESERVED' \
+             ORDER BY causal_unit_id, sequence_in_unit, id",
+        )?;
+
+        let mapped = stmt.query_map([task_id], |r| {
+            let id: i64 = r.get(0)?;
+            let task_id: String = r.get(1)?;
+            let event_type: String = r.get(2)?;
+            let payload_raw: String = r.get(3)?;
+            let payload: Value =
+                serde_json::from_str(&payload_raw).unwrap_or(Value::String(payload_raw));
+
+            Ok(crate::kernel_types::ExecutionEvent {
+                id: format!("evt-{}", id),
+                task_id,
+                timestamp: "event_log".to_string(),
+                event_type,
+                payload,
+                caused_by: None,
+                trust_context: crate::kernel_types::TrustContext {
+                    source: "event_bus".into(),
+                    trust_level: crate::kernel_types::TrustLevel::High,
+                    verification_status: "recorded".into(),
+                    policy_version: "v1".into(),
+                },
+            })
+        })?;
+
+        let mut res = Vec::new();
+        for r in mapped {
+            res.push(r?);
+        }
+        Ok(res)
+    }
+
+    fn save_replay_capsule(&self, capsule: &crate::kernel_types::ReplayCapsule) -> Result<()> {
+        let conn = self.conn()?;
+        let payload = serde_json::to_string(capsule)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO replay_capsules (capsule_id, task_id, created_at, payload) VALUES (?1, ?2, ?3, ?4)",
+            params![capsule.capsule_id, capsule.execution_id, capsule.created_at, payload],
+        )?;
+        Ok(())
+    }
+
+    fn latest_replay_capsule(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<crate::kernel_types::ReplayCapsule>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT payload
+             FROM replay_capsules
+             WHERE task_id = ?1
+             ORDER BY created_at DESC, capsule_id DESC
+             LIMIT 1",
+        )?;
+
+        let row: Option<String> = stmt
+            .query_row([task_id], |r| r.get::<_, String>(0))
+            .optional()?;
+
+        match row {
+            Some(payload) => {
+                let capsule = serde_json::from_str::<crate::kernel_types::ReplayCapsule>(&payload)?;
+                Ok(Some(capsule))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>> {
+        let conn = self.conn()?;
+        let row: Option<(String, String, i64, String)> = conn
+            .query_row(
+                "SELECT execution_result, output_hash, duration_ms, metadata FROM execution_cache WHERE cache_key = ?1",
+                [key],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+
+        match row {
+            Some((res, hash, dur, meta)) => Ok(Some(CacheRecord {
+                execution_result: res,
+                output_hash: hash,
+                duration_ms: dur,
+                metadata: meta,
+            })),
+            None => Ok(None),
+        }
+    }
+
+    fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO execution_cache (cache_key, execution_result, output_hash, duration_ms, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                key,
+                record.execution_result,
+                record.output_hash,
+                record.duration_ms,
+                record.metadata
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn print_stats(&self) -> Result<(i64, i64, i64, i64)> {
+        let conn = self.conn()?;
+        let events: i64 = conn
+            .query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get(0))
+            .unwrap_or(0);
+        let causal_units: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT causal_unit_id) FROM event_log",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let max_generation: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let tasks: i64 = conn
+            .query_row("SELECT COUNT(DISTINCT task_id) FROM event_log", [], |r| {
+                r.get(0)
+            })
+            .unwrap_or(0);
+        Ok((events, causal_units, max_generation, tasks))
+    }
+
+    fn table_exists(&self, table: &str) -> bool {
+        let conn = match self.conn() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        conn.query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1 LIMIT 1",
+            [table],
+            |_r| Ok(()),
+        )
+        .is_ok()
+    }
+
+    fn reset_db(&self) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute_batch(
+            r#"
+            PRAGMA wal_checkpoint(FULL);
+            DELETE FROM event_log;
+            DELETE FROM effect_ledger;
+            DELETE FROM step_dependencies;
+            DELETE FROM step_status;
+            DELETE FROM state_snapshots;
+            DELETE FROM generations;
+            VACUUM;
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn vacuum_db(&self) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute_batch(
+            r#"
+            PRAGMA wal_checkpoint(FULL);
+            VACUUM;
+            "#,
+        )?;
+        Ok(())
+    }
+
+    fn insert_task(&self, task_id: &str, task_class: &str, exec_spec: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?2, ?3)",
+            params![task_id, task_class, exec_spec],
+        )?;
+        Ok(())
+    }
+
+    fn get_semantic_bias_payload(&self, task_id: &str) -> Result<String> {
+        let conn = self.conn()?;
+        let res = conn.query_row(
+            "SELECT input_representation FROM semantic_bias_artifacts WHERE task_id = ?1 ORDER BY artifact_id DESC LIMIT 1",
+            [task_id],
+            |r| r.get::<_, String>(0),
+        )?;
+        Ok(res)
+    }
+
+    fn emit_bias_artifact(
+        &self,
+        id: &str,
+        task_bias_id: &str,
+        step_bias_id: &str,
+        created_at: i64,
+        artifact_type: &str,
+        payload: &str,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS bias_artifacts (
+                id            TEXT PRIMARY KEY,
+                task_bias_id  TEXT NOT NULL,
+                step_bias_id  TEXT NOT NULL,
+                created_at    INTEGER NOT NULL,
+                artifact_type TEXT NOT NULL,
+                payload       TEXT NOT NULL
+            );
+            ",
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO bias_artifacts
+             (id, task_bias_id, step_bias_id, created_at, artifact_type, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                id,
+                task_bias_id,
+                step_bias_id,
+                created_at,
+                artifact_type,
+                payload
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn latest_bias_artifact(
+        &self,
+        task_bias_id: &str,
+        step_bias_id: &str,
+    ) -> Result<(String, String, String, i64, String, String)> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, task_bias_id, step_bias_id, created_at, artifact_type, payload
+             FROM bias_artifacts
+             WHERE task_bias_id = ?1 AND step_bias_id = ?2
+             ORDER BY created_at DESC LIMIT 1",
+        )?;
+        let row = stmt.query_row(params![task_bias_id, step_bias_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+            ))
+        })?;
+        Ok(row)
+    }
+}

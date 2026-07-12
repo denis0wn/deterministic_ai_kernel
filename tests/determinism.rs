@@ -1,8 +1,7 @@
 use std::process::Command;
 
 fn run_kernel(args: &[&str]) -> (String, bool) {
-    let out = Command::new("cargo")
-        .args(["run", "--quiet", "--bin", "run", "--"])
+    let out = Command::new(env!("CARGO_BIN_EXE_run"))
         .args(args)
         .output()
         .expect("failed to run kernel");

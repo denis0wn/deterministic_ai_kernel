@@ -2,21 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TrustLevel {
-    Low,
-    Medium,
-    High,
-    Critical,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TrustContext {
-    pub source: String,
-    pub trust_level: TrustLevel,
-    pub verification_status: String,
-    pub policy_version: String,
-}
+pub use crate::execution_abi::{TrustContext, TrustLevel};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionEvent {

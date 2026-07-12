@@ -1,0 +1,13 @@
+Iterate through each change and apply its operation to the scheduler state, then return the final state.
+
+```python
+def ExecuteChanges(scheduler, changes):
+    for change in changes:
+        operation = change.get("operation")
+        params = change.get("params", {})
+        if operation == "add_task":
+            scheduler.add_task(params)
+        elif operation == "remove_task":
+            scheduler.remove_task(params)
+    return scheduler
+```

@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db(name: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("deterministic_ai_kernel_{}_{}.db", name, nanos))
@@ -25,7 +25,7 @@ fn run(db: &str, args: &[&str]) -> String {
         .env("KERNEL_DB_PATH", db)
         .args(args)
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         out.status.success(),
@@ -34,14 +34,14 @@ fn run(db: &str, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    String::from_utf8(out.stdout).unwrap()
+    String::from_utf8(out.stdout).expect("test failure")
 }
 
 fn latest_payload(db: &str, task: &str, step: &str) -> Value {
     let stdout = run(db, &["latest-bias-artifact", task, step]);
     let line = stdout.lines().next().expect("expected artifact row");
     let cols: Vec<&str> = line.splitn(6, '\t').collect();
-    serde_json::from_str(cols[5]).unwrap()
+    serde_json::from_str(cols[5]).expect("test failure")
 }
 
 fn long_chain_steps() -> Vec<&'static str> {

@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -32,21 +32,21 @@ fn capture_capsule_save_json_reports_saved_capsule() {
     let db = unique_db_path("capture_capsule_save_cli_json");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
     bus.append_event(
         "task-capture-json",
         Some("01_analyze_task"),
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_event(
         "task-capture-json",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     let (out, success) = run_kernel(
         &db,
@@ -63,7 +63,7 @@ fn capture_capsule_save_json_reports_saved_capsule() {
     assert_eq!(parsed["report"]["events"], 2);
     assert!(parsed["report"]["capsule_id"]
         .as_str()
-        .unwrap()
+        .expect("test failure")
         .starts_with("capsule-"));
 
     let _ = fs::remove_file(&db);

@@ -1,0 +1,24 @@
+```python
+def AnalyzeTask(task_list):
+    ALLOWED_FIELDS = {"id", "name", "type", "priority", "status", "description"}
+    result = []
+
+    for task in task_list:
+        operations = []
+        is_valid = True
+        for field, value in task.items():
+            if field in ALLOWED_FIELDS:
+                operations.append(f"Set {field} to {value}")
+            else:
+                is_valid = False
+                break
+
+        if not is_valid:
+            result.append({"task_id": task.get("id"), "valid": False, "error": "Unknown field"})
+        elif not operations:
+            result.append({"task_id": task.get("id"), "valid": False, "error": "No valid fields"})
+        else:
+            result.append({"task_id": task.get("id"), "valid": True, "operations": operations})
+
+    return result
+```

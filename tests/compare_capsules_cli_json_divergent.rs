@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -41,7 +41,7 @@ fn compare_capsules_json_reports_divergent_with_diff_payload() {
     let db = unique_db_path("compare_capsules_cli_json_divergent");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
 
     bus.append_event(
         "task-left-json",
@@ -49,14 +49,14 @@ fn compare_capsules_json_reports_divergent_with_diff_payload() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_event(
         "task-left-json",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     bus.append_event(
         "task-right-json",
@@ -64,12 +64,14 @@ fn compare_capsules_json_reports_divergent_with_diff_payload() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
 
-    let left_capsule = build_replay_capsule(&bus, "task-left-json").unwrap();
-    let right_capsule = build_replay_capsule(&bus, "task-right-json").unwrap();
-    bus.save_replay_capsule(&left_capsule).unwrap();
-    bus.save_replay_capsule(&right_capsule).unwrap();
+    let left_capsule = build_replay_capsule(&bus, "task-left-json").expect("test failure");
+    let right_capsule = build_replay_capsule(&bus, "task-right-json").expect("test failure");
+    bus.save_replay_capsule(&left_capsule)
+        .expect("test failure");
+    bus.save_replay_capsule(&right_capsule)
+        .expect("test failure");
     drop(bus);
 
     let (out, success) = run_kernel(
@@ -88,11 +90,11 @@ fn compare_capsules_json_reports_divergent_with_diff_payload() {
     assert_eq!(parsed["report"]["status"], "divergent");
     assert!(parsed["report"]["explanation"]
         .as_str()
-        .unwrap()
+        .expect("test failure")
         .contains("event_ids differ"));
     assert!(!parsed["report"]["diff"]["event_ids"]["left_only"]
         .as_array()
-        .unwrap()
+        .expect("test failure")
         .is_empty());
 
     let _ = fs::remove_file(&db);

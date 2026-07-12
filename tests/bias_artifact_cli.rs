@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -16,8 +16,7 @@ fn unique_db_path(test_name: &str) -> PathBuf {
 }
 
 fn run_kernel(db: &Path, args: &[&str]) -> std::process::Output {
-    Command::new("cargo")
-        .args(["run", "--quiet", "--bin", "run", "--"])
+    Command::new(env!("CARGO_BIN_EXE_run"))
         .env("KERNEL_DB_PATH", db.as_os_str())
         .args(args)
         .output()
@@ -52,7 +51,7 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
     let list = run_kernel(&db, &["latest-bias-artifact", "task-bias", "step-bias"]);
     assert!(list.status.success());
 
-    let stdout = String::from_utf8(list.stdout).unwrap();
+    let stdout = String::from_utf8(list.stdout).expect("test failure");
     let line = stdout
         .lines()
         .next()
@@ -64,7 +63,7 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
     assert_eq!(cols[2], "step-bias");
     assert_eq!(cols[4], "semantic_bias_v1");
 
-    let payload: Value = serde_json::from_str(cols[5]).unwrap();
+    let payload: Value = serde_json::from_str(cols[5]).expect("test failure");
 
     assert_eq!(payload["version"], "v1");
     assert_eq!(payload["seed"], 0);
@@ -74,7 +73,10 @@ fn emit_bias_artifact_persists_semantic_bias_v1() {
     );
 
     let lines = payload["lines"].as_array().expect("lines must be an array");
-    let rendered: Vec<&str> = lines.iter().map(|v| v.as_str().unwrap()).collect();
+    let rendered: Vec<&str> = lines
+        .iter()
+        .map(|v| v.as_str().expect("test failure"))
+        .collect();
     assert!(rendered.contains(&"bias.version=v1"));
     assert!(rendered.contains(&"bias.meta.weighted_count=2"));
     assert!(rendered.contains(&"bias.weight.AnalyzeTask=1.000000"));

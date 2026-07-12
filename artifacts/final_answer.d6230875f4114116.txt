@@ -1,0 +1,30 @@
+Validate each plan entry, build a plan list, and return a structured result with plan count and list.
+
+```python
+def plan_execution(plan_list):
+    plan_list = plan_list or []
+    plan_ids = set()
+    plan_list = []
+
+    for plan in plan_list:
+        plan_id = plan.get("plan_id")
+        plan_name = plan.get("plan_name")
+        plan_data = plan.get("plan_data")
+
+        if not plan_id or not plan_name or not plan_data:
+            continue
+
+        if plan_name.strip() == "":
+            continue
+
+        if plan_id in plan_ids:
+            continue
+
+        plan_ids.add(plan_id)
+        plan_list.append(plan)
+
+    return {
+        "plan_count": len(plan_list),
+        "plan_list": plan_list,
+    }
+```

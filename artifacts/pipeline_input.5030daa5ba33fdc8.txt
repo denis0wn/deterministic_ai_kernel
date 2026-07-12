@@ -1,0 +1,1 @@
+Analyze this task: Find possible race conditions in an event-sourced deterministic scheduler. Return a short plan.

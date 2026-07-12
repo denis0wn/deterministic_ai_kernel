@@ -6,10 +6,11 @@ use crate::cli_json::comparison_report;
 use crate::event_bus;
 use crate::kernel_types::ReplayCapsule;
 use crate::lm_control;
+use crate::providers;
 use crate::replay::capsule::build_replay_capsule;
 use crate::snapshot;
 
-pub fn integrity_json_report(db: &str) -> Value {
+pub fn integrity_json_report(db: &str) -> Result<Value> {
     use std::fs;
 
     if std::path::Path::new(db).exists() {
@@ -18,34 +19,39 @@ pub fn integrity_json_report(db: &str) -> Value {
         let _ = fs::remove_file(format!("{db}-shm"));
     }
 
-    let conn = Connection::open(db).unwrap();
-    conn.execute_batch(include_str!("../event_bus/schema.sql"))
-        .unwrap();
-    drop(conn);
+    providers::get_storage().set_override_path(Some(db.to_string()));
 
-    snapshot::rebuild_snapshot(db, "integrity-task", true).unwrap();
-    snapshot::restore_snapshot(db, "integrity-task", true).unwrap();
+    let result = (|| -> Result<Value> {
+        let conn = Connection::open(db)?;
+        conn.execute_batch(include_str!("../event_bus/schema.sql"))?;
+        drop(conn);
 
-    let conn = Connection::open(db).unwrap();
-    let payload: String = conn
-        .query_row(
-            "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
-            ["integrity-task"],
-            |r| r.get(0),
-        )
-        .unwrap();
+        snapshot::rebuild_snapshot(db, "integrity-task", true)?;
+        snapshot::restore_snapshot(db, "integrity-task", true)?;
 
-    let parsed: Value = serde_json::from_str(&payload).unwrap();
+        let conn = Connection::open(db)?;
+        let payload: String = conn
+            .query_row(
+                "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
+                ["integrity-task"],
+                |r| r.get(0),
+            )?;
 
-    json!({
-        "ok": true,
-        "snapshot_version": parsed.get("snapshot_version").and_then(|v| v.as_u64()).unwrap_or(0),
-        "schema_version": parsed.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(0),
-        "created_at_present": parsed.get("created_at").and_then(|v| v.as_u64()).is_some(),
-        "state_hash_present": parsed.get("state_hash").and_then(|v| v.as_u64()).is_some(),
-        "state_present": parsed.get("state").and_then(|v| v.as_object()).is_some(),
-        "task_id": parsed.get("task_id").cloned().unwrap_or(Value::Null)
-    })
+        let parsed: Value = serde_json::from_str(&payload)?;
+
+        Ok(json!({
+            "ok": true,
+            "snapshot_version": parsed.get("snapshot_version").and_then(|v| v.as_u64()).unwrap_or(0),
+            "schema_version": parsed.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(0),
+            "created_at_present": parsed.get("created_at").and_then(|v| v.as_u64()).is_some(),
+            "state_hash_present": parsed.get("state_hash").and_then(|v| v.as_u64()).is_some(),
+            "state_present": parsed.get("state").and_then(|v| v.as_object()).is_some(),
+            "task_id": parsed.get("task_id").cloned().unwrap_or(Value::Null)
+        }))
+    })();
+
+    providers::get_storage().set_override_path(None);
+    result
 }
 
 pub fn doctor_json() -> Result<Value> {
@@ -90,12 +96,12 @@ pub struct CompareCapsulesSummary {
 }
 
 pub fn capture_capsule_save_text(db: &str, task_id: &str) -> Result<CaptureCapsuleSaveSummary> {
-    let bus = event_bus::EventBus::new(db).unwrap();
+    let bus = event_bus::EventBus::new(db)?;
     let capsule = build_replay_capsule(&bus, task_id)?;
     capsule
         .validate()
         .map_err(|e| anyhow!("capture-capsule-save invalid capsule: {}", e))?;
-    bus.save_replay_capsule(&capsule).unwrap();
+    bus.save_replay_capsule(&capsule)?;
     Ok(CaptureCapsuleSaveSummary {
         execution_id: capsule.execution_id.clone(),
         capsule_id: capsule.capsule_id.clone(),
@@ -106,7 +112,7 @@ pub fn capture_capsule_save_text(db: &str, task_id: &str) -> Result<CaptureCapsu
 }
 
 pub fn replay_capsule_text(db: &str, task_id: &str) -> Result<ReplayCapsuleSummary> {
-    let bus = event_bus::EventBus::new(db).unwrap();
+    let bus = event_bus::EventBus::new(db)?;
     let capsule = bus
         .latest_replay_capsule(task_id)?
         .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", task_id))?;
@@ -134,7 +140,7 @@ pub fn replay_capsule_json(db: &str, task_id: &str) -> Result<Value> {
 }
 
 pub fn compare_capsules_text(db: &str, left: &str, right: &str) -> Result<CompareCapsulesSummary> {
-    let bus = event_bus::EventBus::new(db).unwrap();
+    let bus = event_bus::EventBus::new(db)?;
     let left_capsule = bus
         .latest_replay_capsule(left)?
         .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", left))?;
@@ -209,7 +215,7 @@ pub fn compare_capsules_text(db: &str, left: &str, right: &str) -> Result<Compar
 }
 
 pub fn compare_capsules_json(db: &str, left: &str, right: &str) -> Result<Value> {
-    let bus = event_bus::EventBus::new(db).unwrap();
+    let bus = event_bus::EventBus::new(db)?;
     let left_capsule = bus
         .latest_replay_capsule(left)?
         .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", left))?;
@@ -217,12 +223,7 @@ pub fn compare_capsules_json(db: &str, left: &str, right: &str) -> Result<Value>
         .latest_replay_capsule(right)?
         .ok_or_else(|| anyhow!("no replay capsule found for task_id={}", right))?;
 
-    Ok(build_compare_report(
-        &left_capsule,
-        &right_capsule,
-        left,
-        right,
-    ))
+    build_compare_report(&left_capsule, &right_capsule, left, right)
 }
 
 fn build_compare_report(
@@ -230,7 +231,7 @@ fn build_compare_report(
     right_capsule: &ReplayCapsule,
     left: &str,
     right: &str,
-) -> Value {
+) -> Result<Value> {
     let left_valid = left_capsule.validate();
     let right_valid = right_capsule.validate();
     let left_valid_bool = left_valid.is_ok();
@@ -309,11 +310,11 @@ fn build_compare_report(
         .nodes
         .iter()
         .map(|n| {
-            let v = serde_json::to_value(n).unwrap();
-            let key = serde_json::to_string(&v).unwrap();
-            (key, v)
+            let v = serde_json::to_value(n)?;
+            let key = serde_json::to_string(&v)?;
+            Ok((key, v))
         })
-        .collect();
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
     let left_node_keys: std::collections::HashSet<_> =
         left_node_pairs.iter().map(|(key, _)| key.clone()).collect();
     let right_node_pairs: Vec<(String, serde_json::Value)> = right_capsule
@@ -321,11 +322,11 @@ fn build_compare_report(
         .nodes
         .iter()
         .map(|n| {
-            let v = serde_json::to_value(n).unwrap();
-            let key = serde_json::to_string(&v).unwrap();
-            (key, v)
+            let v = serde_json::to_value(n)?;
+            let key = serde_json::to_string(&v)?;
+            Ok((key, v))
         })
-        .collect();
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
     let right_node_keys: std::collections::HashSet<_> = right_node_pairs
         .iter()
         .map(|(key, _)| key.clone())
@@ -347,11 +348,11 @@ fn build_compare_report(
         .edges
         .iter()
         .map(|e| {
-            let v = serde_json::to_value(e).unwrap();
-            let key = serde_json::to_string(&v).unwrap();
-            (key, v)
+            let v = serde_json::to_value(e)?;
+            let key = serde_json::to_string(&v)?;
+            Ok((key, v))
         })
-        .collect();
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
     let left_edge_keys: std::collections::HashSet<_> =
         left_edge_pairs.iter().map(|(key, _)| key.clone()).collect();
     let right_edge_pairs: Vec<(String, serde_json::Value)> = right_capsule
@@ -359,11 +360,11 @@ fn build_compare_report(
         .edges
         .iter()
         .map(|e| {
-            let v = serde_json::to_value(e).unwrap();
-            let key = serde_json::to_string(&v).unwrap();
-            (key, v)
+            let v = serde_json::to_value(e)?;
+            let key = serde_json::to_string(&v)?;
+            Ok((key, v))
         })
-        .collect();
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
     let right_edge_keys: std::collections::HashSet<_> = right_edge_pairs
         .iter()
         .map(|(key, _)| key.clone())
@@ -380,7 +381,7 @@ fn build_compare_report(
         .map(|(_, value)| value.clone())
         .collect();
 
-    comparison_report(crate::cli_json::ComparisonReportInput {
+    Ok(comparison_report(crate::cli_json::ComparisonReportInput {
         left_task_id: left,
         right_task_id: right,
         left_capsule,
@@ -395,5 +396,5 @@ fn build_compare_report(
         right_only_nodes,
         left_only_edges,
         right_only_edges,
-    })
+    }))
 }

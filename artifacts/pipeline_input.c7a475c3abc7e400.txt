@@ -1,0 +1,13 @@
+
+CUSTOMER REQUEST:
+
+Explain the root cause of duplicate payments in distributed systems.
+
+Requirements:
+1. Identify root cause.
+2. Explain race conditions.
+3. Explain crash recovery.
+4. Provide deterministic remediation plan.
+5. Provide validation strategy.
+
+Return a complete engineering answer.

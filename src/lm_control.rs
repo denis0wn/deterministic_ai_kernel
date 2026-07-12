@@ -435,7 +435,7 @@ mod tests {
     fn doctor_json_report_has_expected_shape() {
         // doctor_json_report() must return raw Value — no CLI envelope here.
         // The interface layer (main.rs / cli_json) is responsible for wrapping.
-        let raw = doctor_json_report().unwrap();
+        let raw = doctor_json_report().expect("failed to generate doctor json report");
         assert!(raw.get("free_gb").is_some());
         assert!(raw.get("mlx_models").is_some());
         assert!(raw.get("roles").is_some());

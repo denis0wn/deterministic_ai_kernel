@@ -62,8 +62,8 @@ fn replay_capsule_v0_is_serializable_and_minimally_valid() {
         trust_context: trust(),
     };
 
-    let raw = serde_json::to_string_pretty(&capsule).unwrap();
-    let roundtrip: ReplayCapsule = serde_json::from_str(&raw).unwrap();
+    let raw = serde_json::to_string_pretty(&capsule).expect("test failure");
+    let roundtrip: ReplayCapsule = serde_json::from_str(&raw).expect("test failure");
 
     assert!(roundtrip.is_minimally_valid());
     assert_eq!(roundtrip.capsule_id, "cap-1");

@@ -19,7 +19,7 @@ fn register_and_retrieve_by_id() {
     let rec = make_record(42, None);
     let id = rec.id;
     reg.register(rec);
-    assert_eq!(reg.get(&id).unwrap().seed, 42);
+    assert_eq!(reg.get(&id).expect("test failure").seed, 42);
 }
 
 #[test]
@@ -79,14 +79,17 @@ fn parent_chain_is_preserved() {
     let child = make_record(2, Some(root_id));
     let child_id = child.id;
     reg.register(child);
-    assert_eq!(reg.get(&child_id).unwrap().parent, Some(root_id));
+    assert_eq!(
+        reg.get(&child_id).expect("test failure").parent,
+        Some(root_id)
+    );
 }
 
 #[test]
 fn registry_is_append_only() {
     let mut reg = ArtifactRegistry::new();
     let id = reg.register(make_record(1, None));
-    let before = reg.get(&id).unwrap().hash.clone();
+    let before = reg.get(&id).expect("test failure").hash.clone();
     reg.register(make_record(2, None));
-    assert_eq!(reg.get(&id).unwrap().hash, before);
+    assert_eq!(reg.get(&id).expect("test failure").hash, before);
 }

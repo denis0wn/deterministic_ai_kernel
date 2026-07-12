@@ -92,8 +92,8 @@ mod tests {
     use crate::planner_pipeline::replay::ReplayTape;
 
     fn tmp_store() -> (PersistenceStore, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
-        let store = PersistenceStore::new(StoreConfig::new(dir.path())).unwrap();
+        let dir = tempfile::tempdir().expect("test failure");
+        let store = PersistenceStore::new(StoreConfig::new(dir.path())).expect("test failure");
         (store, dir)
     }
 
@@ -120,8 +120,8 @@ mod tests {
     fn save_and_load_report() {
         let (store, _dir) = tmp_store();
         let r = fake_report("abc1234567890123", &["step one", "step two"]);
-        store.save_report(&r).unwrap();
-        let loaded = store.load_report("abc1234567890123").unwrap();
+        store.save_report(&r).expect("test failure");
+        let loaded = store.load_report("abc1234567890123").expect("test failure");
         assert_eq!(loaded.plan_id, r.plan_id);
         assert_eq!(loaded.steps.len(), 2);
         assert!(loaded.success);
@@ -132,8 +132,8 @@ mod tests {
         let (store, _dir) = tmp_store();
         let mut tape = ReplayTape::new();
         tape.record("step one\nstep two", 42, "abc1234567890123");
-        store.save_tape(&tape).unwrap();
-        let loaded = store.load_tape().unwrap();
+        store.save_tape(&tape).expect("test failure");
+        let loaded = store.load_tape().expect("test failure");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded.entries()[0].seed, 42);
     }
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn load_tape_returns_empty_when_absent() {
         let (store, _dir) = tmp_store();
-        let tape = store.load_tape().unwrap();
+        let tape = store.load_tape().expect("test failure");
         assert!(tape.is_empty());
     }
 
@@ -150,11 +150,11 @@ mod tests {
         let (store, _dir) = tmp_store();
         store
             .save_report(&fake_report("plan0000000000001", &["a"]))
-            .unwrap();
+            .expect("test failure");
         store
             .save_report(&fake_report("plan0000000000002", &["b"]))
-            .unwrap();
-        let ids = store.list_runs().unwrap();
+            .expect("test failure");
+        let ids = store.list_runs().expect("test failure");
         assert_eq!(ids, vec!["plan0000000000001", "plan0000000000002"]);
     }
 
@@ -168,9 +168,9 @@ mod tests {
     fn save_report_is_idempotent() {
         let (store, _dir) = tmp_store();
         let r = fake_report("idem000000000000", &["x"]);
-        store.save_report(&r).unwrap();
-        store.save_report(&r).unwrap(); // second write must not fail
-        let loaded = store.load_report("idem000000000000").unwrap();
+        store.save_report(&r).expect("test failure");
+        store.save_report(&r).expect("test failure"); // second write must not fail
+        let loaded = store.load_report("idem000000000000").expect("test failure");
         assert_eq!(loaded.plan_id, r.plan_id);
     }
 }

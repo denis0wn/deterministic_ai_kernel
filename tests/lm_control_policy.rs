@@ -2,8 +2,8 @@ use deterministic_ai_kernel::lm_control::policy::switch_plan;
 
 #[test]
 fn switch_plan_is_deterministic_for_task_planning() {
-    let p1 = switch_plan("task_planning", 64.0).unwrap();
-    let p2 = switch_plan("task_planning", 64.0).unwrap();
+    let p1 = switch_plan("task_planning", 64.0).expect("test failure");
+    let p2 = switch_plan("task_planning", 64.0).expect("test failure");
 
     assert_eq!(p1, p2);
     assert_eq!(
@@ -17,8 +17,8 @@ fn switch_plan_is_deterministic_for_task_planning() {
 
 #[test]
 fn switch_plan_preserves_injected_free_memory() {
-    let low = switch_plan("task_planning", 3.5).unwrap();
-    let high = switch_plan("task_planning", 64.0).unwrap();
+    let low = switch_plan("task_planning", 3.5).expect("test failure");
+    let high = switch_plan("task_planning", 64.0).expect("test failure");
 
     assert_eq!(low.model, high.model);
     assert_eq!(low.ram_class, high.ram_class);

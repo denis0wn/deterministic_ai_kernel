@@ -6,7 +6,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -22,7 +22,7 @@ fn semantic_artifact_type_contract_is_explicit() {
     let _ = fs::remove_file(format!("{db}-wal"));
     let _ = fs::remove_file(format!("{db}-shm"));
 
-    let bus = EventBus::new(db).unwrap();
+    let bus = EventBus::new(db).expect("test failure");
 
     for artifact_type in [
         "analysis_seed",
@@ -31,7 +31,7 @@ fn semantic_artifact_type_contract_is_explicit() {
         "semantic_bias_v1",
     ] {
         bus.append_semantic_artifact("task-1", "step-1", 1, artifact_type, &json!({"ok": true}))
-            .unwrap();
+            .expect("test failure");
     }
 
     let err = bus
@@ -42,7 +42,7 @@ fn semantic_artifact_type_contract_is_explicit() {
             "execution_plan",
             &json!({"ok": false}),
         )
-        .unwrap_err();
+        .expect_err("expected test error");
 
     let msg = format!("{err:#}");
     assert!(msg.contains("CHECK constraint failed") || msg.contains("constraint failed"));

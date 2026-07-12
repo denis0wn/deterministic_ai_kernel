@@ -45,7 +45,19 @@ pub async fn chat_with_purpose(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String> {
-    let config = resolve_model(purpose)?;
+    chat_with_model_override(purpose, system_prompt, user_prompt, None).await
+}
+
+pub async fn chat_with_model_override(
+    purpose: ModelPurpose,
+    system_prompt: &str,
+    user_prompt: &str,
+    model_override: Option<&str>,
+) -> Result<String> {
+    let mut config = resolve_model(purpose)?;
+    if let Some(m) = model_override {
+        config.model = m.to_string();
+    }
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
 
     let req = ChatRequest {

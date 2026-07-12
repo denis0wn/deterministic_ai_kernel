@@ -1,0 +1,30 @@
+```python
+def AnalyzeTask(task_id):
+    """
+    Analyzes the task for CONCURRENCY_STABILITY_TEST_30.
+    """
+    tasks = {
+        "CONCURRENCY_STABILITY_TEST_30": {
+            "name": "Concurrency Stability Test",
+            "description": "Tests the system's ability to handle concurrent tasks without race conditions.",
+            "status": "Pending",
+            "priority": "High",
+            "complexity": "Medium",
+            "estimated_time": 30,
+        },
+    }
+
+    task = tasks.get(task_id)
+    if not task:
+        return {"error": "Task not found"}
+
+    return {
+        "task_id": task_id,
+        "name": task["name"],
+        "description": task["description"],
+        "status": task["status"],
+        "priority": task["priority"],
+        "complexity": task["complexity"],
+        "estimated_time": task["estimated_time"],
+    }
+```

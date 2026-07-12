@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db(label: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_fuzz_{}_{}.db", label, nanos))
@@ -86,7 +86,7 @@ proptest! {
                 .expect("failed to spawn kernel");
 
             if list.status.success() {
-                let stdout = String::from_utf8(list.stdout).unwrap();
+                let stdout = String::from_utf8(list.stdout).expect("test failure");
                 if let Some(line) = stdout.lines().next() {
                     let cols: Vec<&str> = line.splitn(6, '\t').collect();
                     if cols.len() == 6 {
@@ -169,10 +169,10 @@ proptest! {
             let list = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
                 .env("KERNEL_DB_PATH", &db)
                 .args(["latest-bias-artifact", &task, "step-mix"])
-                .output().unwrap();
+                .output().expect("test failure");
 
             if list.status.success() {
-                let stdout = String::from_utf8(list.stdout).unwrap();
+                let stdout = String::from_utf8(list.stdout).expect("test failure");
                 if let Some(line) = stdout.lines().next() {
                     let cols: Vec<&str> = line.splitn(6, '\t').collect();
                     if cols.len() == 6 {
@@ -220,10 +220,10 @@ proptest! {
             let list = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
                 .env("KERNEL_DB_PATH", &db)
                 .args(["latest-bias-artifact", &task, "step-dup"])
-                .output().unwrap();
+                .output().expect("test failure");
 
             if list.status.success() {
-                let stdout = String::from_utf8(list.stdout).unwrap();
+                let stdout = String::from_utf8(list.stdout).expect("test failure");
                 if let Some(line) = stdout.lines().next() {
                     let cols: Vec<&str> = line.splitn(6, '\t').collect();
                     if cols.len() == 6 {

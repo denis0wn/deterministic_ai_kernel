@@ -11,10 +11,10 @@ fn emit_bias_artifact_rejects_unknown_step_kind() {
             "Cleanup",
         ])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(!output.status.success());
 
-    let stderr = String::from_utf8(output.stderr).unwrap();
+    let stderr = String::from_utf8(output.stderr).expect("test failure");
     assert!(stderr.contains("unknown step kind: Cleanup"), "{stderr}");
 }

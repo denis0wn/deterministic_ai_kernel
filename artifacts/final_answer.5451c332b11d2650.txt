@@ -1,0 +1,13 @@
+Sample from the basket labeled **Mixed**. Because every label is wrong, that basket cannot be the mixed one; it must be either all apples or all oranges. The fruit you pull identifies which one it is. The remaining two labels are also wrong, so they must be swapped.
+
+**Case 1: Sample is an apple**
+*   Basket labeled Mixed → Apples
+*   Remaining labels: "Apples", "Oranges"
+*   Remaining contents: Oranges, Mixed
+*   Swap: "Apples" → Oranges, "Oranges" → Mixed
+
+**Case 2: Sample is an orange**
+*   Basket labeled Mixed → Oranges
+*   Remaining labels: "Apples", "Oranges"
+*   Remaining contents: Apples, Mixed
+*   Swap: "Apples" → Mixed, "Oranges" → Apples

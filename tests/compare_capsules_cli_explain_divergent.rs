@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -33,7 +33,7 @@ fn compare_capsules_explain_reports_divergent_reason() {
     let db = unique_db_path("compare_capsules_cli_explain_divergent");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
 
     bus.append_event(
         "task-left",
@@ -41,14 +41,14 @@ fn compare_capsules_explain_reports_divergent_reason() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_event(
         "task-left",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     bus.append_event(
         "task-right",
@@ -56,12 +56,14 @@ fn compare_capsules_explain_reports_divergent_reason() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
 
-    let left_capsule = build_replay_capsule(&bus, "task-left").unwrap();
-    let right_capsule = build_replay_capsule(&bus, "task-right").unwrap();
-    bus.save_replay_capsule(&left_capsule).unwrap();
-    bus.save_replay_capsule(&right_capsule).unwrap();
+    let left_capsule = build_replay_capsule(&bus, "task-left").expect("test failure");
+    let right_capsule = build_replay_capsule(&bus, "task-right").expect("test failure");
+    bus.save_replay_capsule(&left_capsule)
+        .expect("test failure");
+    bus.save_replay_capsule(&right_capsule)
+        .expect("test failure");
 
     let (out, success) = run_kernel(
         &db,

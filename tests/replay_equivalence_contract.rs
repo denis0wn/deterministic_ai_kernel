@@ -19,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db(label: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_reqeq_{}_{}.db", label, nanos))
@@ -45,7 +45,7 @@ fn run_ok(db: &str, args: &[&str]) -> String {
         args,
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8(out.stdout).unwrap()
+    String::from_utf8(out.stdout).expect("test failure")
 }
 
 fn emit(db: &str, task: &str, step: &str, steps: &[&str]) {

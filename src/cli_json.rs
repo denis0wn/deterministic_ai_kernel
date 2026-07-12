@@ -6,14 +6,16 @@ pub fn cli_json_schema_version() -> &'static str {
 }
 
 #[allow(dead_code)]
-pub fn print_json_report(report: &Value) {
-    println!("{}", serde_json::to_string_pretty(report).unwrap());
+pub fn print_json_report(report: &Value) -> anyhow::Result<()> {
+    println!("{}", serde_json::to_string_pretty(report)?);
+    Ok(())
 }
 
 #[allow(dead_code)]
-pub fn emit_json(command: &str, report: Value) {
+pub fn emit_json(command: &str, report: Value) -> anyhow::Result<()> {
     let envelope = command_report(command, report);
-    println!("{}", serde_json::to_string(&envelope).unwrap());
+    println!("{}", serde_json::to_string(&envelope)?);
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -267,7 +269,9 @@ mod tests {
             "nested": { "a": 1, "b": [true, false] }
         });
 
-        let expected = serde_json::to_string_pretty(&report).unwrap() + "\n";
+        let expected = serde_json::to_string_pretty(&report)
+            .expect("failed to serialize report to pretty json")
+            + "\n";
 
         let mut buffer = Vec::new();
         {
@@ -275,12 +279,16 @@ mod tests {
             write!(
                 &mut writer,
                 "{}",
-                serde_json::to_string_pretty(&report).unwrap()
+                serde_json::to_string_pretty(&report)
+                    .expect("failed to serialize report to pretty json in write")
             )
-            .unwrap();
-            writeln!(&mut writer).unwrap();
+            .expect("failed to write payload to cursor");
+            writeln!(&mut writer).expect("failed to write newline to cursor");
         }
 
-        assert_eq!(String::from_utf8(buffer).unwrap(), expected);
+        assert_eq!(
+            String::from_utf8(buffer).expect("buffer is not valid utf8"),
+            expected
+        );
     }
 }

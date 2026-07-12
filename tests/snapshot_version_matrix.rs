@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", name, nanos))
 }
@@ -23,7 +23,7 @@ fn run_ok(db: &PathBuf, args: &[&str]) -> String {
         .env("KERNEL_DB_PATH", db)
         .args(args)
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         out.status.success(),
@@ -33,7 +33,7 @@ fn run_ok(db: &PathBuf, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    String::from_utf8(out.stdout).unwrap()
+    String::from_utf8(out.stdout).expect("test failure")
 }
 
 fn run_fail(db: &PathBuf, args: &[&str]) -> String {
@@ -41,7 +41,7 @@ fn run_fail(db: &PathBuf, args: &[&str]) -> String {
         .env("KERNEL_DB_PATH", db)
         .args(args)
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         !out.status.success(),
@@ -65,7 +65,7 @@ fn restore_payload(db: &PathBuf, task_id: &str) -> Value {
         .lines()
         .find(|l| l.trim_start().starts_with('{'))
         .expect("expected restore payload json");
-    serde_json::from_str(json_line).unwrap()
+    serde_json::from_str(json_line).expect("test failure")
 }
 
 fn assert_snapshot_compatible(snapshot_version: &str, restore_version: &str) {
@@ -163,7 +163,7 @@ fn restore_future_version_rejected() {
     let mut mutated = payload.clone();
     mutated["snapshot_version"] = Value::from(999u64);
 
-    let json = serde_json::to_string(&mutated).unwrap();
+    let json = serde_json::to_string(&mutated).expect("test failure");
     let escaped = json.replace('\'', "''");
 
     let sql = format!(

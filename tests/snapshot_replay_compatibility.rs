@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db(name: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("deterministic_ai_kernel_{}_{}.db", name, nanos))
@@ -24,7 +24,7 @@ fn run(db: &str, args: &[&str]) -> String {
         .env("KERNEL_DB_PATH", db)
         .args(args)
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         out.status.success(),
@@ -33,7 +33,7 @@ fn run(db: &str, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    String::from_utf8(out.stdout).unwrap()
+    String::from_utf8(out.stdout).expect("test failure")
 }
 
 #[test]

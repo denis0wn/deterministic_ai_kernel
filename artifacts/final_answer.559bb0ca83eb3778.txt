@@ -1,0 +1,21 @@
+```python
+def PlanExecution(plan, step_name):
+    if not plan:
+        return {"error": "Plan not found"}
+
+    plan_data = plan.get("plan", {})
+    steps = plan_data.get("steps", [])
+
+    step = next((s for s in steps if s.get("name") == step_name), None)
+    if not step:
+        return {"error": f"Step '{step_name}' not found in plan"}
+
+    # Execute the step (mock execution)
+    result = {"status": "success", "output": f"Executed {step_name}"}
+
+    return {
+        "plan_id": plan.get("id"),
+        "step_name": step_name,
+        "result": result
+    }
+```

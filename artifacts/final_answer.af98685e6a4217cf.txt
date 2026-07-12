@@ -1,0 +1,7 @@
+```python
+def analyze_task(task_name):
+    task = get_task(task_name)
+    if not task:
+        return {"error": "Task not found"}
+    return [analyze_step(step) for step in task.steps]
+```

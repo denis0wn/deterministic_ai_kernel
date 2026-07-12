@@ -1,0 +1,5 @@
+Plan:
+1. Audit event log append path for atomicity and total ordering.
+2. Verify projection rebuilds consume the log in a single, consistent order.
+3. Enforce strict determinism in event handlers (no wall-clock time, random seeds, or IO).
+4. Ensure replayed state is isolated or synchronized across parallel workers.

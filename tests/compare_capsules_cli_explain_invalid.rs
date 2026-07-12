@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -35,7 +35,7 @@ fn compare_capsules_explain_reports_invalid_reason() {
     let db = unique_db_path("compare_capsules_cli_explain_invalid");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
 
     bus.append_event(
         "task-valid",
@@ -43,17 +43,18 @@ fn compare_capsules_explain_reports_invalid_reason() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_event(
         "task-valid",
         Some("01_analyze_task"),
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
-    let valid_capsule = build_replay_capsule(&bus, "task-valid").unwrap();
-    bus.save_replay_capsule(&valid_capsule).unwrap();
+    let valid_capsule = build_replay_capsule(&bus, "task-valid").expect("test failure");
+    bus.save_replay_capsule(&valid_capsule)
+        .expect("test failure");
 
     let invalid_capsule = ReplayCapsule {
         capsule_id: "capsule-task-invalid".into(),
@@ -75,7 +76,8 @@ fn compare_capsules_explain_reports_invalid_reason() {
             policy_version: "v1".into(),
         },
     };
-    bus.save_replay_capsule(&invalid_capsule).unwrap();
+    bus.save_replay_capsule(&invalid_capsule)
+        .expect("test failure");
 
     let (out, success) = run_kernel(
         &db,

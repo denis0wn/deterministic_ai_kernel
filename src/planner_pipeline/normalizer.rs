@@ -38,6 +38,7 @@ mod tests {
         PipelineContext {
             seed: 42,
             bias_version: BiasVersion::V1,
+            task_id: None,
         }
     }
 
@@ -46,7 +47,9 @@ mod tests {
         let input = RawInput {
             payload: "  Step  ONE  \n  Step TWO  ".into(),
         };
-        let out = Normalizer.run(input, &ctx()).unwrap();
+        let out = Normalizer
+            .run(input, &ctx())
+            .expect("failed to run whitespace collapse normalization");
         assert_eq!(out.payload, "step one\nstep two");
     }
 
@@ -55,7 +58,9 @@ mod tests {
         let input = RawInput {
             payload: "line one\nline two\nline three".into(),
         };
-        let out = Normalizer.run(input, &ctx()).unwrap();
+        let out = Normalizer
+            .run(input, &ctx())
+            .expect("failed to run line boundary normalization");
         assert_eq!(out.payload.lines().count(), 3);
     }
 
@@ -64,7 +69,9 @@ mod tests {
         let input = RawInput {
             payload: "  Hello   World \t\n  Foo  BAR  ".into(),
         };
-        let first = Normalizer.run(input, &ctx()).unwrap();
+        let first = Normalizer
+            .run(input, &ctx())
+            .expect("failed to run normalizer first run");
         let second = Normalizer
             .run(
                 RawInput {
@@ -72,7 +79,7 @@ mod tests {
                 },
                 &ctx(),
             )
-            .unwrap();
+            .expect("failed to run normalizer second run");
         assert_eq!(first.payload, second.payload);
     }
 
@@ -81,7 +88,9 @@ mod tests {
         let input = RawInput {
             payload: "step\x01one\x7Ftwo".into(),
         };
-        let out = Normalizer.run(input, &ctx()).unwrap();
+        let out = Normalizer
+            .run(input, &ctx())
+            .expect("failed to run control char normalization");
         assert!(!out.payload.contains('\x01'));
         assert!(!out.payload.contains('\x7F'));
     }
@@ -91,7 +100,9 @@ mod tests {
         let input = RawInput {
             payload: "UPPER lower MiXeD".into(),
         };
-        let out = Normalizer.run(input, &ctx()).unwrap();
+        let out = Normalizer
+            .run(input, &ctx())
+            .expect("failed to run lowercase normalization");
         assert_eq!(out.payload, "upper lower mixed");
     }
 }

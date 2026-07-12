@@ -54,11 +54,7 @@ mod tests {
     use super::*;
 
     fn valid_plan() -> Plan {
-        Plan {
-            id: "abc123".into(),
-            steps: vec!["step one".into(), "step two".into()],
-            seed: 42,
-        }
+        Plan::new_with_stable_id(42, vec!["step one".into(), "step two".into()])
     }
 
     #[test]
@@ -70,10 +66,8 @@ mod tests {
 
     #[test]
     fn critic_catches_empty_id() {
-        let plan = Plan {
-            id: "".into(),
-            ..valid_plan()
-        };
+        let mut plan = valid_plan();
+        plan.id = "".into();
         let report = PlannerCritic.analyze(&plan);
         assert!(!report.passed);
         assert!(report.invariant_violations.iter().any(|v| v.contains("id")));
@@ -81,10 +75,7 @@ mod tests {
 
     #[test]
     fn critic_catches_duplicate_steps() {
-        let plan = Plan {
-            steps: vec!["step one".into(), "step one".into()],
-            ..valid_plan()
-        };
+        let plan = Plan::new_with_stable_id(42, vec!["step one".into(), "step one".into()]);
         let report = PlannerCritic.analyze(&plan);
         assert!(!report.passed);
         assert!(report

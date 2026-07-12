@@ -6,7 +6,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -34,7 +34,7 @@ fn snapshot_payload_includes_semantic_bias_artifact_ref() {
             "ExecuteChanges",
         ])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         emit.status.success(),
         "stderr=\n{}",
@@ -45,7 +45,7 @@ fn snapshot_payload_includes_semantic_bias_artifact_ref() {
         .env("KERNEL_DB_PATH", db)
         .args(["snapshot", "task-snap"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         rebuild.status.success(),
         "stderr=\n{}",
@@ -56,14 +56,14 @@ fn snapshot_payload_includes_semantic_bias_artifact_ref() {
         .env("KERNEL_DB_PATH", db)
         .args(["restore", "task-snap"])
         .output()
-        .unwrap();
+        .expect("test failure");
     assert!(
         restore.status.success(),
         "stderr=\n{}",
         String::from_utf8_lossy(&restore.stderr)
     );
 
-    let stdout = String::from_utf8(restore.stdout).unwrap();
+    let stdout = String::from_utf8(restore.stdout).expect("test failure");
 
     // snapshot outputs: RESTORE OK, SNAPSHOT_ID, SNAPSHOT_GENERATION, then the JSON payload
     let json_line = stdout
@@ -71,7 +71,7 @@ fn snapshot_payload_includes_semantic_bias_artifact_ref() {
         .find(|l| l.trim_start().starts_with('{'))
         .expect("expected JSON payload in restore output");
 
-    let payload: Value = serde_json::from_str(json_line).unwrap();
+    let payload: Value = serde_json::from_str(json_line).expect("test failure");
 
     assert_eq!(payload["task_id"], "task-snap");
     assert!(

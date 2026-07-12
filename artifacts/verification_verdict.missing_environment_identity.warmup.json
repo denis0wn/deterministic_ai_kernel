@@ -1,0 +1,49 @@
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "18bdc0f8534f9cbb5416ac74c8b8a2a940f1f55419357a5f6142c7e1fc5432e4",
+  "plan_hash": "18bdc0f8534f9cbb5416ac74c8b8a2a940f1f55419357a5f6142c7e1fc5432e4",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "f3f7e11c57421d4830322df2842c9d52f4a611116d53a661f4833c937d2b97f1",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [
+    "integrity@v1"
+  ],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.435,
+  "node_count": 1,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.435,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    }
+  ]
+}

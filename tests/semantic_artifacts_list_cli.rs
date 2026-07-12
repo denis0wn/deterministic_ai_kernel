@@ -7,7 +7,7 @@ fn unique_db(label: &str) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir()
         .join(format!("dak_{}_{}.db", label, nanos))
@@ -23,7 +23,7 @@ fn semantic_artifacts_cli_lists_rows_for_task_and_step() {
     let _ = fs::remove_file(format!("{db}-wal"));
     let _ = fs::remove_file(format!("{db}-shm"));
 
-    let bus = EventBus::new(db).unwrap();
+    let bus = EventBus::new(db).expect("test failure");
     bus.append_semantic_artifact(
         "task-list",
         "analyze",
@@ -31,7 +31,7 @@ fn semantic_artifacts_cli_lists_rows_for_task_and_step() {
         "analysis_seed",
         &json!({"seed":"one"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_semantic_artifact(
         "task-list",
         "analyze",
@@ -39,7 +39,7 @@ fn semantic_artifacts_cli_lists_rows_for_task_and_step() {
         "analysis_seed",
         &json!({"seed":"two"}),
     )
-    .unwrap();
+    .expect("test failure");
     bus.append_semantic_artifact(
         "task-list",
         "plan",
@@ -47,17 +47,17 @@ fn semantic_artifacts_cli_lists_rows_for_task_and_step() {
         "classification",
         &json!({"class":"p"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     let output = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
         .env("KERNEL_DB_PATH", db)
         .args(["semantic-artifacts", "task-list", "analyze"])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(output.status.success());
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("test failure");
     assert!(stdout.contains("\"seed\":\"one\""));
     assert!(stdout.contains("\"seed\":\"two\""));
     assert!(!stdout.contains("\"plan\":\"p\""));

@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -21,7 +21,7 @@ fn replay_capsule_contains_captured_events_and_graph_nodes() {
     let db = unique_db_path("replay_capsule_content");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
 
     bus.append_event(
         "task-content",
@@ -29,7 +29,7 @@ fn replay_capsule_contains_captured_events_and_graph_nodes() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     bus.append_event(
         "task-content",
@@ -37,9 +37,9 @@ fn replay_capsule_contains_captured_events_and_graph_nodes() {
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
-    let capsule = build_replay_capsule(&bus, "task-content").unwrap();
+    let capsule = build_replay_capsule(&bus, "task-content").expect("test failure");
 
     assert!(
         !capsule.event_ids.is_empty(),

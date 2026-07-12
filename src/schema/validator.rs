@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn rejects_missing_required_field() {
         let mut v = valid_bias();
-        v.as_object_mut().unwrap().remove("seed");
+        v.as_object_mut().expect("bias is an object").remove("seed");
         assert!(validate_semantic_bias_v1(&v).is_err());
     }
 

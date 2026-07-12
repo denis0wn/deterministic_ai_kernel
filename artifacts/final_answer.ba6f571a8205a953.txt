@@ -1,0 +1,15 @@
+```python
+def ExecuteChanges(changes):
+    if not changes:
+        return []
+
+    count = len(changes)
+    if count <= 0:
+        return []
+
+    change_map = {}
+    for key, change in changes:
+        change_map[key] = change
+
+    return [change_map[key] for key in changes]
+```

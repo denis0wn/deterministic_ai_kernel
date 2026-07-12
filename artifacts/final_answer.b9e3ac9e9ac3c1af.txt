@@ -1,0 +1,16 @@
+```python
+def ExecuteChanges(state, changes):
+    applied = set()
+    for change in changes:
+        if change.get("id") in applied:
+            continue
+        if isinstance(change.get("operation"), str) and isinstance(change.get("value"), object):
+            op = change["operation"]
+            val = change["value"]
+            if op == "set":
+                state[val] = val
+            elif op == "delete":
+                state.pop(val, None)
+            applied.add(change["id"])
+    return state
+```

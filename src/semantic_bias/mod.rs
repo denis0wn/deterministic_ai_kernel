@@ -67,8 +67,9 @@ mod tests {
                 "prefer_low_latency",
             )],
         );
-        let json = serde_json::to_string(&cfg).unwrap();
-        let restored: BiasConfiguration = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&cfg).expect("configuration serialization failed");
+        let restored: BiasConfiguration =
+            serde_json::from_str(&json).expect("configuration deserialization failed");
         assert_eq!(cfg, restored);
     }
 

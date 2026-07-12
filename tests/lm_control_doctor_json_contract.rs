@@ -7,7 +7,7 @@ fn doctor_json_contract_is_stable() {
         .env("DAK_FREE_GB_OVERRIDE", "64")
         .args(["doctor-json"])
         .output()
-        .unwrap();
+        .expect("test failure");
 
     assert!(
         out.status.success(),
@@ -15,7 +15,7 @@ fn doctor_json_contract_is_stable() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stdout = String::from_utf8(out.stdout).expect("test failure");
     assert!(stdout.contains("\"free_gb\""), "{stdout}");
     assert!(stdout.contains("\"mlx_models\""), "{stdout}");
     assert!(stdout.contains("\"roles\""), "{stdout}");

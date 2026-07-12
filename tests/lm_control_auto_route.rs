@@ -9,7 +9,7 @@ use test_util::with_mock_lm_backend;
 #[serial]
 fn auto_route_succeeds_for_task_planning_when_ready() {
     with_mock_lm_backend(|| {
-        auto_route("task_planning").unwrap();
+        auto_route("task_planning").expect("test failure");
     });
 }
 
@@ -18,12 +18,12 @@ fn auto_route_succeeds_for_task_planning_when_ready() {
 fn send_prompt_returns_mock_response_for_task_planning() {
     with_mock_lm_backend(|| {
         let result = tokio::runtime::Runtime::new()
-            .unwrap()
+            .expect("test failure")
             .block_on(deterministic_ai_kernel::lm_control::send_prompt(
                 "task_planning",
                 "list steps to deploy a Rust binary",
             ))
-            .unwrap();
+            .expect("test failure");
         assert!(result.contains("mock"));
     });
 }

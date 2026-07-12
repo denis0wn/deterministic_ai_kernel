@@ -53,14 +53,24 @@ This demonstrates the intended loop: analyze -> persist semantic artifact -> ins
 ```bash
 ```
 
-## Useful tests
+## Developer Experience (DX) Test Runner: `./ct`
 
-- `cargo test --test replay_snapshot -- --nocapture`
-- `cargo test --test scheduler_integration -- --nocapture`
-- `cargo test --test semantic_artifacts -- --nocapture`
-- `cargo test --test semantic_artifacts_cli -- --nocapture`
-- `cargo test --test semantic_artifacts_list_cli -- --nocapture`
-- `cargo test --test semantic_artifact_contract -- --nocapture`
+To run tests with a clean, noise-free output, use the `./ct` wrapper script. It silences warnings and compilation noise on success, and outputs only clean compiler errors or test failures on fail. All agents and developers should run this command instead of direct `cargo test` to improve developer experience.
+
+### Examples:
+- Run all tests: `./ct`
+- Pass features/targets: `./ct --all-targets --all-features`
+- Run a specific integration test suite: `./ct scheduler_integration`
+- Run a specific test: `./ct --test artifact_immutability`
+
+## Useful tests (under `./ct`)
+
+- `./ct --test replay_snapshot`
+- `./ct --test scheduler_integration`
+- `./ct --test semantic_artifacts`
+- `./ct --test semantic_artifacts_cli`
+- `./ct --test semantic_artifacts_list_cli`
+- `./ct --test semantic_artifact_contract`
 
 ## Current status
 

@@ -1,0 +1,11 @@
+Duplicate payments stem from a lack of **idempotency**: the system cannot recognize a repeated request as the same logical operation.
+
+### Root Causes
+*   **Race Conditions:** Two concurrent requests for the same payment may both see the payment as unpaid and proceed to charge. Without atomic locking or a unique constraint on the idempotency key, both charges succeed.
+*   **Crash Recovery:** A worker may charge the customer but crash before recording the transaction. A retry then submits the same payment again, which the system treats as a new request.
+
+### Remediation Plan
+Use **idempotency keys**: the client generates a unique ID per payment request. The server stores this key and, on a duplicate request with the same key, returns the cached result instead of executing a new charge.
+
+### Validation Strategy
+Test with a shared idempotency key sent twice: the first request must charge the customer, and the second must return the cached success without a second charge. Simulate worker failure and verify that retries with the same key do not duplicate the charge.

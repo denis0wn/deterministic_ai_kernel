@@ -1,0 +1,8 @@
+```python
+def ExecuteChanges(changes):
+    result = []
+    for change in changes:
+        # Apply change (mock: record completion)
+        result.append(change.get("id"))
+    return result
+```

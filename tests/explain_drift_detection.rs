@@ -93,7 +93,7 @@ fn explain_lines_version_matches_bias_version() {
     let version_line = lines
         .iter()
         .find(|l| l.starts_with("bias.version="))
-        .unwrap();
+        .expect("test failure");
     assert_eq!(
         version_line.as_str(),
         "bias.version=v1",

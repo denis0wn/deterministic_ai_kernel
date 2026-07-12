@@ -6,7 +6,96 @@ use anyhow::{bail, Result};
 pub struct Parser;
 
 impl Parser {
+    fn extract_explicit_steps(payload: &str) -> Vec<String> {
+        let mut steps = Vec::new();
+
+        // 1. Try line-by-line matching
+        for line in payload.lines() {
+            let line = line.trim();
+            let line_lower = line.to_lowercase();
+            if line_lower.starts_with("step ") {
+                let rest = &line[5..];
+                let char_indices = rest.char_indices();
+                let mut digit_len = 0;
+                for (_, c) in char_indices {
+                    if c.is_ascii_digit() {
+                        digit_len += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if digit_len > 0 && rest[digit_len..].starts_with(' ') {
+                    let mut step_text = rest[digit_len + 1..].trim().to_string();
+                    if step_text.ends_with('.') {
+                        step_text.pop();
+                    }
+                    step_text = step_text.trim().to_string();
+                    if !step_text.is_empty() {
+                        steps.push(step_text);
+                    }
+                }
+            }
+        }
+
+        if !steps.is_empty() {
+            return steps;
+        }
+
+        // 2. Try inline scanning (single-line or paragraph formats)
+        let chars: Vec<char> = payload.chars().collect();
+        let mut i = 0;
+        let mut start_indices = Vec::new();
+
+        while i < chars.len() {
+            if i + 5 <= chars.len()
+                && (chars[i] == 's' || chars[i] == 'S')
+                && (chars[i + 1] == 't' || chars[i + 1] == 'T')
+                && (chars[i + 2] == 'e' || chars[i + 2] == 'E')
+                && (chars[i + 3] == 'p' || chars[i + 3] == 'P')
+                && chars[i + 4] == ' '
+            {
+                let mut j = i + 5;
+                while j < chars.len() && chars[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j > i + 5 && j < chars.len() && chars[j] == ' ' {
+                    start_indices.push((i, j + 1));
+                    i = j;
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+
+        for idx in 0..start_indices.len() {
+            let start_char = start_indices[idx].1;
+            let end_char = if idx + 1 < start_indices.len() {
+                start_indices[idx + 1].0
+            } else {
+                chars.len()
+            };
+            let mut step_text: String = chars[start_char..end_char].iter().collect();
+            step_text = step_text.trim().to_string();
+            if step_text.ends_with('.') {
+                step_text.pop();
+            }
+            step_text = step_text.trim().to_string();
+            if !step_text.is_empty() {
+                steps.push(step_text);
+            }
+        }
+
+        steps
+    }
+
     fn extract_steps(payload: &str) -> Vec<String> {
+        let explicit = Self::extract_explicit_steps(payload);
+        if !explicit.is_empty() {
+            return explicit;
+        }
+
         let lines: Vec<&str> = payload.lines().collect();
 
         // Numbered list: "1. step" or "1) step"
@@ -114,6 +203,7 @@ mod tests {
         PipelineContext {
             seed: 42,
             bias_version: BiasVersion::V1,
+            task_id: None,
         }
     }
 
@@ -122,7 +212,9 @@ mod tests {
         let input = RawInput {
             payload: "1. Реализовать API\n2. Написать тесты\n3. Задокументировать".into(),
         };
-        let ir = Parser.run(input, &ctx()).unwrap();
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse numbered list");
         assert_eq!(
             ir.steps,
             vec!["Реализовать API", "Написать тесты", "Задокументировать"]
@@ -134,7 +226,9 @@ mod tests {
         let input = RawInput {
             payload: "- Шаг один\n- Шаг два\n- Шаг три".into(),
         };
-        let ir = Parser.run(input, &ctx()).unwrap();
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse bullet list with dash");
         assert_eq!(ir.steps, vec!["Шаг один", "Шаг два", "Шаг три"]);
     }
 
@@ -143,7 +237,9 @@ mod tests {
         let input = RawInput {
             payload: "* Шаг один\n* Шаг два".into(),
         };
-        let ir = Parser.run(input, &ctx()).unwrap();
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse bullet list with star");
         assert_eq!(ir.steps, vec!["Шаг один", "Шаг два"]);
     }
 
@@ -152,7 +248,9 @@ mod tests {
         let input = RawInput {
             payload: "step one\nstep two\nstep three".into(),
         };
-        let ir = Parser.run(input, &ctx()).unwrap();
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse multi-line steps");
         assert_eq!(ir.steps, vec!["step one", "step two", "step three"]);
     }
 
@@ -161,7 +259,9 @@ mod tests {
         let input = RawInput {
             payload: "step one\n\n  \nstep two".into(),
         };
-        let ir = Parser.run(input, &ctx()).unwrap();
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse steps with empty lines");
         assert_eq!(ir.steps.len(), 2);
     }
 
@@ -178,7 +278,38 @@ mod tests {
         let input = RawInput {
             payload: "1) First\n2) Second".into(),
         };
-        let ir = Parser.run(input, &ctx()).unwrap();
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse parenthesized numbering");
         assert_eq!(ir.steps, vec!["First", "Second"]);
+    }
+
+    #[test]
+    fn parser_explicit_steps_inline() {
+        let input = RawInput {
+            payload: "Customer request: build website. Step 1 create design. Step 2 implement backend. Step 3 run tests. Step 4 deploy.".into(),
+        };
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse inline explicit steps");
+        assert_eq!(
+            ir.steps,
+            vec!["create design", "implement backend", "run tests", "deploy"]
+        );
+    }
+
+    #[test]
+    fn parser_explicit_steps_multiline() {
+        let input = RawInput {
+            payload: "Step 1 prepare database\nStep 2 create API\nStep 3 run integration tests"
+                .into(),
+        };
+        let ir = Parser
+            .run(input, &ctx())
+            .expect("failed to parse multi-line explicit steps");
+        assert_eq!(
+            ir.steps,
+            vec!["prepare database", "create API", "run integration tests"]
+        );
     }
 }

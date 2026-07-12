@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn unique_db_path(test_name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test failure")
         .as_nanos();
     std::env::temp_dir().join(format!(
         "deterministic_ai_kernel_{}_{}.db",
@@ -20,7 +20,7 @@ fn event_bus_exposes_execution_events_and_state_graph() {
     let db = unique_db_path("event_bus_kernel_bridge");
     let _ = fs::remove_file(&db);
 
-    let bus = EventBus::new(&db).unwrap();
+    let bus = EventBus::new(&db).expect("test failure");
 
     bus.append_event(
         "task-bridge",
@@ -28,7 +28,7 @@ fn event_bus_exposes_execution_events_and_state_graph() {
         "STEP_STARTED",
         &json!({"step":"analyze_task"}),
     )
-    .unwrap();
+    .expect("test failure");
 
     bus.append_event(
         "task-bridge",
@@ -36,14 +36,16 @@ fn event_bus_exposes_execution_events_and_state_graph() {
         "STEP_COMPLETED",
         &json!({"step":"analyze_task","outcome":"success"}),
     )
-    .unwrap();
+    .expect("test failure");
 
-    let events = bus.list_execution_events("task-bridge").unwrap();
+    let events = bus
+        .list_execution_events("task-bridge")
+        .expect("test failure");
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].event_type, "STEP_STARTED");
     assert_eq!(events[1].event_type, "STEP_COMPLETED");
 
-    let graph = bus.build_state_graph("task-bridge").unwrap();
+    let graph = bus.build_state_graph("task-bridge").expect("test failure");
     assert_eq!(graph.nodes.len(), 2);
     assert_eq!(graph.edges.len(), 1);
 
