@@ -1,0 +1,403 @@
+    Checking deterministic_ai_kernel v0.1.0 (/Users/denissmoliakov/deterministic_ai_kernel)
+error: used `unwrap()` on a `Result` value
+  --> src/api.rs:21:5
+   |
+21 |     snapshot::rebuild_snapshot(db, "integrity-task", true).unwrap();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+   = note: requested on the command line with `-D clippy::unwrap-used`
+
+error: used `unwrap()` on a `Result` value
+  --> src/api.rs:22:5
+   |
+22 |     snapshot::restore_snapshot(db, "integrity-task", true).unwrap();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on an `Option` value
+  --> src/api.rs:24:19
+   |
+24 |       let payload = crate::providers::get_storage()
+   |  ___________________^
+25 | |         .get_latest_snapshot_payload("integrity-task")
+26 | |         .unwrap()
+27 | |         .unwrap();
+   | |_________________^
+   |
+   = note: if this value is `None`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+  --> src/api.rs:24:19
+   |
+24 |       let payload = crate::providers::get_storage()
+   |  ___________________^
+25 | |         .get_latest_snapshot_payload("integrity-task")
+26 | |         .unwrap()
+   | |_________________^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+  --> src/api.rs:31:25
+   |
+31 |     let parsed: Value = serde_json::from_str(&payload).unwrap();
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+  --> src/api.rs:86:15
+   |
+86 |     let bus = event_bus::EventBus::new(db).unwrap();
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+  --> src/api.rs:91:5
+   |
+91 |     bus.save_replay_capsule(&capsule).unwrap();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:102:15
+    |
+102 |     let bus = event_bus::EventBus::new(db).unwrap();
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:130:15
+    |
+130 |     let bus = event_bus::EventBus::new(db).unwrap();
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:205:15
+    |
+205 |     let bus = event_bus::EventBus::new(db).unwrap();
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:305:21
+    |
+305 |             let v = serde_json::to_value(n).unwrap();
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:306:23
+    |
+306 |             let key = serde_json::to_string(&v).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:317:21
+    |
+317 |             let v = serde_json::to_value(n).unwrap();
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:318:23
+    |
+318 |             let key = serde_json::to_string(&v).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:343:21
+    |
+343 |             let v = serde_json::to_value(e).unwrap();
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:344:23
+    |
+344 |             let key = serde_json::to_string(&v).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:355:21
+    |
+355 |             let v = serde_json::to_value(e).unwrap();
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/api.rs:356:23
+    |
+356 |             let key = serde_json::to_string(&v).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+  --> src/cli_json.rs:10:20
+   |
+10 |     println!("{}", serde_json::to_string_pretty(report).unwrap());
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+  --> src/cli_json.rs:16:20
+   |
+16 |     println!("{}", serde_json::to_string(&envelope).unwrap());
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: consider using `expect()` to provide a better panic message
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+warning: you should consider adding a `Default` implementation for `Runtime`
+  --> src/execution/runtime.rs:7:5
+   |
+ 7 | /     pub fn new() -> Self {
+ 8 | |         Self
+ 9 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#new_without_default
+   = note: `#[warn(clippy::new_without_default)]` on by default
+help: try adding this
+   |
+ 6 + impl Default for Runtime {
+ 7 +     fn default() -> Self {
+ 8 +         Self::new()
+ 9 +     }
+10 + }
+   |
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+  --> src/providers/storage.rs:46:48
+   |
+46 |     fn list_event_log(&self, task_id: &str) -> Result<Vec<(i64, Option<String>, String, String)>>;
+   |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#type_complexity
+   = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: initializer for `thread_local` value can be made `const`
+  --> src/providers/storage.rs:82:64
+   |
+82 |     static OVERRIDE_PATH: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+   |                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `const { std::cell::RefCell::new(None) }`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_const_for_thread_local
+   = note: `#[warn(clippy::missing_const_for_thread_local)]` on by default
+
+warning: you should consider adding a `Default` implementation for `DefaultStorage`
+  --> src/providers/storage.rs:90:5
+   |
+90 | /     pub fn new() -> Self {
+91 | |         let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+92 | |         Self {
+93 | |             db_path,
+94 | |         }
+95 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#new_without_default
+help: try adding this
+   |
+89 + impl Default for DefaultStorage {
+90 +     fn default() -> Self {
+91 +         Self::new()
+92 +     }
+93 + }
+   |
+
+warning: using `Option.and_then(|x| Some(y))`, which is more succinctly expressed as `map(|x| y)`
+   --> src/providers/storage.rs:165:13
+    |
+165 | /             v.get("outcome").and_then(|o| match o.as_str() {
+166 | |                 Some("RetryableFailure") => Some(StepOutcome::RetryableFailure),
+167 | |                 Some("Blocked") => Some(StepOutcome::Blocked),
+168 | |                 _ => Some(StepOutcome::TerminalFailure),
+169 | |             })
+    | |______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#bind_instead_of_map
+    = note: `#[warn(clippy::bind_instead_of_map)]` on by default
+help: use `map` instead
+    |
+165 ~             v.get("outcome").map(|o| match o.as_str() {
+166 ~                 Some("RetryableFailure") => StepOutcome::RetryableFailure,
+167 ~                 Some("Blocked") => StepOutcome::Blocked,
+168 ~                 _ => StepOutcome::TerminalFailure,
+    |
+
+error: used `unwrap()` on a `Result` value
+   --> src/providers/storage.rs:393:9
+    |
+393 |         serde_json::to_string(&ordered).unwrap()
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+error: used `unwrap()` on a `Result` value
+   --> src/providers/storage.rs:395:9
+    |
+395 |         serde_json::to_string(value).unwrap()
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: consider using `expect()` to provide a better panic message
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unwrap_used
+
+warning: `to_string` applied to a type that implements `Display` in `format!` args
+   --> src/providers/storage.rs:475:31
+    |
+475 |             format!("evt_{}", blake3::hash(format!("{}:{}:{}", task_id, event_type, unit_gen).as_bytes()).to_hex()[..16].to_string())
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use this: `&blake3::hash(format!("{}:{}:{}", task_id, event_type, unit_gen).as_bytes()).to_hex()[..16]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#to_string_in_format_args
+    = note: `#[warn(clippy::to_string_in_format_args)]` on by default
+
+warning: this loop could be written as a `for` loop
+  --> src/planner_pipeline/parser.rs:20:17
+   |
+20 |                 while let Some((_, c)) = char_indices.next() {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `for (_, c) in char_indices`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#while_let_on_iterator
+   = note: `#[warn(clippy::while_let_on_iterator)]` on by default
+
+warning: match expression looks like `matches!` macro
+  --> src/planner_pipeline/execution_engine.rs:92:9
+   |
+92 | /         match (self, next) {
+93 | |             (Self::TaskCompleted, _) => false,
+94 | |             (Self::StepCompleted, Self::StepRunning) => false,
+95 | |             (Self::StepRunning, Self::StepRunning) => false,
+96 | |             _ => true,
+97 | |         }
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_like_matches_macro
+   = note: `#[warn(clippy::match_like_matches_macro)]` on by default
+help: use `matches!` directly
+   |
+92 -         match (self, next) {
+93 -             (Self::TaskCompleted, _) => false,
+94 -             (Self::StepCompleted, Self::StepRunning) => false,
+95 -             (Self::StepRunning, Self::StepRunning) => false,
+96 -             _ => true,
+97 -         }
+92 +         !matches!((self, next), (Self::TaskCompleted, _) | (Self::StepCompleted, Self::StepRunning) | (Self::StepRunning, Self::StepRunning))
+   |
+
+warning: `to_string` applied to a type that implements `Display` in `format!` args
+   --> src/planner_pipeline/execution_engine.rs:164:9
+    |
+164 | /         blake3::hash(format!("{}:{}:{}:{}", task_id, execution_id, event_type, payload_hash).as_bytes())
+165 | |             .to_hex()[..16]
+166 | |             .to_string()
+    | |________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#to_string_in_format_args
+help: use this
+    |
+164 ~         &blake3::hash(format!("{}:{}:{}:{}", task_id, execution_id, event_type, payload_hash).as_bytes())
+165 +             .to_hex()[..16]
+    |
+
+warning: `to_string` applied to a type that implements `Display` in `format!` args
+   --> src/planner_pipeline/execution_engine.rs:318:32
+    |
+318 |             format!("task_{}", blake3::hash(payload.as_bytes()).to_hex()[..16].to_string())
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use this: `&blake3::hash(payload.as_bytes()).to_hex()[..16]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#to_string_in_format_args
+
+warning: `to_string` applied to a type that implements `Display` in `format!` args
+   --> src/planner_pipeline/execution_engine.rs:578:32
+    |
+578 |             format!("task_{}", blake3::hash(payload.as_bytes()).to_hex()[..16].to_string())
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use this: `&blake3::hash(payload.as_bytes()).to_hex()[..16]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#to_string_in_format_args
+
+warning: `to_string` applied to a type that implements `Display` in `format!` args
+  --> src/planner_pipeline/replay.rs:53:46
+   |
+53 |             let task_id = format!("task_{}", blake3::hash(entry.payload.as_bytes()).to_hex()[..16].to_string());
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use this: `&blake3::hash(entry.payload.as_bytes()).to_hex()[..16]`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#to_string_in_format_args
+
+warning: match can be simplified with `.unwrap_or_default()`
+  --> src/planner_pipeline/replay.rs:56:31
+   |
+56 |               let hist_events = match crate::providers::get_storage().query_events(&task_id) {
+   |  _______________________________^
+57 | |                 Ok(evs) => evs,
+58 | |                 Err(_) => vec![],
+59 | |             };
+   | |_____________^ help: ascribe the type std::vec::Vec<event_bus::EventRow> and replace your expression with: `crate::providers::get_storage().query_events(&task_id).unwrap_or_default()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#manual_unwrap_or_default
+   = note: `#[warn(clippy::manual_unwrap_or_default)]` on by default
+
+warning: `deterministic_ai_kernel` (lib) generated 13 warnings
+error: could not compile `deterministic_ai_kernel` (lib) due to 22 previous errors; 13 warnings emitted
