@@ -212,3 +212,72 @@ pub async fn planner_smoke() -> Result<()> {
     println!("MODEL_RESPONSE: {}", text.trim());
     Ok(())
 }
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct StructuredResponse {
+    pub final_answer: String,
+    pub confidence: f64,
+}
+
+pub fn clean_structured_json(raw: &str) -> Result<String> {
+    let mut temp = raw.to_string();
+    
+    // Remove closed thought blocks
+    while let Some(start_idx) = temp.find("<thought>") {
+        if let Some(end_idx) = temp[start_idx..].find("</thought>") {
+            let end_pos = start_idx + end_idx + "</thought>".len();
+            temp.replace_range(start_idx..end_pos, "");
+        } else {
+            // Unclosed, just remove the tag itself
+            temp = temp.replace("<thought>", "");
+            break;
+        }
+    }
+    temp = temp.replace("</thought>", "");
+
+    // Find the first '{' and the last '}'
+    if let Some(first_brace) = temp.find('{') {
+        if let Some(last_brace) = temp.rfind('}') {
+            if last_brace >= first_brace {
+                return Ok(temp[first_brace..=last_brace].to_string());
+            }
+        }
+    }
+
+    Err(anyhow!("No JSON object found in response"))
+}
+
+pub async fn chat_structured(
+    purpose: ModelPurpose,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<StructuredResponse> {
+    let updated_system = format!(
+        "{}\n\nCRITICAL: You MUST respond with a JSON object matching this schema: \
+         {{\"final_answer\": \"...\", \"confidence\": 0.99}}. \
+         Do NOT include any internal reasoning, thought process, explanations, or formatting outside this JSON structure.",
+        system_prompt
+    );
+
+    let raw_response = chat_with_purpose(purpose, &updated_system, user_prompt).await?;
+    let cleaned = clean_structured_json(&raw_response)?;
+    let parsed: StructuredResponse = serde_json::from_str(&cleaned)
+        .with_context(|| format!("Failed to parse structured JSON: {}", cleaned))?;
+    Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_structured_json() {
+        let input = "<thought>some reasoning here</thought>\n```json\n{\"final_answer\": \"hello\", \"confidence\": 0.95}\n```";
+        let cleaned = clean_structured_json(input).unwrap();
+        assert_eq!(cleaned, "{\"final_answer\": \"hello\", \"confidence\": 0.95}");
+
+        let input_unclosed = "<thought>unclosed thought {\"final_answer\": \"unclosed\", \"confidence\": 0.8}";
+        let cleaned_unclosed = clean_structured_json(input_unclosed).unwrap();
+        assert_eq!(cleaned_unclosed, "{\"final_answer\": \"unclosed\", \"confidence\": 0.8}");
+    }
+}
