@@ -25,7 +25,10 @@ pub mod model_manifest;
 pub mod lm_control;
 
 pub mod embeddings;
+pub mod fingerprint;
 pub mod kernel_types;
+pub mod metrics;
+pub mod models;
 pub mod planner_pipeline;
 pub mod registry;
 pub mod runtime_manager;

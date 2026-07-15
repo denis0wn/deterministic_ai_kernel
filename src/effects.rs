@@ -57,14 +57,20 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                     task_id, prim, &payload,
                 ) {
                     Ok(result) => {
-                        // If it produced a text output (from Compute/Write), save it to final_answer for CLI compatibility
+                        let generation = storage.latest_generation_for_task(task_id)?;
+
+                        // If it produced a text output (from Compute/Write), persist final_answer as a semantic artifact.
                         if let Some(text) = result.output.get("result").and_then(|v| v.as_str()) {
-                            let answer_path = format!("artifacts/final_answer.{}.txt", task_id);
-                            providers::get_filesystem().write(&answer_path, text)?;
+                            storage.append_semantic_artifact(
+                                task_id,
+                                &step_id,
+                                generation,
+                                "final_answer",
+                                &serde_json::json!({ "text": text }),
+                            )?;
                         }
 
                         // Generic recording of returned artifacts
-                        let generation = storage.latest_generation_for_task(task_id)?;
                         for artifact in result.artifacts {
                             storage.append_semantic_artifact(
                                 task_id,
@@ -80,7 +86,7 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                             task_id,
                             &step_id,
                             generation,
-                            "primitive_result_v1",
+                            "pipeline_step",
                             &result.output,
                         )?;
                     }

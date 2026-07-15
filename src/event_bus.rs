@@ -45,15 +45,29 @@ pub struct EventBus {
 }
 
 impl EventBus {
+    fn bind_storage(&self) {
+        crate::providers::get_storage().set_override_path(Some(self._db_path.clone()));
+    }
+
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
         let db_str = db_path.as_ref().to_string_lossy().into_owned();
-        crate::providers::get_storage().set_override_path(Some(db_str.clone()));
+
+        let storage = crate::providers::get_storage();
+        storage.set_override_path(Some(db_str.clone()));
+
         let conn = rusqlite::Connection::open(&db_str)?;
         conn.execute_batch(include_str!("../event_bus/schema.sql"))?;
+
+        // Ensure the storage-backed schema/migrations are also applied on the same DB file.
+        // This keeps append_semantic_artifact/list_semantic_artifacts aligned with the
+        // provider implementation used by EventBus methods.
+        let _ = storage.list_semantic_artifacts("__schema_probe__", None);
+
         Ok(Self { _db_path: db_str })
     }
 
     pub fn latest_generation_for_task(&self, task_id: &str) -> Result<i64> {
+        self.bind_storage();
         crate::providers::get_storage().latest_generation_for_task(task_id)
     }
 
@@ -65,6 +79,7 @@ impl EventBus {
         event_type: &str,
         payload: &Value,
     ) -> Result<i64> {
+        self.bind_storage();
         crate::providers::get_storage().append_event(task_id, step_id, event_type, payload)
     }
 
@@ -76,6 +91,7 @@ impl EventBus {
         artifact_type: &str,
         payload: &Value,
     ) -> Result<()> {
+        self.bind_storage();
         crate::providers::get_storage().append_semantic_artifact(
             task_id,
             step_id,
@@ -101,6 +117,7 @@ impl EventBus {
         task_id: &str,
         step_id: Option<&str>,
     ) -> Result<Vec<SemanticArtifactRow>> {
+        self.bind_storage();
         crate::providers::get_storage().list_semantic_artifacts(task_id, step_id)
     }
 
@@ -111,15 +128,18 @@ impl EventBus {
         step_id: &str,
         events: Vec<(String, Value)>,
     ) -> Result<i64> {
+        self.bind_storage();
         crate::providers::get_storage().commit_causal_unit(task_id, step_id, events)
     }
 
     #[allow(dead_code)]
     pub fn query(&self, task_id: &str) -> Result<Vec<EventRow>> {
+        self.bind_storage();
         crate::providers::get_storage().query_events(task_id)
     }
 
     pub fn list_execution_events(&self, task_id: &str) -> Result<Vec<ExecutionEvent>> {
+        self.bind_storage();
         crate::providers::get_storage().list_execution_events(task_id)
     }
 

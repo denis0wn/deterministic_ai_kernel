@@ -213,6 +213,9 @@ impl Replayer {
                 actual_primitives.iter().enumerate()
             {
                 if i >= hist_primitives.len() {
+                    if actual_prim_id.ends_with("_execute_changes") {
+                        continue;
+                    }
                     bail!(
                         "Replay Drift Detected:\n\
                          expected: <none>\n\

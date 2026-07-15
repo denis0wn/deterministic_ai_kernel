@@ -36,7 +36,7 @@ impl StepKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Step {
     pub kind: StepKind,
     pub detail: Option<String>,

@@ -30,9 +30,14 @@ pub async fn embed_text(input: &str) -> Result<Vec<f32>> {
 
     let (endpoint, model) = match crate::runtime_manager::RuntimeManager::load() {
         Ok(mgr) => {
-            let embed_cfg = mgr.config().embeddings.as_ref()
+            let embed_cfg = mgr
+                .config()
+                .embeddings
+                .as_ref()
                 .ok_or_else(|| anyhow!("Embeddings not configured in config/runtime.json"))?;
-            if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock") {
+            if embed_cfg.provider == "mock"
+                || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock")
+            {
                 return Ok(vec![0.1f32; 1536]);
             }
             (embed_cfg.endpoint.clone(), embed_cfg.model.clone())
@@ -56,11 +61,7 @@ pub async fn embed_text(input: &str) -> Result<Vec<f32>> {
     };
 
     let client = reqwest::Client::new();
-    let response = client
-        .post(url)
-        .json(&req)
-        .send()
-        .await?;
+    let response = client.post(url).json(&req).send().await?;
 
     let status = response.status();
     let body = response.text().await?;

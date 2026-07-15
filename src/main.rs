@@ -715,7 +715,10 @@ async fn main() {
                 Ok(mgr) => match mgr.start() {
                     Ok(info) => {
                         println!("Runtime started.");
-                        println!("PID: {}", info.pid.map_or("—".to_string(), |p| p.to_string()));
+                        println!(
+                            "PID: {}",
+                            info.pid.map_or("—".to_string(), |p| p.to_string())
+                        );
                         println!("Model: {}", info.loaded_model.as_deref().unwrap_or("—"));
                         println!("URL: {}", info.base_url);
                     }
@@ -752,7 +755,10 @@ async fn main() {
                 Ok(mgr) => match mgr.restart() {
                     Ok(info) => {
                         println!("Runtime restarted.");
-                        println!("PID: {}", info.pid.map_or("—".to_string(), |p| p.to_string()));
+                        println!(
+                            "PID: {}",
+                            info.pid.map_or("—".to_string(), |p| p.to_string())
+                        );
                         println!("Model: {}", info.loaded_model.as_deref().unwrap_or("—"));
                         println!("URL: {}", info.base_url);
                     }
@@ -1032,30 +1038,25 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let final_answer_path = format!(
-                "{}/artifacts/final_answer.{}.txt",
-                std::env::current_dir()
-                    .unwrap_or_else(|e| {
-                        eprintln!("Failed to get current directory: {e}");
-                        std::process::exit(1);
-                    })
-                    .display(),
-                task_id
-            );
-            let final_answer = std::fs::read_to_string(&final_answer_path).unwrap_or_else(|_| {
+            let final_answer = {
+                let bus = deterministic_ai_kernel::event_bus::EventBus::new(db).unwrap_or_else(|e| {
+                    eprintln!("Failed to open EventBus: {e}");
+                    std::process::exit(1);
+                });
+
                 let fallback = resolved.trim().to_string();
-                let _ = std::fs::create_dir_all(format!(
-                    "{}/artifacts",
-                    std::env::current_dir()
-                        .unwrap_or_else(|e| {
-                            eprintln!("Failed to get current directory: {e}");
-                            std::process::exit(1);
-                        })
-                        .display()
-                ));
-                let _ = std::fs::write(&final_answer_path, &fallback);
-                fallback
-            });
+
+                match bus.list_semantic_artifacts(&task_id, None) {
+                    Ok(artifacts) => artifacts
+                        .into_iter()
+                        .rev()
+                        .find(|a| a.artifact_type == "final_answer")
+                        .and_then(|a| serde_json::from_str::<serde_json::Value>(&a.payload).ok())
+                        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
+                        .unwrap_or(fallback),
+                    Err(_) => fallback,
+                }
+            };
 
             if as_json {
                 let out = serde_json::json!({

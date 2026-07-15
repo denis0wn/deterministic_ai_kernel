@@ -114,7 +114,7 @@ pub fn probe_mlx_runtime() -> (bool, Vec<String>) {
             .unwrap_or_default();
         return (true, ids);
     }
-    
+
     if let Ok(mgr) = crate::runtime_manager::RuntimeManager::load() {
         if let Ok(info) = mgr.status() {
             let ready = info.status == crate::runtime_manager::RuntimeStatus::Running;
@@ -122,7 +122,7 @@ pub fn probe_mlx_runtime() -> (bool, Vec<String>) {
             return (ready, ids);
         }
     }
-    
+
     (false, vec![])
 }
 
@@ -222,8 +222,9 @@ pub fn doctor() -> Result<DoctorReport> {
     let (rt_provider, rt_pid, rt_host, rt_port, rt_status, rt_loaded, rt_config_model) =
         match crate::runtime_manager::RuntimeManager::load() {
             Ok(mgr) => {
-                let info = mgr.status().unwrap_or_else(|_| {
-                    crate::runtime_manager::RuntimeInfo {
+                let info = mgr
+                    .status()
+                    .unwrap_or_else(|_| crate::runtime_manager::RuntimeInfo {
                         status: crate::runtime_manager::RuntimeStatus::Error,
                         pid: None,
                         host: mgr.config().host.clone(),
@@ -232,8 +233,7 @@ pub fn doctor() -> Result<DoctorReport> {
                         loaded_model: None,
                         config_model: mgr.config().default_model.clone(),
                         base_url: mgr.config().base_url(),
-                    }
-                });
+                    });
                 (
                     info.provider,
                     info.pid,
@@ -257,43 +257,35 @@ pub fn doctor() -> Result<DoctorReport> {
 
     let (emb_provider, emb_model, emb_endpoint, emb_status, emb_reason) =
         match crate::runtime_manager::EmbeddingRuntimeManager::load() {
-            Ok(mgr) => {
-                match mgr.status() {
-                    Ok(info) => {
-                        let status_str = match info.status {
-                            crate::runtime_manager::RuntimeStatus::Running => "AVAILABLE".to_string(),
-                            crate::runtime_manager::RuntimeStatus::Starting => "STARTING".to_string(),
-                            crate::runtime_manager::RuntimeStatus::Stopped => "BLOCKED".to_string(),
-                            crate::runtime_manager::RuntimeStatus::Error => "BLOCKED".to_string(),
-                        };
-                        (
-                            Some(info.provider.clone()),
-                            Some(info.config_model.clone()),
-                            Some(info.base_url.clone()),
-                            status_str,
-                            if info.status != crate::runtime_manager::RuntimeStatus::Running {
-                                Some("local embedding backend unavailable".to_string())
-                            } else {
-                                None
-                            },
-                        )
-                    }
-                    Err(e) => (
-                        None,
-                        None,
-                        None,
-                        "NOT_CONFIGURED".to_string(),
-                        Some(e.to_string()),
+            Ok(mgr) => match mgr.status() {
+                Ok(info) => {
+                    let status_str = match info.status {
+                        crate::runtime_manager::RuntimeStatus::Running => "AVAILABLE".to_string(),
+                        crate::runtime_manager::RuntimeStatus::Starting => "STARTING".to_string(),
+                        crate::runtime_manager::RuntimeStatus::Stopped => "BLOCKED".to_string(),
+                        crate::runtime_manager::RuntimeStatus::Error => "BLOCKED".to_string(),
+                    };
+                    (
+                        Some(info.provider.clone()),
+                        Some(info.config_model.clone()),
+                        Some(info.base_url.clone()),
+                        status_str,
+                        if info.status != crate::runtime_manager::RuntimeStatus::Running {
+                            Some("local embedding backend unavailable".to_string())
+                        } else {
+                            None
+                        },
                     )
                 }
-            }
-            Err(_) => (
-                None,
-                None,
-                None,
-                "NOT_CONFIGURED".to_string(),
-                None,
-            )
+                Err(e) => (
+                    None,
+                    None,
+                    None,
+                    "NOT_CONFIGURED".to_string(),
+                    Some(e.to_string()),
+                ),
+            },
+            Err(_) => (None, None, None, "NOT_CONFIGURED".to_string(), None),
         };
 
     let mut roles = Vec::new();
@@ -326,7 +318,11 @@ pub fn doctor() -> Result<DoctorReport> {
         let is_embeddings = row.role == "embeddings";
         let (model_available, model_id_match, role_runtime_ready) = if is_embeddings {
             let matched = emb_model.as_ref() == Some(&row.manifest_model);
-            (emb_status == "AVAILABLE", matched, emb_status == "AVAILABLE")
+            (
+                emb_status == "AVAILABLE",
+                matched,
+                emb_status == "AVAILABLE",
+            )
         } else {
             let available = runtime_ready && model_id_match_mlx;
             (available, model_id_match_mlx, runtime_ready)
@@ -415,9 +411,7 @@ pub fn doctor_json_report() -> Result<serde_json::Value> {
 }
 
 fn total_memory_gb() -> Result<f64> {
-    let output = Command::new("sysctl")
-        .args(["-n", "hw.memsize"])
-        .output()?;
+    let output = Command::new("sysctl").args(["-n", "hw.memsize"]).output()?;
     let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let bytes = s.parse::<u64>()?;
     Ok(bytes as f64 / 1024.0 / 1024.0 / 1024.0)
@@ -448,18 +442,28 @@ pub async fn print_doctor_text() -> Result<()> {
 
     let (llm_smoke_status, llm_ok) = match &llm_smoke_res {
         Ok(text) if text.trim().to_lowercase().contains("ok") => ("OK".to_string(), true),
-        Ok(text) => (format!("FAILED (unexpected response: '{}')", text.trim()), false),
+        Ok(text) => (
+            format!("FAILED (unexpected response: '{}')", text.trim()),
+            false,
+        ),
         Err(e) => (format!("FAILED ({})", e), false),
     };
 
-    let planner_smoke_res = crate::llm::task_planner("Reply with exactly: Task planner from Rust works").await;
+    let planner_smoke_res =
+        crate::llm::task_planner("Reply with exactly: Task planner from Rust works").await;
     let (planner_smoke_status, planner_ok) = match &planner_smoke_res {
-        Ok(text) if text.trim().contains("Task planner from Rust works") => ("OK".to_string(), true),
-        Ok(text) => (format!("FAILED (unexpected response: '{}')", text.trim()), false),
+        Ok(text) if text.trim().contains("Task planner from Rust works") => {
+            ("OK".to_string(), true)
+        }
+        Ok(text) => (
+            format!("FAILED (unexpected response: '{}')", text.trim()),
+            false,
+        ),
         Err(e) => (format!("FAILED ({})", e), false),
     };
 
-    let embeddings_smoke_res = crate::embeddings::embed_text("deterministic kernel embeddings smoke test").await;
+    let embeddings_smoke_res =
+        crate::embeddings::embed_text("deterministic kernel embeddings smoke test").await;
     let (embeddings_smoke_status, embed_ok) = match &embeddings_smoke_res {
         Ok(vec) if !vec.is_empty() => (format!("OK (Dim: {})", vec.len()), true),
         Ok(_) => ("FAILED (empty vector)".to_string(), false),
@@ -475,14 +479,23 @@ pub async fn print_doctor_text() -> Result<()> {
         format!("{:.1} GB System RAM", total_gb)
     };
 
-    let context_window = if report.loaded_runtime_model.as_deref().unwrap_or("").contains("gemma4")
+    let context_window = if report
+        .loaded_runtime_model
+        .as_deref()
+        .unwrap_or("")
+        .contains("gemma4")
         || report.config_default_model.contains("gemma4")
-        || report.loaded_runtime_model.as_deref().unwrap_or("").contains("gemma-4")
-        || report.config_default_model.contains("gemma-4") {
-            "131,072 tokens"
-        } else {
-            "8,192 tokens (default)"
-        };
+        || report
+            .loaded_runtime_model
+            .as_deref()
+            .unwrap_or("")
+            .contains("gemma-4")
+        || report.config_default_model.contains("gemma-4")
+    {
+        "131,072 tokens"
+    } else {
+        "8,192 tokens (default)"
+    };
 
     // Storage & Database status
     let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {
@@ -504,13 +517,23 @@ pub async fn print_doctor_text() -> Result<()> {
                 .query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get::<_, i64>(0))
                 .unwrap_or(0);
             causal_units = conn
-                .query_row("SELECT COUNT(DISTINCT causal_unit_id) FROM event_log", [], |r| r.get::<_, i64>(0))
+                .query_row(
+                    "SELECT COUNT(DISTINCT causal_unit_id) FROM event_log",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
                 .unwrap_or(0);
             snapshots_count = conn
-                .query_row("SELECT COUNT(*) FROM state_snapshots", [], |r| r.get::<_, i64>(0))
+                .query_row("SELECT COUNT(*) FROM state_snapshots", [], |r| {
+                    r.get::<_, i64>(0)
+                })
                 .unwrap_or(0);
             active_steps = conn
-                .query_row("SELECT COUNT(*) FROM step_status WHERE outcome = 'Running'", [], |r| r.get::<_, i64>(0))
+                .query_row(
+                    "SELECT COUNT(*) FROM step_status WHERE outcome = 'Running'",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
                 .unwrap_or(0);
         }
         Err(e) => {
@@ -531,11 +554,16 @@ pub async fn print_doctor_text() -> Result<()> {
     println!("Provider:              {}", report.runtime_provider);
     println!(
         "PID:                   {}",
-        report.runtime_pid.map_or("—".to_string(), |p| p.to_string())
+        report
+            .runtime_pid
+            .map_or("—".to_string(), |p| p.to_string())
     );
     println!("Host:                  {}", report.runtime_host);
     println!("Port:                  {}", report.runtime_port);
-    println!("Runtime Status:        {status_icon} {}", report.runtime_status);
+    println!(
+        "Runtime Status:        {status_icon} {}",
+        report.runtime_status
+    );
     println!(
         "Loaded Runtime Model:  {}",
         report.loaded_runtime_model.as_deref().unwrap_or("—")
@@ -546,14 +574,26 @@ pub async fn print_doctor_text() -> Result<()> {
     if report.embedding_status == "NOT_CONFIGURED" {
         println!("  Status:              NOT_CONFIGURED");
     } else {
-        println!("  Provider:            {}", report.embedding_provider.as_deref().unwrap_or("—"));
-        println!("  Model:               {}", report.embedding_model.as_deref().unwrap_or("—"));
-        println!("  Endpoint:            {}", report.embedding_endpoint.as_deref().unwrap_or("—"));
+        println!(
+            "  Provider:            {}",
+            report.embedding_provider.as_deref().unwrap_or("—")
+        );
+        println!(
+            "  Model:               {}",
+            report.embedding_model.as_deref().unwrap_or("—")
+        );
+        println!(
+            "  Endpoint:            {}",
+            report.embedding_endpoint.as_deref().unwrap_or("—")
+        );
         let emb_icon = match report.embedding_status.as_str() {
             "AVAILABLE" => "●",
             _ => "✗",
         };
-        println!("  Status:              {} {}", emb_icon, report.embedding_status);
+        println!(
+            "  Status:              {} {}",
+            emb_icon, report.embedding_status
+        );
         if let Some(reason) = &report.embedding_reason {
             println!("  Reason:              {}", reason);
         }
@@ -562,7 +602,10 @@ pub async fn print_doctor_text() -> Result<()> {
     println!("Model Roles:");
     for row in &report.roles {
         let sync_icon = if row.in_sync { "✓" } else { "✗" };
-        println!("  {sync_icon} ROLE={:<20} MODEL={}", row.role, row.manifest_model);
+        println!(
+            "  {sync_icon} ROLE={:<20} MODEL={}",
+            row.role, row.manifest_model
+        );
     }
     println!();
     println!("Smoke Tests:");
@@ -574,12 +617,18 @@ pub async fn print_doctor_text() -> Result<()> {
     println!("System Resources:");
     let used_gb = total_gb - report.free_gb;
     let used_pct = (used_gb / total_gb) * 100.0;
-    println!("  RAM Usage:           {:.2} GB used / {:.2} GB total ({:.1}%)", used_gb, total_gb, used_pct);
+    println!(
+        "  RAM Usage:           {:.2} GB used / {:.2} GB total ({:.1}%)",
+        used_gb, total_gb, used_pct
+    );
     println!("  Metal Memory:        {}", metal_mem);
     println!("  Context Window:      {}", context_window);
     println!();
     println!("Storage & Execution:");
-    println!("  Database Status:     {} (Path: {})", db_status_str, db_path);
+    println!(
+        "  Database Status:     {} (Path: {})",
+        db_status_str, db_path
+    );
     println!(
         "  Replay Status:       Active ({} events, {} causal units, {} snapshots)",
         event_count, causal_units, snapshots_count

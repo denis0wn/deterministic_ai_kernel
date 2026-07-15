@@ -23,16 +23,24 @@ pub fn get_environment_fingerprint() -> String {
     let mlx_model_dir = std::env::var("MLX_MODEL_DIR").unwrap_or_default();
     let cargo_pkg_name = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
 
-    let raw = format!(
-        "os:{};arch:{};rustc:{};kernel:{};mlx_model_dir:{};cargo_pkg_name:{}",
-        os,
-        arch,
-        rustc_version.trim(),
-        kernel_version.trim(),
-        mlx_model_dir,
-        cargo_pkg_name
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("os".to_string(), serde_json::json!(os));
+    map.insert("arch".to_string(), serde_json::json!(arch));
+    map.insert("rustc".to_string(), serde_json::json!(rustc_version.trim()));
+    map.insert(
+        "kernel".to_string(),
+        serde_json::json!(kernel_version.trim()),
     );
-    blake3::hash(raw.as_bytes()).to_hex().to_string()
+    map.insert(
+        "mlx_model_dir".to_string(),
+        serde_json::json!(mlx_model_dir),
+    );
+    map.insert(
+        "cargo_pkg_name".to_string(),
+        serde_json::json!(cargo_pkg_name),
+    );
+
+    crate::fingerprint::generate_fingerprint(&map)
 }
 
 #[derive(Clone, Debug)]

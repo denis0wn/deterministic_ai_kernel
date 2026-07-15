@@ -1,0 +1,14 @@
+{
+  "plan_id": "ba7d74a5d875fdb6",
+  "seed": 42,
+  "steps": [
+    {
+      "index": 0,
+      "description": "customer request: build website. step 1 create design. step 2 implement backend. step 3 run tests. step 4 deploy.",
+      "status": "Ok",
+      "duration_ms": 0
+    }
+  ],
+  "total_duration_ms": 0,
+  "success": true
+}

@@ -14,6 +14,7 @@ pub enum PrimitiveKind {
     Spawn,
     Complete,
     Fail,
+    SolveConstraint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

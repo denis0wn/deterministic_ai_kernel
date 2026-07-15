@@ -1,0 +1,14 @@
+{
+  "plan_id": "34001a49002a5499",
+  "seed": 42,
+  "steps": [
+    {
+      "index": 0,
+      "description": "customer request: create invoice workflow",
+      "status": "Ok",
+      "duration_ms": 0
+    }
+  ],
+  "total_duration_ms": 0,
+  "success": true
+}

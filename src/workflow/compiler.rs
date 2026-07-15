@@ -127,20 +127,57 @@ impl Workflow {
 
         let deterministic = Self::build_steps(input);
 
+        let instruction = "You are a deterministic parsing engine. Your ONLY job is to translate the user's task into the exact execution steps format. RULES: 1. NO conversational text. 2. NO markdown formatting. 3. NEVER attempt to improve or invent features. 4. Output ONLY the raw execution steps exactly as requested.";
         let prompt = format!(
-            "You are improving an EXISTING Rust kernel planner. \
-Refine the provided draft plan into short implementation steps. \
-Keep the same scope, stay grounded in the existing code, and return one step per line. \
-No numbering, no bullets, no commentary.\n\nTask: {}\n\nDraft plan:\n{}",
-            normalized,
-            deterministic
-                .iter()
-                .map(|s| s.as_text())
-                .collect::<Vec<_>>()
-                .join("\n")
+            "{}\n\nTranslate the following task into strict execution steps:\n\nTASK:\n{}",
+            instruction, normalized
         );
 
+        let manifest_version = "v1";
+        let planner_version = env!("CARGO_PKG_VERSION");
+        let environment_fingerprint = crate::planner_pipeline::get_environment_fingerprint();
+        let repository_fingerprint: Option<&str> = None;
+        let normalized_prompt = &prompt;
+
+        let cache_key = crate::execution::cache::generate_planner_cache_key(
+            manifest_version,
+            planner_version,
+            &environment_fingerprint,
+            repository_fingerprint,
+            normalized_prompt,
+        );
+
+        let planner_cache_start = std::time::Instant::now();
+        let cached_plan = crate::providers::get_storage().get_cached_plan(&cache_key);
+        crate::metrics::METRICS.record(
+            crate::metrics::PLANNER_CACHE_LOOKUP_MS,
+            planner_cache_start.elapsed().as_millis() as u64,
+        );
+        if let Ok(Some((cached_plan_id, cached_steps_json))) = cached_plan {
+            let _ = crate::providers::get_storage().append_event(
+                "global_task",
+                None,
+                "PLANNER_CACHE_HIT",
+                &serde_json::json!({ "cache_key": cache_key, "plan_id": cached_plan_id }),
+            );
+            if let Ok(cached_steps) = serde_json::from_str::<Vec<Step>>(&cached_steps_json) {
+                return Ok(cached_steps);
+            }
+        }
+
+        let _ = crate::providers::get_storage().append_event(
+            "global_task",
+            None,
+            "PLANNER_CACHE_MISS",
+            &serde_json::json!({ "cache_key": cache_key }),
+        );
+
+        let llm_start = std::time::Instant::now();
         let text = llm::task_planner(&prompt).await?;
+        crate::metrics::METRICS.record(
+            crate::metrics::LLM_LATENCY_MS,
+            llm_start.elapsed().as_millis() as u64,
+        );
         let mut steps = deterministic.clone();
         let parsed = apply_semantic_bias_from_seed(parse_steps(&text), None);
 
@@ -155,7 +192,30 @@ No numbering, no bullets, no commentary.\n\nTask: {}\n\nDraft plan:\n{}",
             }
         }
 
-        Ok(validate_steps(steps))
+        let final_steps = validate_steps(steps);
+        let exec_spec = crate::workflow::contract::steps_to_exec_spec(&final_steps);
+        let plan_id = exec_spec.spec_id.clone();
+        let serialized_steps = serde_json::to_string(&final_steps).unwrap_or_default();
+
+        let _ = crate::providers::get_storage().store_cached_plan(
+            &cache_key,
+            manifest_version,
+            planner_version,
+            &environment_fingerprint,
+            repository_fingerprint,
+            normalized_prompt,
+            &plan_id,
+            &serialized_steps,
+        );
+
+        let _ = crate::providers::get_storage().append_event(
+            "global_task",
+            None,
+            "PLANNER_CACHE_STORE",
+            &serde_json::json!({ "cache_key": cache_key, "plan_id": plan_id }),
+        );
+
+        Ok(final_steps)
     }
 }
 

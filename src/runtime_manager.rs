@@ -44,10 +44,9 @@ impl RuntimeConfig {
     pub fn load() -> Result<Self> {
         let path = std::env::var("DAK_RUNTIME_CONFIG_PATH")
             .unwrap_or_else(|_| Self::CONFIG_PATH.to_string());
-        let text = fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", path))?;
-        let cfg: Self = serde_json::from_str(&text)
-            .with_context(|| format!("failed to parse {}", path))?;
+        let text = fs::read_to_string(&path).with_context(|| format!("failed to read {}", path))?;
+        let cfg: Self =
+            serde_json::from_str(&text).with_context(|| format!("failed to parse {}", path))?;
         Ok(cfg)
     }
 
@@ -114,8 +113,8 @@ fn read_pid() -> Option<u32> {
 
 fn write_pid(pid: u32) -> Result<()> {
     ensure_runtime_dir()?;
-    let mut f = fs::File::create(PID_FILE)
-        .with_context(|| format!("failed to create {PID_FILE}"))?;
+    let mut f =
+        fs::File::create(PID_FILE).with_context(|| format!("failed to create {PID_FILE}"))?;
     write!(f, "{pid}")?;
     Ok(())
 }
@@ -236,11 +235,13 @@ use std::net::{SocketAddr, TcpStream};
 fn probe_endpoint(host: &str, port: u16) -> Option<Vec<String>> {
     let addr_str = format!("{}:{}", host, port);
     let addr: SocketAddr = addr_str.parse().ok()?;
-    
+
     // Connect with a 3-second timeout
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(3)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
-    stream.set_write_timeout(Some(Duration::from_secs(3))).ok()?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .ok()?;
 
     let req = serde_json::json!({
         "method": "ping"
@@ -257,7 +258,11 @@ fn probe_endpoint(host: &str, port: u16) -> Option<Vec<String>> {
 
     let resp: serde_json::Value = serde_json::from_str(&line).ok()?;
     if resp.get("status").and_then(|v| v.as_str()) == Some("ok") {
-        let model = resp.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let model = resp
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         Some(vec![model])
     } else {
         None
@@ -273,7 +278,7 @@ fn parse_host_port(url_str: &str) -> Option<(String, u16)> {
     } else {
         trimmed
     };
-    
+
     let host_port = strip_proto.split('/').next()?;
     let mut parts = host_port.split(':');
     let host = parts.next()?.to_string();
@@ -296,12 +301,13 @@ pub fn check_embeddings_health(cfg: &EmbeddingsConfig) -> Result<(), String> {
     }
 
     let url = cfg.health_check_url.as_ref().unwrap_or(&cfg.endpoint);
-    let (host, port) = parse_host_port(url)
-        .ok_or_else(|| format!("Invalid health check URL: {}", url))?;
+    let (host, port) =
+        parse_host_port(url).ok_or_else(|| format!("Invalid health check URL: {}", url))?;
 
     let addr_str = format!("{}:{}", host, port);
     use std::net::ToSocketAddrs;
-    let addrs: Vec<SocketAddr> = addr_str.to_socket_addrs()
+    let addrs: Vec<SocketAddr> = addr_str
+        .to_socket_addrs()
         .map_err(|e| format!("DNS resolution failed for {}: {}", addr_str, e))?
         .collect();
 
@@ -372,7 +378,11 @@ impl RuntimeManager {
         if let Some(pid) = read_pid() {
             if pid_alive(pid) {
                 if let Some(models) = probe_endpoint(&self.config.host, self.config.port) {
-                    return Ok(self.build_info(RuntimeStatus::Running, Some(pid), models.first().cloned()));
+                    return Ok(self.build_info(
+                        RuntimeStatus::Running,
+                        Some(pid),
+                        models.first().cloned(),
+                    ));
                 }
                 // Process alive but endpoint not responding — kill and restart.
                 eprintln!("[runtime] PID {pid} alive but endpoint unresponsive — restarting");
@@ -423,7 +433,8 @@ impl RuntimeManager {
                     Duration::from_millis(self.config.health_check_interval_ms),
                 );
                 if healthy {
-                    let models = probe_endpoint(&self.config.host, self.config.port).unwrap_or_default();
+                    let models =
+                        probe_endpoint(&self.config.host, self.config.port).unwrap_or_default();
                     return Ok(self.build_info(
                         RuntimeStatus::Running,
                         read_pid(),
@@ -485,7 +496,10 @@ impl RuntimeManager {
         );
 
         if !healthy {
-            eprintln!("[runtime] Health check timeout after {}s", self.config.startup_timeout_secs);
+            eprintln!(
+                "[runtime] Health check timeout after {}s",
+                self.config.startup_timeout_secs
+            );
             kill_process(pid);
             remove_pid();
             remove_lock();
@@ -553,8 +567,13 @@ impl RuntimeManager {
 
     /// Query the runtime for the currently loaded model name.
     pub fn current_model(&self) -> Result<String> {
-        let models = probe_endpoint(&self.config.host, self.config.port)
-            .ok_or_else(|| anyhow!("MLX runtime not reachable at {}:{}", self.config.host, self.config.port))?;
+        let models = probe_endpoint(&self.config.host, self.config.port).ok_or_else(|| {
+            anyhow!(
+                "MLX runtime not reachable at {}:{}",
+                self.config.host,
+                self.config.port
+            )
+        })?;
         models.first().cloned().ok_or_else(|| {
             anyhow!(
                 "MLX runtime responded but reports no loaded models at {}:{}",
@@ -675,7 +694,8 @@ impl EmbeddingRuntimeManager {
             None => bail!("Embeddings configuration is missing from config/runtime.json"),
         };
 
-        if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock") {
+        if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock")
+        {
             return Ok(self.build_info(RuntimeStatus::Running, None));
         }
 
@@ -710,7 +730,8 @@ impl EmbeddingRuntimeManager {
             None => bail!("Embeddings configuration is missing from config/runtime.json"),
         };
 
-        if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock") {
+        if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock")
+        {
             return Ok(self.build_info(RuntimeStatus::Running, None));
         }
 
@@ -723,7 +744,9 @@ impl EmbeddingRuntimeManager {
         let _lock = match FileLock::try_acquire_emb()? {
             Some(lock) => lock,
             None => {
-                eprintln!("[emb_runtime] Another process is starting the embeddings server — waiting…");
+                eprintln!(
+                    "[emb_runtime] Another process is starting the embeddings server — waiting…"
+                );
                 let healthy = self.wait_for_health(
                     Duration::from_secs(self.config.startup_timeout_secs),
                     Duration::from_millis(self.config.health_check_interval_ms),
@@ -781,7 +804,10 @@ impl EmbeddingRuntimeManager {
         );
 
         if !healthy {
-            eprintln!("[emb_runtime] Health check timeout after {}s", self.config.startup_timeout_secs);
+            eprintln!(
+                "[emb_runtime] Health check timeout after {}s",
+                self.config.startup_timeout_secs
+            );
             kill_process(pid);
             remove_emb_pid();
             bail!("Embedding server failed to start within timeout");
@@ -806,7 +832,8 @@ impl EmbeddingRuntimeManager {
             None => bail!("Embeddings configuration is missing from config/runtime.json"),
         };
 
-        if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock") {
+        if embed_cfg.provider == "mock" || std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock")
+        {
             return Ok(self.build_info(RuntimeStatus::Running, None));
         }
 
@@ -844,7 +871,8 @@ impl EmbeddingRuntimeManager {
         let embed_cfg = self.config.embeddings.as_ref();
         let (model, host, port, base_url) = match embed_cfg {
             Some(cfg) => {
-                let (h, p) = parse_host_port(&cfg.endpoint).unwrap_or(("127.0.0.1".to_string(), 65431));
+                let (h, p) =
+                    parse_host_port(&cfg.endpoint).unwrap_or(("127.0.0.1".to_string(), 65431));
                 (cfg.model.clone(), h, p, cfg.endpoint.clone())
             }
             None => (
@@ -852,7 +880,7 @@ impl EmbeddingRuntimeManager {
                 "127.0.0.1".to_string(),
                 65431,
                 "".to_string(),
-            )
+            ),
         };
 
         let is_running = status == RuntimeStatus::Running;
@@ -862,8 +890,14 @@ impl EmbeddingRuntimeManager {
             pid,
             host,
             port,
-            provider: embed_cfg.map(|c| c.provider.clone()).unwrap_or_else(|| "none".to_string()),
-            loaded_model: if is_running { Some(model.clone()) } else { None },
+            provider: embed_cfg
+                .map(|c| c.provider.clone())
+                .unwrap_or_else(|| "none".to_string()),
+            loaded_model: if is_running {
+                Some(model.clone())
+            } else {
+                None
+            },
             config_model: model,
             base_url,
         }
@@ -890,20 +924,14 @@ pub fn print_runtime_status() -> Result<()> {
     println!("Provider:       {}", info.provider);
     println!(
         "PID:            {}",
-        info.pid
-            .map_or("—".to_string(), |p| p.to_string())
+        info.pid.map_or("—".to_string(), |p| p.to_string())
     );
     println!("Host:           {}", info.host);
     println!("Port:           {}", info.port);
-    println!(
-        "Status:         {status_icon} {}",
-        info.status
-    );
+    println!("Status:         {status_icon} {}", info.status);
     println!(
         "Loaded Model:   {}",
-        info.loaded_model
-            .as_deref()
-            .unwrap_or("—")
+        info.loaded_model.as_deref().unwrap_or("—")
     );
     println!("Config Model:   {}", info.config_model);
     println!("Base URL:       {}", info.base_url);
@@ -948,9 +976,7 @@ pub fn print_runtime_model() -> Result<()> {
         println!(
             "  {sync_icon} {:<20} → {}",
             row.role,
-            row.env_model
-                .as_deref()
-                .unwrap_or("<missing>")
+            row.env_model.as_deref().unwrap_or("<missing>")
         );
     }
     println!("═══════════════════════════════════════════");
@@ -1010,7 +1036,11 @@ mod tests {
     #[test]
     fn build_info_populates_fields() {
         let mgr = RuntimeManager::from_config(test_config());
-        let info = mgr.build_info(RuntimeStatus::Running, Some(12345), Some("my-model".to_string()));
+        let info = mgr.build_info(
+            RuntimeStatus::Running,
+            Some(12345),
+            Some("my-model".to_string()),
+        );
         assert_eq!(info.status, RuntimeStatus::Running);
         assert_eq!(info.pid, Some(12345));
         assert_eq!(info.loaded_model.as_deref(), Some("my-model"));

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
-use std::net::TcpListener;
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 
 #[tokio::test]
 async fn test_native_inference_contract_flow() {
@@ -13,12 +13,17 @@ async fn test_native_inference_contract_flow() {
     let _handle = std::thread::spawn(move || {
         println!("[test-server] Mock server starting on port {}", port);
         while let Ok((mut socket, addr)) = listener.accept() {
-            println!("[test-server] Mock server accepted connection from {}", addr);
+            println!(
+                "[test-server] Mock server accepted connection from {}",
+                addr
+            );
             let mut reader = BufReader::new(&socket);
             let mut line = String::new();
             if let Ok(n) = reader.read_line(&mut line) {
                 println!("[test-server] Mock server read {} bytes: {:?}", n, line);
-                if n == 0 { continue; }
+                if n == 0 {
+                    continue;
+                }
                 if let Ok(req) = serde_json::from_str::<Value>(&line) {
                     if let Some(method) = req.get("method").and_then(|v| v.as_str()) {
                         println!("[test-server] Mock server method: {}", method);
@@ -63,10 +68,10 @@ async fn test_native_inference_contract_flow() {
         "startup_timeout_secs": 5,
         "health_check_interval_ms": 100
     });
-    
+
     let config_path = "config/runtime.json";
     let prev_config = std::fs::read_to_string(config_path).ok();
-    
+
     std::fs::create_dir_all("config").unwrap();
     std::fs::write(config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
 
@@ -82,15 +87,20 @@ async fn test_native_inference_contract_flow() {
     // 4. Verify native inference health checks succeed
     let mgr = deterministic_ai_kernel::runtime_manager::RuntimeManager::load().unwrap();
     let status = mgr.status().unwrap();
-    assert_eq!(status.status, deterministic_ai_kernel::runtime_manager::RuntimeStatus::Running);
+    assert_eq!(
+        status.status,
+        deterministic_ai_kernel::runtime_manager::RuntimeStatus::Running
+    );
     assert_eq!(status.loaded_model.as_deref(), Some("mock-model"));
 
     // 5. Verify the entire generation and channel extraction flow
     let response = deterministic_ai_kernel::llm::chat_with_role(
         "coding_assistant",
         "You are a mock coding assistant.",
-        "hello"
-    ).await.unwrap();
+        "hello",
+    )
+    .await
+    .unwrap();
 
     // Verify final channel extraction extracted the correct inner text response
     assert_eq!(response, "final channel extraction output: hello world");

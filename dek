@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# dek — Deterministic AI Kernel CLI wrapper
+#
+# Usage:
+#   dek "solve this task"     — run a pipeline with the given payload
+#   dek doctor                — full system diagnostic
+#   dek stop                  — stop the MLX runtime
+#   dek restart               — restart the MLX runtime
+#   dek status                — show runtime status
+#   dek model                 — show model information
+#   dek help                  — show this help
+#
+# The MLX inference runtime is managed automatically.
+# You never need to start mlx_lm.server manually.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+BIN="./target/debug/deterministic_ai_kernel"
+
+# Build if binary doesn't exist or source is newer
+needs_build() {
+    [[ ! -f "$BIN" ]] && return 0
+    [[ Cargo.toml -nt "$BIN" ]] && return 0
+    # Check if any .rs file in src/ is newer than the binary
+    if find src -name '*.rs' -newer "$BIN" -print -quit 2>/dev/null | grep -q .; then
+        return 0
+    fi
+    return 1
+}
+
+if needs_build; then
+    echo "Building kernel..."
+    cargo build --quiet 2>/dev/null || cargo build
+fi
+
+CMD="${1:-}"
+
+case "$CMD" in
+    help|--help|-h)
+        echo "Deterministic AI Kernel"
+        echo ""
+        echo "Usage:"
+        echo "  dek \"<task>\"       Run a task through the pipeline"
+        echo "  dek doctor         Full system diagnostic"
+        echo "  dek stop           Stop the MLX runtime"
+        echo "  dek restart        Restart the MLX runtime"
+        echo "  dek status         Show runtime status"
+        echo "  dek model          Show model information"
+        echo "  dek help           Show this help"
+        echo ""
+        echo "The MLX inference runtime is managed automatically."
+        echo "You never need to start mlx_lm.server manually."
+        ;;
+    doctor)
+        exec "$BIN" doctor
+        ;;
+    stop)
+        exec "$BIN" runtime-stop
+        ;;
+    restart)
+        exec "$BIN" runtime-restart
+        ;;
+    status)
+        exec "$BIN" runtime-status
+        ;;
+    model)
+        exec "$BIN" runtime-model
+        ;;
+    "")
+        echo "Usage: dek <task> | dek doctor | dek stop | dek restart | dek model | dek help"
+        exit 1
+        ;;
+    *)
+        # Everything else is treated as a task payload
+        exec "$BIN" pipeline-run --payload "$*"
+        ;;
+esac

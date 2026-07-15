@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║ DEPRECATED: Use `./dek` instead.                                ║
+# ║ This launcher is preserved for backward compatibility only.     ║
+# ║ The `dek` script manages the MLX runtime automatically.        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+import os
+import sys
+import subprocess
+import socket
+import time
+import urllib.request
+import urllib.error
+
+# Define binary paths
+DAK_BIN = "./target/debug/deterministic_ai_kernel"
+RUN_BIN = "./target/debug/run"
+
+def is_port_open(host, port):
+    try:
+        with socket.create_connection((host, port), timeout=1.0) as s:
+            return True
+    except OSError:
+        return False
+
+def check_endpoint_ready(base_url):
+    url = f"{base_url.rstrip('/')}/models"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=1.0) as response:
+            if response.status == 200:
+                return True
+    except Exception:
+        pass
+    return False
+
+def get_model_config():
+    model_path = None
+    base_url = "http://127.0.0.1:8080/v1"
+    
+    # 1. Try reading from .env
+    if os.path.exists(".env"):
+        with open(".env", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("OPENAI_MODEL="):
+                    model_path = line.split("=", 1)[1].strip()
+                elif line.startswith("OPENAI_BASE_URL="):
+                    base_url = line.split("=", 1)[1].strip()
+                    
+    # 2. Try loading from model_manifest.json if still not found
+    if not model_path and os.path.exists("config/model_manifest.json"):
+        import json
+        try:
+            with open("config/model_manifest.json", "r") as f:
+                manifest = json.load(f)
+                for model in manifest.get("models", []):
+                    if model.get("enabled"):
+                        model_path = model.get("id")
+                        break
+        except Exception:
+            pass
+            
+    # Default fallback if everything fails
+    if not model_path:
+        model_path = "/Users/denissmoliakov/Models/gemma4-reasoning"
+        
+    return model_path, base_url
+
+def parse_url(base_url):
+    # Extract host and port
+    url_part = base_url.replace("http://", "").replace("https://", "").split("/")[0]
+    parts = url_part.split(":")
+    host = parts[0]
+    port = int(parts[1]) if len(parts) > 1 else 80
+    return host, port
+
+def main():
+    args = sys.argv[1:]
+    
+    # 1. Check/Build CLI binaries
+    if not os.path.exists(DAK_BIN) or not os.path.exists(RUN_BIN):
+        print("Binaries missing. Performing cargo build...")
+        try:
+            # Execute only cargo build
+            subprocess.run(["cargo", "build"], check=True)
+        except subprocess.CalledProcessError:
+            print("Error: cargo build failed.", file=sys.stderr)
+            sys.exit(1)
+            
+    # 2. Determine model and endpoint configuration
+    model_path, base_url = get_model_config()
+    host, port = parse_url(base_url)
+    
+    # 3. Check if MLX Server is already running
+    server_running = is_port_open(host, port)
+    started_by_us = False
+    server_proc = None
+    
+    if server_running:
+        print(f"MLX Server already running on port {port}.")
+    else:
+        print(f"MLX Server is offline. Starting local MLX LM Server on port {port}...")
+        # Check if the virtual environment exists
+        mlx_server_bin = "./.venv-mlx/bin/mlx_lm.server"
+        if not os.path.exists(mlx_server_bin):
+            print(f"Error: {mlx_server_bin} not found. Cannot start MLX server.", file=sys.stderr)
+            sys.exit(1)
+            
+        cmd = [mlx_server_bin, "--model", model_path, "--host", host, "--port", str(port)]
+        try:
+            server_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            started_by_us = True
+        except Exception as e:
+            print(f"Error starting MLX server: {e}", file=sys.stderr)
+            sys.exit(1)
+            
+        # Wait for endpoint readiness
+        print("Waiting for OpenAI-compatible endpoint to become ready...")
+        start_time = time.time()
+        ready = False
+        while time.time() - start_time < 45:  # 45 seconds timeout
+            if check_endpoint_ready(base_url):
+                ready = True
+                break
+            time.sleep(0.5)
+            
+        if ready:
+            print("MLX LM Server is ready!")
+        else:
+            print("Warning: Timeout waiting for MLX LM Server to be ready. Attempting to proceed...")
+            
+    # 4. Route command to the correct binary
+    subcommand = args[0] if args else ""
+    if subcommand in ["run", "verify", "diff"]:
+        target_bin = RUN_BIN
+    else:
+        target_bin = DAK_BIN
+        
+    # Execute the target binary and forward arguments
+    try:
+        proc = subprocess.run([target_bin] + args, check=False)
+        sys.exit(proc.returncode)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    finally:
+        # 5. Clean up processes started by launcher
+        if started_by_us and server_proc:
+            print("\nStopping local MLX LM Server started by launcher...")
+            server_proc.terminate()
+            try:
+                server_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server_proc.kill()
+
+if __name__ == "__main__":
+    main()

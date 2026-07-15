@@ -1,0 +1,32 @@
+{
+  "plan_id": "dcab01464087ea34",
+  "seed": 42,
+  "steps": [
+    {
+      "index": 0,
+      "description": "create design",
+      "status": "Ok",
+      "duration_ms": 0
+    },
+    {
+      "index": 1,
+      "description": "implement backend",
+      "status": "Ok",
+      "duration_ms": 0
+    },
+    {
+      "index": 2,
+      "description": "run tests",
+      "status": "Ok",
+      "duration_ms": 0
+    },
+    {
+      "index": 3,
+      "description": "deploy",
+      "status": "Ok",
+      "duration_ms": 0
+    }
+  ],
+  "total_duration_ms": 0,
+  "success": true
+}

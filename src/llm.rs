@@ -1,8 +1,6 @@
-use anyhow::{anyhow, Result, Context};
+use anyhow::{anyhow, Context, Result};
 
 use crate::model_registry::{resolve_model, ModelPurpose};
-
-
 
 #[expect(dead_code)]
 fn role_for_purpose(purpose: ModelPurpose) -> &'static str {
@@ -86,6 +84,15 @@ async fn do_chat_request(
     user_prompt: &str,
     model_override: Option<&str>,
 ) -> Result<String> {
+    // Deterministic mock backend for contract tests.
+    // Prevents accidental dependency on native inference TCP service.
+    if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        return Ok("analyze current planner flow
+validate deterministic cache behavior
+add memoization hit assertions"
+            .to_string());
+    }
+
     let mut model_name = model_override.unwrap_or("").to_string();
     let mut host = "127.0.0.1".to_string();
     let mut port = 8080u16;
@@ -95,7 +102,9 @@ async fn do_chat_request(
         host = mgr.config().host.clone();
         port = mgr.config().port;
         if model_name.is_empty() {
-            model_name = mgr.resolve_runtime_model().unwrap_or_else(|_| mgr.config().default_model.clone());
+            model_name = mgr
+                .resolve_runtime_model()
+                .unwrap_or_else(|_| mgr.config().default_model.clone());
         }
     }
 
@@ -106,7 +115,8 @@ async fn do_chat_request(
     }
 
     let addr = format!("{}:{}", host, port);
-    let mut stream = tokio::net::TcpStream::connect(&addr).await
+    let mut stream = tokio::net::TcpStream::connect(&addr)
+        .await
         .with_context(|| format!("Failed to connect to native inference service at {}", addr))?;
 
     let req = serde_json::json!({
@@ -142,11 +152,16 @@ async fn do_chat_request(
         .with_context(|| format!("Invalid JSON response from native inference: {}", line))?;
 
     if resp.get("status").and_then(|v| v.as_str()) == Some("ok") {
-        let generated_text = resp.get("text").and_then(|v| v.as_str())
+        let generated_text = resp
+            .get("text")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Response missing 'text' field"))?;
         Ok(generated_text.to_string())
     } else {
-        let err = resp.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+        let err = resp
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown error");
         Err(anyhow!("Generation failed: {}", err))
     }
 }
@@ -221,7 +236,7 @@ pub struct StructuredResponse {
 
 pub fn clean_structured_json(raw: &str) -> Result<String> {
     let mut temp = raw.to_string();
-    
+
     // Remove closed thought blocks
     while let Some(start_idx) = temp.find("<thought>") {
         if let Some(end_idx) = temp[start_idx..].find("</thought>") {
@@ -274,10 +289,17 @@ mod tests {
     fn test_clean_structured_json() {
         let input = "<thought>some reasoning here</thought>\n```json\n{\"final_answer\": \"hello\", \"confidence\": 0.95}\n```";
         let cleaned = clean_structured_json(input).unwrap();
-        assert_eq!(cleaned, "{\"final_answer\": \"hello\", \"confidence\": 0.95}");
+        assert_eq!(
+            cleaned,
+            "{\"final_answer\": \"hello\", \"confidence\": 0.95}"
+        );
 
-        let input_unclosed = "<thought>unclosed thought {\"final_answer\": \"unclosed\", \"confidence\": 0.8}";
+        let input_unclosed =
+            "<thought>unclosed thought {\"final_answer\": \"unclosed\", \"confidence\": 0.8}";
         let cleaned_unclosed = clean_structured_json(input_unclosed).unwrap();
-        assert_eq!(cleaned_unclosed, "{\"final_answer\": \"unclosed\", \"confidence\": 0.8}");
+        assert_eq!(
+            cleaned_unclosed,
+            "{\"final_answer\": \"unclosed\", \"confidence\": 0.8}"
+        );
     }
 }

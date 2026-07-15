@@ -63,6 +63,11 @@ async fn test_embeddings_routing_contract_flow() {
 
     // ── Test Case 3: Blocked (unreachable endpoint) ───────────────────────────
     {
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+
         let config = json!({
             "provider": "mlx",
             "host": "127.0.0.1",
@@ -75,8 +80,8 @@ async fn test_embeddings_routing_contract_flow() {
             "embeddings": {
                 "provider": "nomic",
                 "model": "text-embedding-nomic-embed-text-v1.5",
-                "endpoint": "http://127.0.0.1:65431", // unreachable port
-                "health_check_url": "http://127.0.0.1:65431"
+                "endpoint": format!("http://127.0.0.1:{}", port),
+                "health_check_url": format!("http://127.0.0.1:{}", port)
             }
         });
 

@@ -8,6 +8,55 @@ use std::collections::BTreeMap;
 pub type EventLogRow = (i64, Option<String>, String, String);
 pub type EventLogRows = Vec<EventLogRow>;
 
+fn ensure_core_schema(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS generations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+        );
+
+        CREATE TABLE IF NOT EXISTS event_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT,
+            system_generation INTEGER NOT NULL,
+            causal_unit_id INTEGER NOT NULL,
+            sequence_in_unit INTEGER NOT NULL DEFAULT 0,
+            task_id TEXT NOT NULL,
+            step_id TEXT,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            logical_generation INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS step_status (
+            task_id TEXT NOT NULL,
+            step_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            PRIMARY KEY (task_id, step_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS state_snapshots (
+            snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            payload TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_event_log_task_id
+            ON event_log(task_id);
+
+        CREATE INDEX IF NOT EXISTS idx_event_log_task_generation
+            ON event_log(task_id, system_generation, id);
+
+        CREATE INDEX IF NOT EXISTS idx_event_log_causal
+            ON event_log(task_id, causal_unit_id, sequence_in_unit);
+
+        CREATE INDEX IF NOT EXISTS idx_step_status_task_step
+            ON step_status(task_id, step_id);
+        "#,
+    )?;
+    Ok(())
+}
+
 pub trait StorageProvider: Send + Sync {
     fn load_exec_spec(&self, task_id: &str) -> Result<ExecSpec>;
     fn update_step_status(&self, task_id: &str, step_id: &str, status: &str) -> Result<()>;
@@ -121,6 +170,40 @@ pub trait StorageProvider: Send + Sync {
     ) -> Result<Option<crate::kernel_types::ReplayCapsule>>;
     fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>>;
     fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()>;
+    fn get_cached_primitive(&self, cache_key: &str) -> Result<Option<String>>;
+    fn store_cached_primitive(
+        &self,
+        cache_key: &str,
+        primitive_type: &str,
+        primitive_version: &str,
+        environment_fingerprint: &str,
+        dependency_hash: Option<&str>,
+        result_payload: &str,
+    ) -> Result<()>;
+    fn get_cached_plan(&self, cache_key: &str) -> Result<Option<(String, String)>>;
+    fn store_cached_plan(
+        &self,
+        cache_key: &str,
+        manifest_version: &str,
+        planner_version: &str,
+        environment_fingerprint: &str,
+        repository_fingerprint: Option<&str>,
+        normalized_prompt: &str,
+        plan_id: &str,
+        parsed_steps_json: &str,
+    ) -> Result<()>;
+
+    // Verified deterministic artifact memory
+    fn get_artifact_by_fingerprint(&self, fingerprint: &str) -> Result<Option<String>>;
+    fn store_verified_artifact(
+        &self,
+        fingerprint: &str,
+        artifact_type: &str,
+        version: &str,
+        input_hash: &str,
+        output_payload: &str,
+        dependency_hash: Option<&str>,
+    ) -> Result<()>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -131,8 +214,11 @@ pub struct CacheRecord {
     pub metadata: String,
 }
 
-thread_local! {
-    static OVERRIDE_PATH: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+static OVERRIDE_PATH: std::sync::OnceLock<std::sync::RwLock<Option<String>>> =
+    std::sync::OnceLock::new();
+
+fn override_path_lock() -> &'static std::sync::RwLock<Option<String>> {
+    OVERRIDE_PATH.get_or_init(|| std::sync::RwLock::new(None))
 }
 
 pub struct DefaultStorage {
@@ -152,8 +238,10 @@ impl DefaultStorage {
     }
 
     fn conn(&self) -> Result<Connection> {
-        let target_path = OVERRIDE_PATH
-            .with(|p| p.borrow().clone())
+        let target_path = override_path_lock()
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
             .unwrap_or_else(|| self.db_path.clone());
         if let Some(parent) = std::path::Path::new(&target_path).parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -162,8 +250,131 @@ impl DefaultStorage {
         }
         let conn = Connection::open(&target_path)?;
         conn.execute_batch(include_str!("../../event_bus/schema.sql"))?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS generations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            );
+
+            CREATE TABLE IF NOT EXISTS event_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT,
+                system_generation INTEGER NOT NULL DEFAULT 0,
+                causal_unit_id INTEGER NOT NULL DEFAULT 0,
+                sequence_in_unit INTEGER NOT NULL DEFAULT 0,
+                task_id TEXT NOT NULL,
+                step_id TEXT,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                logical_generation INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_event_log_task_id
+                ON event_log(task_id);
+
+            CREATE INDEX IF NOT EXISTS idx_event_log_task_generation
+                ON event_log(task_id, system_generation, id);
+
+            CREATE INDEX IF NOT EXISTS idx_event_log_causal
+                ON event_log(task_id, causal_unit_id, sequence_in_unit);
+            "#,
+        )?;
+
+        let sql: String = conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'semantic_artifacts'",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let mut db_values = extract_check_values(&sql);
+        db_values.sort();
+        let mut expected: Vec<String> = crate::models::artifact::ArtifactType::all()
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+        expected.sort();
+        if db_values != expected {
+            let migration_res = conn.execute_batch(
+                r#"
+                BEGIN TRANSACTION;
+                ALTER TABLE semantic_artifacts RENAME TO semantic_artifacts_old;
+                CREATE TABLE semantic_artifacts (
+                    artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    source_generation BIGINT NOT NULL,
+                    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1','pipeline_step','pipeline_report','primitive_result_v1','embedding_result','final_answer')),
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO semantic_artifacts (artifact_id, task_id, step_id, source_generation, artifact_type, payload, created_at)
+                SELECT artifact_id, task_id, step_id, source_generation, artifact_type, payload, created_at
+                FROM semantic_artifacts_old;
+                DROP TABLE semantic_artifacts_old;
+                COMMIT;
+                "#
+            );
+            if migration_res.is_err() {
+                return Err(anyhow::anyhow!("DATABASE_SCHEMA_MISMATCH"));
+            }
+            let sql_new: String = conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'semantic_artifacts'",
+                [],
+                |r| r.get(0),
+            )?;
+            let mut db_values_new = extract_check_values(&sql_new);
+            db_values_new.sort();
+            if db_values_new != expected {
+                return Err(anyhow::anyhow!("DATABASE_SCHEMA_MISMATCH"));
+            }
+        }
+
         Ok(conn)
     }
+}
+
+fn extract_check_values(sql: &str) -> Vec<String> {
+    let sql_lower = sql.to_lowercase();
+    if let Some(check_idx) = sql_lower.find("check") {
+        let sub = &sql[check_idx..];
+        if let Some(start_paren) = sub.find('(') {
+            let mut paren_count = 1;
+            let mut end_paren = start_paren;
+            let chars: Vec<char> = sub.chars().collect();
+            for i in (start_paren + 1)..chars.len() {
+                if chars[i] == '(' {
+                    paren_count += 1;
+                } else if chars[i] == ')' {
+                    paren_count -= 1;
+                    if paren_count == 0 {
+                        end_paren = i;
+                        break;
+                    }
+                }
+            }
+            if end_paren > start_paren {
+                let check_expr = &sub[start_paren..=end_paren];
+                let mut values = Vec::new();
+                let mut in_quote = false;
+                let mut current = String::new();
+                for c in check_expr.chars() {
+                    if c == '\'' {
+                        if in_quote {
+                            values.push(current.clone());
+                            current.clear();
+                            in_quote = false;
+                        } else {
+                            in_quote = true;
+                        }
+                    } else if in_quote {
+                        current.push(c);
+                    }
+                }
+                return values;
+            }
+        }
+    }
+    Vec::new()
 }
 
 // Helpers from scheduler.rs / worker.rs
@@ -527,6 +738,7 @@ impl StorageProvider for DefaultStorage {
         payload: &Value,
     ) -> Result<i64> {
         let mut conn = self.conn()?;
+        ensure_core_schema(&conn)?;
         let tx = conn.transaction()?;
 
         let unit_gen: i64 = tx.query_row(
@@ -624,7 +836,6 @@ impl StorageProvider for DefaultStorage {
                  WHERE l.task_id = ?1
                    AND l.state = 'active'
                    AND s.status = 'dispatched'
-                   AND l.worker_id = 'worker-scheduler'
                  ORDER BY l.acquired_generation, l.step_id
                  LIMIT 1",
                 [task_id],
@@ -635,33 +846,21 @@ impl StorageProvider for DefaultStorage {
         let (lease_id, step_id) =
             row.ok_or_else(|| anyhow!("no dispatchable active lease found"))?;
 
-        let current_owner: String = tx.query_row(
-            "SELECT worker_id FROM leases WHERE lease_id = ?1 AND state = 'active'",
-            [lease_id.clone()],
-            |r| r.get(0),
-        )?;
+        // Atomic claim check with RETURNING
+        let claimed_lease_id: Option<String> = tx
+            .query_row(
+                "UPDATE leases
+                 SET worker_id = ?1, state = 'claimed'
+                 WHERE task_id = ?2
+                   AND step_id = ?3
+                   AND state = 'active'
+                 RETURNING lease_id",
+                params![worker_id, task_id, step_id],
+                |r| r.get(0),
+            )
+            .optional()?;
 
-        if current_owner == worker_id {
-            tx.commit()?;
-            return Ok(());
-        }
-
-        if current_owner != "worker-scheduler" {
-            return Err(anyhow!("lease already owned by {}", current_owner));
-        }
-
-        let updated = tx.execute(
-            "UPDATE leases
-             SET worker_id = ?1
-             WHERE lease_id = ?2
-               AND state = 'active'
-               AND worker_id = 'worker-scheduler'",
-            params![worker_id, lease_id],
-        )?;
-
-        if updated == 0 {
-            return Err(anyhow!("lease claim lost"));
-        }
+        let _claimed = claimed_lease_id.ok_or_else(|| anyhow!("lease claim lost"))?;
 
         let next_generation: i64 = tx.query_row(
             "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
@@ -710,7 +909,7 @@ impl StorageProvider for DefaultStorage {
                  WHERE task_id = ?1
                    AND step_id = ?2
                    AND worker_id = ?3
-                   AND state = 'active'
+                   AND state IN ('active', 'claimed')
                  ORDER BY acquired_generation DESC
                  LIMIT 1",
                 params![task_id, step_id, worker_id],
@@ -741,7 +940,7 @@ impl StorageProvider for DefaultStorage {
              SET expires_at_generation = ?3
              WHERE lease_id = ?1
                AND worker_id = ?2
-               AND state = 'active'",
+               AND state IN ('active', 'claimed')",
             params![lease_id, worker_id, expires_at_generation],
         )?;
         Ok(())
@@ -1093,13 +1292,14 @@ impl StorageProvider for DefaultStorage {
     }
 
     fn set_override_path(&self, path: Option<String>) {
-        OVERRIDE_PATH.with(|p| {
-            *p.borrow_mut() = path;
-        });
+        if let Ok(mut guard) = override_path_lock().write() {
+            *guard = path;
+        }
     }
 
     fn list_event_log(&self, task_id: &str) -> Result<EventLogRows> {
         let conn = self.conn()?;
+        ensure_core_schema(&conn)?;
         let mut stmt = conn.prepare(
             "SELECT system_generation, step_id, event_type, payload
              FROM event_log
@@ -1609,7 +1809,20 @@ impl StorageProvider for DefaultStorage {
 
         let lease_id: String = tx
             .query_row(
-                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                "SELECT l.lease_id
+                 FROM leases l
+                 WHERE l.task_id = ?1
+                   AND l.step_id = ?2
+                   AND l.worker_id = ?3
+                   AND l.state IN ('active', 'claimed')
+                   AND l.acquired_generation = (
+                       SELECT MAX(l2.acquired_generation)
+                       FROM leases l2
+                       WHERE l2.task_id = l.task_id
+                         AND l2.step_id = l.step_id
+                         AND l2.state IN ('active', 'claimed')
+                   )
+                 LIMIT 1",
                 params![task_id, step_id, worker_id],
                 |r| r.get(0),
             )
@@ -1655,7 +1868,20 @@ impl StorageProvider for DefaultStorage {
 
         let lease_id: String = tx
             .query_row(
-                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                "SELECT l.lease_id
+                 FROM leases l
+                 WHERE l.task_id = ?1
+                   AND l.step_id = ?2
+                   AND l.worker_id = ?3
+                   AND l.state IN ('active', 'claimed')
+                   AND l.acquired_generation = (
+                       SELECT MAX(l2.acquired_generation)
+                       FROM leases l2
+                       WHERE l2.task_id = l.task_id
+                         AND l2.step_id = l.step_id
+                         AND l2.state IN ('active', 'claimed')
+                   )
+                 LIMIT 1",
                 params![task_id, step_id, worker_id],
                 |r| r.get(0),
             )
@@ -1671,7 +1897,7 @@ impl StorageProvider for DefaultStorage {
         tx.execute(
             "UPDATE leases
              SET expires_at_generation = ?1
-             WHERE lease_id = ?2 AND worker_id = ?3 AND state = 'active'",
+             WHERE lease_id = ?2 AND worker_id = ?3 AND state IN ('active', 'claimed')",
             params![current_generation + 2, lease_id, worker_id],
         )?;
 
@@ -1710,7 +1936,20 @@ impl StorageProvider for DefaultStorage {
 
         let lease_id: String = tx
             .query_row(
-                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                "SELECT l.lease_id
+                 FROM leases l
+                 WHERE l.task_id = ?1
+                   AND l.step_id = ?2
+                   AND l.worker_id = ?3
+                   AND l.state IN ('active', 'claimed')
+                   AND l.acquired_generation = (
+                       SELECT MAX(l2.acquired_generation)
+                       FROM leases l2
+                       WHERE l2.task_id = l.task_id
+                         AND l2.step_id = l.step_id
+                         AND l2.state IN ('active', 'claimed')
+                   )
+                 LIMIT 1",
                 params![task_id, step_id, worker_id],
                 |r| r.get(0),
             )
@@ -1758,7 +1997,7 @@ impl StorageProvider for DefaultStorage {
         )?;
 
         tx.execute(
-            "UPDATE leases SET state = 'released' WHERE lease_id = ?1 AND worker_id = ?2 AND state = 'active'",
+            "UPDATE leases SET state = 'released' WHERE lease_id = ?1 AND worker_id = ?2 AND state IN ('active', 'claimed')",
             params![lease_id, worker_id],
         )?;
 
@@ -1776,7 +2015,20 @@ impl StorageProvider for DefaultStorage {
 
         let lease_id: String = tx
             .query_row(
-                "SELECT lease_id FROM leases WHERE task_id = ?1 AND step_id = ?2 AND worker_id = ?3 AND state = 'active' ORDER BY acquired_generation DESC LIMIT 1",
+                "SELECT l.lease_id
+                 FROM leases l
+                 WHERE l.task_id = ?1
+                   AND l.step_id = ?2
+                   AND l.worker_id = ?3
+                   AND l.state IN ('active', 'claimed')
+                   AND l.acquired_generation = (
+                       SELECT MAX(l2.acquired_generation)
+                       FROM leases l2
+                       WHERE l2.task_id = l.task_id
+                         AND l2.step_id = l.step_id
+                         AND l2.state IN ('active', 'claimed')
+                   )
+                 LIMIT 1",
                 params![task_id, step_id, worker_id],
                 |r| r.get(0),
             )
@@ -1844,7 +2096,7 @@ impl StorageProvider for DefaultStorage {
         )?;
 
         tx.execute(
-            "UPDATE leases SET state = 'completed' WHERE lease_id = ?1 AND worker_id = ?2 AND state = 'active'",
+            "UPDATE leases SET state = 'completed' WHERE lease_id = ?1 AND worker_id = ?2 AND state IN ('active', 'claimed')",
             params![lease_id, worker_id],
         )?;
 
@@ -2078,6 +2330,7 @@ impl StorageProvider for DefaultStorage {
 
     fn query_events(&self, task_id: &str) -> Result<Vec<crate::event_bus::EventRow>> {
         let conn = self.conn()?;
+        ensure_core_schema(&conn)?;
         let mut stmt = conn.prepare(
             "SELECT event_id, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload
              FROM event_log
@@ -2369,5 +2622,153 @@ impl StorageProvider for DefaultStorage {
             ))
         })?;
         Ok(row)
+    }
+
+    fn get_cached_primitive(&self, cache_key: &str) -> Result<Option<String>> {
+        let _t = std::time::Instant::now();
+        let conn = self.conn()?;
+        let res: Option<String> = conn
+            .query_row(
+                "SELECT result_payload FROM primitive_execution_cache WHERE cache_key = ?1",
+                [cache_key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        crate::metrics::METRICS.record(
+            crate::metrics::SQLITE_READ_MS,
+            _t.elapsed().as_millis() as u64,
+        );
+        Ok(res)
+    }
+
+    fn store_cached_primitive(
+        &self,
+        cache_key: &str,
+        primitive_type: &str,
+        primitive_version: &str,
+        environment_fingerprint: &str,
+        dependency_hash: Option<&str>,
+        result_payload: &str,
+    ) -> Result<()> {
+        let _t = std::time::Instant::now();
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO primitive_execution_cache
+             (cache_key, primitive_type, primitive_version, environment_fingerprint, dependency_hash, result_payload)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                cache_key,
+                primitive_type,
+                primitive_version,
+                environment_fingerprint,
+                dependency_hash,
+                result_payload
+            ],
+        )?;
+        crate::metrics::METRICS.record(
+            crate::metrics::SQLITE_WRITE_MS,
+            _t.elapsed().as_millis() as u64,
+        );
+        Ok(())
+    }
+
+    fn get_cached_plan(&self, cache_key: &str) -> Result<Option<(String, String)>> {
+        let _t = std::time::Instant::now();
+        let conn = self.conn()?;
+        let res: Option<(String, String)> = conn
+            .query_row(
+                "SELECT plan_id, parsed_steps_json FROM planner_memoization_cache WHERE cache_key = ?1",
+                [cache_key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        crate::metrics::METRICS.record(
+            crate::metrics::SQLITE_READ_MS,
+            _t.elapsed().as_millis() as u64,
+        );
+        Ok(res)
+    }
+
+    fn store_cached_plan(
+        &self,
+        cache_key: &str,
+        manifest_version: &str,
+        planner_version: &str,
+        environment_fingerprint: &str,
+        repository_fingerprint: Option<&str>,
+        normalized_prompt: &str,
+        plan_id: &str,
+        parsed_steps_json: &str,
+    ) -> Result<()> {
+        let _t = std::time::Instant::now();
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO planner_memoization_cache
+             (cache_key, manifest_version, planner_version, environment_fingerprint, repository_fingerprint, normalized_prompt, plan_id, parsed_steps_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                cache_key,
+                manifest_version,
+                planner_version,
+                environment_fingerprint,
+                repository_fingerprint,
+                normalized_prompt,
+                plan_id,
+                parsed_steps_json
+            ],
+        )?;
+        crate::metrics::METRICS.record(
+            crate::metrics::SQLITE_WRITE_MS,
+            _t.elapsed().as_millis() as u64,
+        );
+        Ok(())
+    }
+
+    fn get_artifact_by_fingerprint(&self, fingerprint: &str) -> Result<Option<String>> {
+        let _t = std::time::Instant::now();
+        let conn = self.conn()?;
+        let result = conn
+            .query_row(
+                "SELECT output_payload FROM verified_artifacts WHERE fingerprint = ?1",
+                params![fingerprint],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        crate::metrics::METRICS.record(
+            crate::metrics::SQLITE_READ_MS,
+            _t.elapsed().as_millis() as u64,
+        );
+        Ok(result)
+    }
+
+    fn store_verified_artifact(
+        &self,
+        fingerprint: &str,
+        artifact_type: &str,
+        version: &str,
+        input_hash: &str,
+        output_payload: &str,
+        dependency_hash: Option<&str>,
+    ) -> Result<()> {
+        let _t = std::time::Instant::now();
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO verified_artifacts
+             (fingerprint, artifact_type, version, input_hash, output_payload, dependency_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                fingerprint,
+                artifact_type,
+                version,
+                input_hash,
+                output_payload,
+                dependency_hash,
+            ],
+        )?;
+        crate::metrics::METRICS.record(
+            crate::metrics::SQLITE_WRITE_MS,
+            _t.elapsed().as_millis() as u64,
+        );
+        Ok(())
     }
 }

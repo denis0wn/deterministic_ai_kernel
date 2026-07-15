@@ -5,7 +5,8 @@
     "endpoint": "http://127.0.0.1:65431",
     "health_check_url": "http://127.0.0.1:65431",
     "model": "text-embedding-nomic-embed-text-v1.5",
-    "provider": "nomic"
+    "provider": "nomic",
+    "auto_start": true
   },
   "health_check_interval_ms": 100,
   "host": "127.0.0.1",

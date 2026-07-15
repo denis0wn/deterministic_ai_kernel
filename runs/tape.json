@@ -1,0 +1,39 @@
+{
+  "entries": [
+    {
+      "payload": "Customer request: I need a simple project workflow. Create task, generate plan, execute steps, record events, and return final result.",
+      "seed": 42,
+      "plan_id": "15b86b8517431312"
+    },
+    {
+      "payload": "Customer request: create invoice workflow",
+      "seed": 42,
+      "plan_id": "34001a49002a5499"
+    },
+    {
+      "payload": "Customer request: create invoice workflow",
+      "seed": 42,
+      "plan_id": "34001a49002a5499"
+    },
+    {
+      "payload": "Customer request: build website. Step 1 create design. Step 2 implement backend. Step 3 run tests. Step 4 deploy.",
+      "seed": 42,
+      "plan_id": "ba7d74a5d875fdb6"
+    },
+    {
+      "payload": "Customer request: build website. Step 1 create design. Step 2 implement backend. Step 3 run tests. Step 4 deploy.",
+      "seed": 42,
+      "plan_id": "ba7d74a5d875fdb6"
+    },
+    {
+      "payload": "Customer request: build website. Step 1 create design. Step 2 implement backend. Step 3 run tests. Step 4 deploy.",
+      "seed": 42,
+      "plan_id": "dcab01464087ea34"
+    },
+    {
+      "payload": "Customer request: build website. Step 1 create design. Step 2 implement backend. Step 3 run tests. Step 4 deploy.",
+      "seed": 42,
+      "plan_id": "dcab01464087ea34"
+    }
+  ]
+}

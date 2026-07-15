@@ -23,9 +23,8 @@ fn doctor_json_contract_is_stable() {
     assert!(
         stdout.contains(
             "\"manifest_model\":\"mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit\""
-        ) || stdout.contains(
-            "\"manifest_model\":\"/Users/denissmoliakov/Models/gemma4-reasoning\""
-        ),
+        ) || stdout
+            .contains("\"manifest_model\":\"/Users/denissmoliakov/Models/gemma4-reasoning\""),
         "{stdout}"
     );
     assert!(stdout.contains("\"threshold_gb\":6.0"), "{stdout}");

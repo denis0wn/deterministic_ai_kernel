@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS leases (
     worker_id TEXT NOT NULL,
     acquired_generation BIGINT NOT NULL,
     expires_at_generation BIGINT NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('active','expired','released','completed'))
+    state TEXT NOT NULL CHECK(state IN ('active','expired','released','completed','claimed'))
 );
 
 CREATE TABLE IF NOT EXISTS state_snapshots (
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS semantic_artifacts (
     task_id TEXT NOT NULL,
     step_id TEXT NOT NULL,
     source_generation BIGINT NOT NULL,
-    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1','pipeline_step','pipeline_report')),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1','pipeline_step','pipeline_report','primitive_result_v1','embedding_result')),
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -138,4 +138,33 @@ CREATE TABLE IF NOT EXISTS execution_cache (
     duration_ms BIGINT NOT NULL,
     metadata TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS primitive_execution_cache (
+    cache_key TEXT PRIMARY KEY,
+    primitive_type TEXT NOT NULL,
+    primitive_version TEXT NOT NULL,
+    environment_fingerprint TEXT NOT NULL,
+    dependency_hash TEXT,
+    result_payload TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS planner_memoization_cache (
+    cache_key TEXT PRIMARY KEY,
+    manifest_version TEXT NOT NULL,
+    planner_version TEXT NOT NULL,
+    environment_fingerprint TEXT NOT NULL,
+    repository_fingerprint TEXT,
+    normalized_prompt TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    parsed_steps_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS verified_artifacts (
+    fingerprint TEXT PRIMARY KEY,
+    artifact_type TEXT NOT NULL,
+    version TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    output_payload TEXT NOT NULL,
+    dependency_hash TEXT
 );

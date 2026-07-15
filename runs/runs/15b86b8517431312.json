@@ -1,0 +1,14 @@
+{
+  "plan_id": "15b86b8517431312",
+  "seed": 42,
+  "steps": [
+    {
+      "index": 0,
+      "description": "customer request: i need a simple project workflow. create task, generate plan, execute steps, record events, and return final result.",
+      "status": "Ok",
+      "duration_ms": 0
+    }
+  ],
+  "total_duration_ms": 0,
+  "success": true
+}
