@@ -1,0 +1,5 @@
+# Tests must run single-threaded: global override_path_lock() in storage.rs
+# causes race conditions under parallel execution.
+# TODO: refactor to per-test storage isolation to remove this constraint.
+[env]
+RUST_TEST_THREADS = "1"
