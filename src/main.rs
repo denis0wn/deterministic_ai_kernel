@@ -205,6 +205,7 @@ async fn main() {
         println!("  analyze-task <task_id> <text>");
         println!("  pipeline-run --task-id <id> [--seed <u64>] [--json]");
         println!("  pipeline-run --payload <text> [--seed <u64>] [--json]");
+        println!("  (demo UX: ./dek demo \"<task>\" -> pipeline-run --payload)");
         println!("  doctor");
         println!("  doctor-json");
         println!("  integrity");
@@ -1009,6 +1010,45 @@ async fn main() {
                 }
             };
             let task_id = report.plan.id.clone();
+            let generic_spec =
+                deterministic_ai_kernel::workflow::compiler::Workflow::compile_from_task_llm(
+                    &deterministic_ai_kernel::workflow::compiler::TaskInput::generic(
+                        resolved.as_str(),
+                    ),
+                )
+                .await
+                .unwrap_or_else(|e| {
+                    eprintln!("pipeline-run rejected before scheduling: {e}");
+                    std::process::exit(1);
+                });
+
+            if generic_spec.steps.iter().any(|step| {
+                step.primitive
+                    .as_ref()
+                    .filter(|primitive| {
+                        matches!(
+                            primitive.kind,
+                            deterministic_ai_kernel::execution_abi::primitives::PrimitiveKind::ToolExecution
+                        )
+                    })
+                    .and_then(|primitive| primitive.payload.get("binding"))
+                    .and_then(|v| v.as_str())
+                    .map(|binding| binding == "unresolved")
+                    .unwrap_or(false)
+            }) {
+                eprintln!(
+                    "pipeline-run rejected before scheduling: unresolved ToolExecution primitive;                      a concrete executable primitive binding is required"
+                );
+                std::process::exit(1);
+            }
+
+            let generic_spec_json = serde_json::to_string(&generic_spec).unwrap_or_else(|e| {
+                eprintln!(
+                    "pipeline-run rejected before scheduling: failed to serialize exec spec: {e}"
+                );
+                std::process::exit(1);
+            });
+
             std::fs::create_dir_all("artifacts").unwrap();
             std::fs::write(
                 format!("artifacts/pipeline_input.{}.txt", task_id),
@@ -1021,11 +1061,19 @@ async fn main() {
             {
                 let conn = rusqlite::Connection::open(db).unwrap();
                 conn.execute(
-                    "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
-                    rusqlite::params![task_id.as_str()],
+                    "INSERT OR IGNORE INTO tasks (task_id, task_class, exec_spec) VALUES (?1, 'Generic', ?2)",
+                    rusqlite::params![task_id.as_str(), generic_spec_json.as_str()],
                 )
                 .unwrap_or_else(|e| {
                     eprintln!("Failed to insert task: {e}");
+                    std::process::exit(1);
+                });
+                conn.execute(
+                    "UPDATE tasks SET exec_spec = ?2 WHERE task_id = ?1",
+                    rusqlite::params![task_id.as_str(), generic_spec_json.as_str()],
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to persist exec spec: {e}");
                     std::process::exit(1);
                 });
             }
@@ -1039,26 +1087,112 @@ async fn main() {
             }
 
             let final_answer = {
-                let bus = deterministic_ai_kernel::event_bus::EventBus::new(db).unwrap_or_else(|e| {
-                    eprintln!("Failed to open EventBus: {e}");
-                    std::process::exit(1);
-                });
-
-                let fallback = resolved.trim().to_string();
+                let bus =
+                    deterministic_ai_kernel::event_bus::EventBus::new(db).unwrap_or_else(|e| {
+                        eprintln!("Failed to open EventBus: {e}");
+                        std::process::exit(1);
+                    });
 
                 match bus.list_semantic_artifacts(&task_id, None) {
                     Ok(artifacts) => artifacts
-                        .into_iter()
+                        .iter()
                         .rev()
                         .find(|a| a.artifact_type == "final_answer")
                         .and_then(|a| serde_json::from_str::<serde_json::Value>(&a.payload).ok())
-                        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                        .unwrap_or(fallback),
-                    Err(_) => fallback,
+                        .and_then(|v| {
+                            v.get("text")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_else(|| {
+                            "workflow execution completed; no final_answer artifact was published"
+                                .to_string()
+                        }),
+                    Err(_) => {
+                        "workflow execution completed; semantic artifacts unavailable".to_string()
+                    }
                 }
             };
 
+            let status_map = deterministic_ai_kernel::providers::get_storage()
+                .get_current_status_map(&task_id)
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to load step status map: {e}");
+                    std::process::exit(1);
+                });
+
+            let execution_succeeded = !status_map
+                .values()
+                .any(|status| status == "rejected" || status == "failed");
+
+            if !execution_succeeded {
+                eprintln!(
+                    "pipeline-run failed: workflow contains rejected or failed steps; planner success does not imply workflow success"
+                );
+                std::process::exit(1);
+            }
+
             if as_json {
+                let storage = deterministic_ai_kernel::providers::get_storage();
+
+                let events = storage.query_events(&task_id).unwrap_or_else(|e| {
+                    eprintln!("Failed to load execution events for receipt: {e}");
+                    std::process::exit(1);
+                });
+
+                let artifacts = storage
+                    .list_semantic_artifacts(&task_id, None)
+                    .unwrap_or_else(|e| {
+                        eprintln!("Failed to load semantic artifacts for receipt: {e}");
+                        std::process::exit(1);
+                    });
+
+                let replay_valid = storage.replay_validate(&task_id);
+
+                let receipt_events = events
+                    .iter()
+                    .map(|event| {
+                        serde_json::json!({
+                            "event_id": event.event_id,
+                            "causal_unit_id": event.causal_unit_id,
+                            "sequence_in_unit": event.sequence_in_unit,
+                            "step_id": event.step_id,
+                            "event_type": event.event_type,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                let receipt_artifacts = artifacts
+                    .iter()
+                    .map(|artifact| {
+                        serde_json::json!({
+                            "artifact_id": artifact.artifact_id,
+                            "step_id": artifact.step_id,
+                            "source_generation": artifact.source_generation,
+                            "artifact_type": artifact.artifact_type,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                let receipt_material = serde_json::json!({
+                    "task_id": task_id,
+                    "status_map": status_map,
+                    "events": receipt_events,
+                    "artifacts": receipt_artifacts,
+                    "replay_valid": replay_valid,
+                });
+
+                let receipt_fingerprint = blake3::hash(
+                    serde_json::to_string(&receipt_material)
+                        .unwrap_or_else(|e| {
+                            eprintln!("Failed to serialize execution receipt: {e}");
+                            std::process::exit(1);
+                        })
+                        .as_bytes(),
+                )
+                .to_hex()
+                .to_string();
+
                 let out = serde_json::json!({
                     "plan_id": report.plan.id,
                     "seed": report.plan.seed,
@@ -1069,6 +1203,14 @@ async fn main() {
                     "final_answer": final_answer,
                     "critic": { "passed": report.critic_report.passed, "warnings": report.critic_report.warnings, "violations": report.critic_report.invariant_violations },
                     "stage_events": report.stage_events.iter().map(|e| serde_json::json!({"stage": e.stage.to_string(), "offset_ms": e.timestamp_offset_ms, "desc": e.description})).collect::<Vec<_>>(),
+                    "execution_receipt": {
+                        "task_id": task_id,
+                        "status_map": status_map,
+                        "events": receipt_events,
+                        "artifacts": receipt_artifacts,
+                        "replay_valid": replay_valid,
+                        "fingerprint": receipt_fingerprint,
+                    },
                 });
                 println!(
                     "{}",
@@ -1078,23 +1220,20 @@ async fn main() {
                     })
                 );
             } else {
+                let cleaned_final =
+                    deterministic_ai_kernel::llm::clean_llm_output(final_answer.trim());
+                let steps_joined = report.plan.steps.join(" | ");
                 println!("PLAN_ID={}", report.plan.id);
-                println!("PLANNER_VERSION={}", report.planner_version);
                 println!("SEED={}", report.plan.seed);
-                println!("STEP_COUNT={}", report.plan.steps.len());
+                println!("STEPS={}", steps_joined);
+                println!("EXECUTION_STATUS=OK");
                 println!("FINGERPRINT={}", report.fingerprint);
+                println!("EXECUTION_RESULT={}", cleaned_final);
+                // Extra debug fields (stable, optional for operators)
+                println!("PLANNER_VERSION={}", report.planner_version);
+                println!("STEP_COUNT={}", report.plan.steps.len());
                 println!("ELAPSED_MS={}", report.elapsed_ms);
                 println!("CRITIC_PASSED={}", report.critic_report.passed);
-                println!("FINAL_ANSWER={}", final_answer.trim());
-                for (i, s) in report.plan.steps.iter().enumerate() {
-                    println!("STEP.{}={}", i + 1, s);
-                }
-                for e in &report.stage_events {
-                    println!(
-                        "STAGE|{}|{}ms|{}",
-                        e.stage, e.timestamp_offset_ms, e.description
-                    );
-                }
             }
             return;
         }
