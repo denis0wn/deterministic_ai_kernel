@@ -77,7 +77,8 @@ impl Replayer {
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
                         hist_fingerprint = details
-                            .get("fingerprint")
+                            .get("environment_fingerprint")
+                            .or_else(|| details.get("fingerprint"))
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
                     }

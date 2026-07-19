@@ -136,6 +136,7 @@ pub trait StorageProvider: Send + Sync {
     fn schedule_next_steps(&self, task_id: &str) -> Result<BTreeMap<String, String>>;
     fn get_next_ready_step(&self, task_id: &str) -> Result<Option<String>>;
     fn get_current_status_map(&self, task_id: &str) -> Result<BTreeMap<String, String>>;
+    fn get_effect_counts(&self, task_id: &str) -> Result<(usize, usize)>;
     fn unlock_ready_steps_by_db(&self, task_id: &str) -> Result<()>;
     fn seed_demo_leases(&self, task_id: &str) -> Result<()>;
     fn expire_leases(&self, task_id: &str) -> Result<()>;
@@ -170,6 +171,7 @@ pub trait StorageProvider: Send + Sync {
     ) -> Result<Option<crate::kernel_types::ReplayCapsule>>;
     fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>>;
     fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()>;
+    fn clear_caches(&self) -> Result<()>;
     fn get_cached_primitive(&self, cache_key: &str) -> Result<Option<String>>;
     fn store_cached_primitive(
         &self,
@@ -181,6 +183,7 @@ pub trait StorageProvider: Send + Sync {
         result_payload: &str,
     ) -> Result<()>;
     fn get_cached_plan(&self, cache_key: &str) -> Result<Option<(String, String)>>;
+    #[allow(clippy::too_many_arguments)]
     fn store_cached_plan(
         &self,
         cache_key: &str,
@@ -214,11 +217,11 @@ pub struct CacheRecord {
     pub metadata: String,
 }
 
-static OVERRIDE_PATH: std::sync::OnceLock<std::sync::RwLock<Option<String>>> =
+static OVERRIDE_PATH: std::sync::OnceLock<std::sync::RwLock<Vec<String>>> =
     std::sync::OnceLock::new();
 
-fn override_path_lock() -> &'static std::sync::RwLock<Option<String>> {
-    OVERRIDE_PATH.get_or_init(|| std::sync::RwLock::new(None))
+fn override_path_lock() -> &'static std::sync::RwLock<Vec<String>> {
+    OVERRIDE_PATH.get_or_init(|| std::sync::RwLock::new(Vec::new()))
 }
 
 pub struct DefaultStorage {
@@ -241,7 +244,7 @@ impl DefaultStorage {
         let target_path = override_path_lock()
             .read()
             .ok()
-            .and_then(|guard| guard.clone())
+            .and_then(|guard| guard.last().cloned())
             .unwrap_or_else(|| self.db_path.clone());
         if let Some(parent) = std::path::Path::new(&target_path).parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -333,6 +336,7 @@ impl DefaultStorage {
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 fn extract_check_values(sql: &str) -> Vec<String> {
     let sql_lower = sql.to_lowercase();
     if let Some(check_idx) = sql_lower.find("check") {
@@ -601,7 +605,7 @@ fn unlock_ready_steps(conn: &Connection, task_id: &str) -> Result<()> {
 }
 
 fn classify_failure_outcome(reason: &str) -> StepOutcome {
-    if reason.starts_with("retry:") || reason.contains("timeout waiting for lock") {
+    if reason.contains("retry:") || reason.contains("timeout waiting for lock") {
         return StepOutcome::RetryableFailure;
     }
     if reason.starts_with("blocked:") {
@@ -742,7 +746,7 @@ impl StorageProvider for DefaultStorage {
         let tx = conn.transaction()?;
 
         let unit_gen: i64 = tx.query_row(
-            "INSERT INTO generations DEFAULT VALUES RETURNING id",
+            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
             [],
             |r| r.get(0),
         )?;
@@ -1293,7 +1297,11 @@ impl StorageProvider for DefaultStorage {
 
     fn set_override_path(&self, path: Option<String>) {
         if let Ok(mut guard) = override_path_lock().write() {
-            *guard = path;
+            if let Some(p) = path {
+                guard.push(p);
+            } else {
+                guard.pop();
+            }
         }
     }
 
@@ -1583,6 +1591,21 @@ impl StorageProvider for DefaultStorage {
             out.insert(row.0, row.1);
         }
         Ok(out)
+    }
+
+    fn get_effect_counts(&self, task_id: &str) -> Result<(usize, usize)> {
+        let conn = self.conn()?;
+        let committed: usize = conn.query_row(
+            "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'committed'",
+            [task_id],
+            |r| r.get(0),
+        )?;
+        let rejected: usize = conn.query_row(
+            "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'rejected'",
+            [task_id],
+            |r| r.get(0),
+        )?;
+        Ok((committed, rejected))
     }
 
     fn unlock_ready_steps_by_db(&self, task_id: &str) -> Result<()> {
@@ -2114,7 +2137,7 @@ impl StorageProvider for DefaultStorage {
         };
 
         let mut stmt = match conn.prepare(
-            "SELECT causal_unit_id, sequence_in_unit, event_type
+            "SELECT causal_unit_id, sequence_in_unit, step_id, event_type, payload
              FROM event_log
              WHERE task_id = ?1
              ORDER BY causal_unit_id, sequence_in_unit",
@@ -2127,7 +2150,9 @@ impl StorageProvider for DefaultStorage {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, i64>(1)?,
-                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
             ))
         }) {
             Ok(r) => r,
@@ -2135,8 +2160,56 @@ impl StorageProvider for DefaultStorage {
         };
 
         let mut units: BTreeMap<i64, Vec<(i64, String)>> = BTreeMap::new();
+        let mut attempt_events: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+        let mut step_attempts: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
         for row in rows.filter_map(|r| r.ok()) {
-            units.entry(row.0).or_default().push((row.1, row.2));
+            let (unit_id, sequence_in_unit, step_id, event_type, payload_opt) = row;
+            units
+                .entry(unit_id)
+                .or_default()
+                .push((sequence_in_unit, event_type.clone()));
+
+            if let Some(step_id) = step_id {
+                let is_lifecycle = matches!(
+                    event_type.as_str(),
+                    "LEASE_ACQUIRED"
+                        | "PrimitiveScheduled"
+                        | "STEP_DISPATCHED"
+                        | "WORKER_CLAIMED"
+                        | "STEP_STARTED"
+                        | "EFFECT_RESERVED"
+                        | "ArtifactProduced"
+                        | "STEP_COMPLETED"
+                        | "PrimitiveCompleted"
+                        | "STEP_FAILED"
+                        | "PrimitiveFailed"
+                );
+                if is_lifecycle {
+                    let lease_id = if let Some(ref payload_str) = payload_opt {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(payload_str) {
+                            v.get("lease_id")
+                                .and_then(|l| l.as_str())
+                                .map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let lease_id = lease_id.unwrap_or_else(|| format!("@legacy:{}", unit_id));
+
+                    attempt_events
+                        .entry((step_id.clone(), lease_id.clone()))
+                        .or_default()
+                        .push(event_type);
+
+                    let attempts = step_attempts.entry(step_id).or_default();
+                    if !attempts.contains(&lease_id) {
+                        attempts.push(lease_id);
+                    }
+                }
+            }
         }
 
         let mut ok = true;
@@ -2186,14 +2259,94 @@ impl StorageProvider for DefaultStorage {
                 );
                 ok = false;
             }
+        }
 
-            if completed.is_none()
-                && failed.is_none()
-                && (types.contains(&"STEP_DISPATCHED") || types.contains(&"PrimitiveScheduled"))
-            {
+        for ((step_id, lease_id), events) in &attempt_events {
+            let dispatched = events
+                .iter()
+                .any(|event| event == "STEP_DISPATCHED" || event == "PrimitiveScheduled");
+            let completed = events
+                .iter()
+                .filter(|event| {
+                    event.as_str() == "STEP_COMPLETED" || event.as_str() == "PrimitiveCompleted"
+                })
+                .count();
+            let failed = events
+                .iter()
+                .filter(|event| {
+                    event.as_str() == "STEP_FAILED" || event.as_str() == "PrimitiveFailed"
+                })
+                .count();
+
+            if dispatched && completed == 0 && failed == 0 {
                 eprintln!(
-                    "INVALID unit {}: dispatched step has no terminal event",
-                    unit_id
+                    "INVALID attempt for step {} (lease {}): dispatched attempt has no terminal event",
+                    step_id, lease_id
+                );
+                ok = false;
+            }
+
+            if completed > 0 && failed > 0 {
+                eprintln!(
+                    "INVALID attempt for step {} (lease {}): both completion and failure terminal events present",
+                    step_id, lease_id
+                );
+                ok = false;
+            }
+
+            if completed + failed > 1 {
+                eprintln!(
+                    "INVALID attempt for step {} (lease {}): multiple terminal events present",
+                    step_id, lease_id
+                );
+                ok = false;
+            }
+        }
+
+        // Step-level retry sequence validation
+        for (step_id, attempts) in &step_attempts {
+            let mut success_count = 0;
+            for (idx, lease_id) in attempts.iter().enumerate() {
+                let events = attempt_events
+                    .get(&(step_id.clone(), lease_id.clone()))
+                    .unwrap();
+                let completed = events
+                    .iter()
+                    .filter(|event| {
+                        event.as_str() == "STEP_COMPLETED" || event.as_str() == "PrimitiveCompleted"
+                    })
+                    .count();
+                let failed = events
+                    .iter()
+                    .filter(|event| {
+                        event.as_str() == "STEP_FAILED" || event.as_str() == "PrimitiveFailed"
+                    })
+                    .count();
+
+                if completed > 0 {
+                    success_count += 1;
+                    if idx != attempts.len() - 1 {
+                        eprintln!(
+                            "INVALID step {}: success attempt (lease {}) must be the last attempt for the step",
+                            step_id, lease_id
+                        );
+                        ok = false;
+                    }
+                }
+
+                if idx < attempts.len() - 1 && failed == 0 {
+                    eprintln!(
+                        "INVALID step {}: non-final attempt (lease {}) did not end in failure",
+                        step_id, lease_id
+                    );
+                    ok = false;
+                }
+            }
+
+            if success_count > 1 {
+                eprintln!(
+                    "INVALID step {}: multiple success attempts detected",
+                    step_id
                 );
                 ok = false;
             }
@@ -2474,6 +2627,18 @@ impl StorageProvider for DefaultStorage {
         Ok(())
     }
 
+    fn clear_caches(&self) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute_batch(
+            r#"
+            DELETE FROM execution_cache;
+            DELETE FROM primitive_execution_cache;
+            DELETE FROM planner_memoization_cache;
+            "#,
+        )?;
+        Ok(())
+    }
+
     fn print_stats(&self) -> Result<(i64, i64, i64, i64)> {
         let conn = self.conn()?;
         let events: i64 = conn
@@ -2689,6 +2854,7 @@ impl StorageProvider for DefaultStorage {
         Ok(res)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn store_cached_plan(
         &self,
         cache_key: &str,

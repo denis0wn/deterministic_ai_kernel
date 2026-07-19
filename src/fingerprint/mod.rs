@@ -10,7 +10,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut blocks = data.to_vec();
     let bit_len = (data.len() as u64) * 8;
     blocks.push(0x80);
-    while (blocks.len() + 8) % 64 != 0 {
+    while !(blocks.len() + 8).is_multiple_of(64) {
         blocks.push(0);
     }
     blocks.extend_from_slice(&bit_len.to_be_bytes());

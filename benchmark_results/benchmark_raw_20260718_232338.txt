@@ -1,0 +1,1108 @@
+
+running 1 test
+test run_comparative_benchmark ... READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_FAIL_OK
+WORKER: worker-planner
+STEP_FAILED_BY_WORKER: 01_plan_execution
+REASON: primitive_execution_error: retry: injected transient network failure
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+DEBUG RECEIPT: status=completed, completed_steps=3, failed_attempts=1, retry_count=1
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+READY_QUEUE: ["00_analyze_task"]
+DISPATCHED: 00_analyze_task
+STEP_STATUS: {"00_analyze_task": "dispatched", "01_plan_execution": "pending", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_analyze_task
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_analyze_task
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_analyze_task
+READY_QUEUE: ["01_plan_execution"]
+DISPATCHED: 01_plan_execution
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "dispatched", "02_execute_changes": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_plan_execution
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_plan_execution
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_plan_execution
+READY_QUEUE: ["02_execute_changes"]
+DISPATCHED: 02_execute_changes
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "dispatched"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_execute_changes
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_execute_changes
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_execute_changes
+READY_QUEUE: []
+STEP_STATUS: {"00_analyze_task": "committed", "01_plan_execution": "committed", "02_execute_changes": "committed"}
+EFFECT_EXECUTION_OK
+EXECUTED_EFFECT_ROWS: 3
+REPLAY VALID
+COMMITTED_EFFECTS: 3
+REJECTED_EFFECTS: 0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.04s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running tests/benchmark_llm_vs_kernel.rs (target/debug/deps/benchmark_llm_vs_kernel-dcc632156324bfe1)

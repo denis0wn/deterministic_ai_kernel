@@ -1,0 +1,30 @@
+On branch backup/pre-orchestrator-layer-2026-07-11
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   artifacts/verification_plan.deep.invalid_env.json
+	modified:   artifacts/verification_plan.deep.json
+	modified:   artifacts/verification_plan.fast.invalid_env.json
+	modified:   artifacts/verification_plan.fast.json
+	modified:   artifacts/verification_plan.identity_contract.json
+	modified:   artifacts/verification_plan.invalid_env.json
+	modified:   artifacts/verification_plan.json
+	modified:   runs/tape.json
+	modified:   src/execution/cache.rs
+	modified:   src/execution/primitive_executor.rs
+	modified:   src/execution_abi/primitives/mod.rs
+	modified:   src/kernel_error.rs
+	modified:   src/planner_pipeline/execution_engine.rs
+	modified:   src/planner_pipeline/mod.rs
+	modified:   src/workflow/compiler.rs
+	modified:   src/workflow/contract.rs
+	modified:   src/workflow/planner.rs
+	modified:   tests/architecture_invariants.rs
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	kernel_backup_20260718_002643/
+	runs/runs/0f5de0d1b0c99e7f.json
+	runs/runs/6d9a9c95b4d5669c.json
+
+no changes added to commit (use "git add" and/or "git commit -a")

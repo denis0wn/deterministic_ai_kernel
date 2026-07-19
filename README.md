@@ -44,6 +44,37 @@ Example end-to-end walkthrough:
 
 This demonstrates the intended loop: analyze -> persist semantic artifact -> inspect artifact state -> snapshot -> replay.
 
+## Demo release
+
+Stable demo command (after build + MLX runtime):
+
+```bash
+# 1) Build
+cargo build
+
+# 2) Start / ensure MLX runtime (RuntimeManager)
+./dek status
+# if stopped:
+cargo run --quiet -- runtime-start
+# or:
+./dek restart
+
+# 3) Demo
+./dek demo "summarize deterministic pipeline goals in one sentence"
+
+# Expected output:
+# PLAN_ID=...
+# SEED=...
+# STEPS=...
+# EXECUTION_STATUS=OK|FAILED
+# FINGERPRINT=...
+# FINAL_RESULT=...
+```
+
+- `./dek demo "..."` wraps `pipeline-run --payload`.
+- Channel/thought wrappers are stripped from `FINAL_RESULT`.
+- Run the full suite with `cargo test --all-targets`.
+
 ## Live LM Studio test
 
 Обычный test suite использует mock LM backend.

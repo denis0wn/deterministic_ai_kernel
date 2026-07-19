@@ -20,6 +20,9 @@ struct EmbeddingItem {
 }
 
 pub async fn embed_text(input: &str) -> Result<Vec<f32>> {
+    if std::env::var("DAK_LM_BACKEND").as_deref() == Ok("mock") {
+        return Ok(vec![0.1f32; 1536]);
+    }
     let mgr = crate::runtime_manager::EmbeddingRuntimeManager::load()
         .map_err(|e| anyhow!("Failed to load embedding runtime manager: {}", e))?;
 

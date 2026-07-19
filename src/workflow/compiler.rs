@@ -2,8 +2,8 @@ use anyhow::Result;
 
 use crate::llm;
 use crate::workflow::contract::{
-    required_capability_for_step, step_specs_to_steps, task_class_to_flow, Step, StepSpec,
-    TaskClass,
+    required_capability_for_step, step_specs_to_steps, task_class_to_flow, Step, StepKind,
+    StepSpec, TaskClass,
 };
 use crate::workflow::planner::{apply_semantic_bias_from_seed, parse_steps, validate_steps};
 
@@ -83,6 +83,20 @@ impl TaskInput {
 }
 
 impl Workflow {
+    fn materialize_default_primitive_bindings(steps: &mut [Step]) {
+        for step in steps {
+            match step.kind {
+                StepKind::ExecuteChanges if step.primitive_binding.is_none() => {
+                    step.primitive_binding = Some("repo.apply_patch.canonical".to_string());
+                }
+                StepKind::RunTests if step.primitive_binding.is_none() => {
+                    step.primitive_binding = Some("repo.run_tests.cargo_all_targets".to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+
     #[allow(dead_code)]
     pub fn from_plan_steps(steps: &[String]) -> Vec<Step> {
         let text = steps.join("\n");
@@ -98,13 +112,46 @@ impl Workflow {
     }
 
     pub fn compile(input: &TaskInput) -> crate::exec_spec::ExecSpec {
+        Self::compile_checked(input)
+            .expect("workflow compile invariant violated: executable spec emitted without required primitive binding")
+    }
+
+    pub fn compile_checked(input: &TaskInput) -> Result<crate::exec_spec::ExecSpec> {
         let steps = Self::build_steps(input);
-        crate::workflow::contract::steps_to_exec_spec(&steps)
+
+        for step in &steps {
+            if step_requires_concrete_primitive_binding(&step.kind)
+                && step.primitive_binding.is_none()
+                && !matches!(
+                    step.kind,
+                    crate::workflow::contract::StepKind::ExecuteChanges
+                )
+            {
+                anyhow::bail!(
+                    "step requires concrete primitive binding before executable spec emission: {:?}",
+                    step.kind
+                );
+            }
+        }
+
+        crate::workflow::contract::try_steps_to_exec_spec(&steps)
     }
 
     pub async fn compile_from_task_llm(input: &TaskInput) -> Result<crate::exec_spec::ExecSpec> {
         let steps = Self::build_from_task_llm(input).await?;
-        Ok(crate::workflow::contract::steps_to_exec_spec(&steps))
+
+        for step in &steps {
+            if step_requires_concrete_primitive_binding(&step.kind)
+                && step.primitive_binding.is_none()
+            {
+                anyhow::bail!(
+                    "llm compile path requires concrete primitive binding before executable spec emission: {:?}",
+                    step.kind
+                );
+            }
+        }
+
+        crate::workflow::contract::try_steps_to_exec_spec(&steps)
     }
 
     pub fn build_steps(input: &TaskInput) -> Vec<Step> {
@@ -112,10 +159,14 @@ impl Workflow {
         let step_specs = task_class_to_flow(task_class);
 
         if task_class == TaskClass::Generic {
-            return step_specs_to_steps(&step_specs, input.detail());
+            let mut steps = step_specs_to_steps(&step_specs, input.detail());
+            Self::materialize_default_primitive_bindings(&mut steps);
+            return steps;
         }
 
-        step_specs_to_steps(&step_specs, None)
+        let mut steps = step_specs_to_steps(&step_specs, None);
+        Self::materialize_default_primitive_bindings(&mut steps);
+        steps
     }
 
     pub async fn build_from_task_llm(input: &TaskInput) -> Result<Vec<Step>> {
@@ -160,7 +211,8 @@ impl Workflow {
                 "PLANNER_CACHE_HIT",
                 &serde_json::json!({ "cache_key": cache_key, "plan_id": cached_plan_id }),
             );
-            if let Ok(cached_steps) = serde_json::from_str::<Vec<Step>>(&cached_steps_json) {
+            if let Ok(mut cached_steps) = serde_json::from_str::<Vec<Step>>(&cached_steps_json) {
+                Self::materialize_default_primitive_bindings(&mut cached_steps);
                 return Ok(cached_steps);
             }
         }
@@ -182,8 +234,23 @@ impl Workflow {
         let parsed = apply_semantic_bias_from_seed(parse_steps(&text), None);
 
         for kind in parsed {
-            let step = Step { kind, detail: None };
-            if !steps.iter().any(|existing| existing == &step) {
+            let mut step = Step {
+                kind,
+                detail: None,
+                primitive_binding: None,
+            };
+
+            if matches!(step.kind, StepKind::RunTests) {
+                step.primitive_binding = Some("repo.run_tests.cargo_all_targets".to_string());
+            }
+            if let Some(existing) = steps
+                .iter_mut()
+                .find(|existing| existing.kind == step.kind && existing.detail == step.detail)
+            {
+                if existing.primitive_binding.is_none() && step.primitive_binding.is_some() {
+                    existing.primitive_binding = step.primitive_binding.clone();
+                }
+            } else {
                 steps.push(step);
             }
 
@@ -192,7 +259,8 @@ impl Workflow {
             }
         }
 
-        let final_steps = validate_steps(steps);
+        let mut final_steps = validate_steps(steps);
+        Self::materialize_default_primitive_bindings(&mut final_steps);
         let exec_spec = crate::workflow::contract::steps_to_exec_spec(&final_steps);
         let plan_id = exec_spec.spec_id.clone();
         let serialized_steps = serde_json::to_string(&final_steps).unwrap_or_default();
@@ -336,4 +404,30 @@ mod tests {
             vec!["00_analyze_task".to_string()]
         );
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionBindingPolicy {
+    Optional,
+    Required,
+}
+
+pub fn requires_primitive_binding(
+    step: &crate::workflow::contract::StepKind,
+) -> ExecutionBindingPolicy {
+    use crate::workflow::contract::StepKind;
+    match step {
+        StepKind::ExecuteChanges | StepKind::RunTests => ExecutionBindingPolicy::Required,
+        _ => ExecutionBindingPolicy::Optional,
+    }
+}
+
+pub fn step_requires_concrete_primitive_binding(
+    step: &crate::workflow::contract::StepKind,
+) -> bool {
+    use crate::workflow::contract::StepKind;
+    matches!(
+        step,
+        StepKind::ExecuteChanges | StepKind::RunTests | StepKind::PatchCode
+    )
 }

@@ -16,6 +16,7 @@ pub mod replay;
 pub mod scheduler;
 pub mod schema;
 pub mod snapshot;
+pub mod tool_registry;
 pub mod workflow;
 
 pub mod worker;

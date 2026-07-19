@@ -41,7 +41,11 @@ fn final_answer_reads_from_semantic_artifacts() {
         .rev()
         .find(|a| a.artifact_type == "final_answer")
         .and_then(|a| serde_json::from_str::<serde_json::Value>(&a.payload).ok())
-        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()));
+        .and_then(|v| {
+            v.get("text")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+        });
 
     assert_eq!(answer.as_deref(), Some("event sourced final answer"));
 }

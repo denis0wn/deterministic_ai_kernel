@@ -1,0 +1,2100 @@
+warning: associated function `returning_unsupported` is never used
+  --> tests/smt_primitive_contract.rs:36:8
+   |
+24 | impl RecordingSolverProvider {
+   | ---------------------------- associated function in this implementation
+...
+36 |     fn returning_unsupported() -> Arc<Self> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `deterministic_ai_kernel` (test "smt_primitive_contract") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (target/debug/deps/deterministic_ai_kernel-1abb296efa03ab52)
+
+running 142 tests
+test cli_json::tests::capsule_summary_report_has_expected_shape ... ok
+test cli_json::tests::comparison_report_has_expected_shape_and_diff_payloads ... ok
+test cli_json::tests::print_json_report_emits_pretty_json ... ok
+test exec_spec::tests::exec_spec_roundtrip_json ... ok
+test execution_abi::primitives::tests::primitives_roundtrip_json ... ok
+test execution_abi::primitives::tests::step_kind_to_primitive_kind_mapping ... ok
+test fingerprint::tests::test_canonical_fingerprint_equivalence ... ok
+test kernel_error::tests::all_error_categories_are_display ... ok
+test kernel_error::tests::kernel_error_display_formats_correctly ... ok
+test kernel_error::tests::kernel_error_from_provider ... ok
+test kernel_error::tests::kernel_error_from_specification ... ok
+test llm::tests::test_clean_structured_json ... ok
+test lm_control::tests::doctor_json_report_has_expected_shape ... ok
+test lm_control::tests::parse_gb_helper_works ... ok
+test model_manifest::tests::best_enabled_task_planning_model_prefers_priority_one ... ok
+test model_manifest::tests::current_models_reports_known_roles ... ok
+test model_manifest::tests::embedding_model_is_not_marked_as_chat_role ... ok
+test model_manifest::tests::manifest_loads ... ok
+test model_manifest::tests::task_planning_model_is_present ... ok
+test model_manifest::tests::threshold_mapping_is_stable ... ok
+test model_registry::tests::coding_assistant_prefers_purpose_specific_model ... ok
+test model_registry::tests::coding_assistant_uses_default_model_when_specific_key_missing ... ok
+test model_registry::tests::missing_base_url_is_an_error ... ok
+test model_registry::tests::missing_default_model_is_an_error ... ok
+test model_registry::tests::resolves_coding_assistant_purpose ... ok
+test model_registry::tests::resolves_task_planning_purpose ... ok
+test model_registry::tests::task_planning_prefers_purpose_specific_model ... ok
+test model_registry::tests::task_planning_uses_default_model_when_specific_key_missing ... ok
+test planner_pipeline::critic::tests::critic_catches_duplicate_steps ... ok
+test planner_pipeline::critic::tests::critic_catches_empty_id ... ok
+test planner_pipeline::critic::tests::critic_does_not_mutate_plan ... ok
+test planner_pipeline::critic::tests::critic_passes_valid_plan ... ok
+test planner_pipeline::execution_engine::tests::failing_executor_marks_report_failed ... ok
+test planner_pipeline::execution_engine::tests::report_plan_id_matches_pipeline ... ok
+test planner_pipeline::execution_engine::tests::report_seed_is_preserved ... ok
+test planner_pipeline::execution_engine::tests::run_is_deterministic_same_seed ... ok
+test planner_pipeline::execution_engine::tests::run_with_replay_detects_tamper ... ok
+test planner_pipeline::execution_engine::tests::run_with_replay_verifies_consistency ... ok
+test planner_pipeline::execution_engine::tests::runs_all_steps_successfully ... ok
+test planner_pipeline::execution_engine::tests::skipping_executor_counts_correctly ... ok
+test planner_pipeline::execution_engine::tests::step_results_have_correct_indices ... ok
+test planner_pipeline::execution_engine::tests::test_deterministic_cache_layer ... ok
+test planner_pipeline::execution_engine::tests::test_file_write_read_and_command_primitives ... ok
+test planner_pipeline::execution_engine::tests::test_state_machine_transition_hardening ... ok
+test planner_pipeline::normalizer::tests::normalizer_collapses_whitespace ... ok
+test planner_pipeline::normalizer::tests::normalizer_is_idempotent ... ok
+test planner_pipeline::normalizer::tests::normalizer_lowercases ... ok
+test planner_pipeline::normalizer::tests::normalizer_preserves_line_boundaries ... ok
+test planner_pipeline::normalizer::tests::normalizer_strips_control_chars ... ok
+test planner_pipeline::parser::tests::parser_bullet_dash ... ok
+test planner_pipeline::parser::tests::parser_bullet_star ... ok
+test planner_pipeline::parser::tests::parser_errors_on_empty_payload ... ok
+test planner_pipeline::parser::tests::parser_explicit_steps_inline ... ok
+test planner_pipeline::parser::tests::parser_explicit_steps_multiline ... ok
+test planner_pipeline::parser::tests::parser_numbered_list ... ok
+test planner_pipeline::parser::tests::parser_skips_empty_lines ... ok
+test planner_pipeline::parser::tests::parser_splits_lines_into_steps ... ok
+test planner_pipeline::parser::tests::parser_strips_numbering ... ok
+test planner_pipeline::persistence::tests::list_runs_returns_saved_ids ... ok
+test planner_pipeline::persistence::tests::load_missing_report_errors ... ok
+test planner_pipeline::persistence::tests::load_tape_returns_empty_when_absent ... ok
+test planner_pipeline::persistence::tests::save_and_load_report ... ok
+test planner_pipeline::persistence::tests::save_and_load_tape ... ok
+test planner_pipeline::persistence::tests::save_report_is_idempotent ... ok
+test planner_pipeline::pipeline::tests::pipeline_critic_catches_empty_payload ... ok
+test planner_pipeline::pipeline::tests::pipeline_different_seeds_produce_different_ids ... ok
+test planner_pipeline::pipeline::tests::pipeline_id_is_stable_across_runs ... ok
+test planner_pipeline::pipeline::tests::pipeline_normalizes_before_parsing ... ok
+test planner_pipeline::pipeline::tests::pipeline_produces_valid_plan ... ok
+test planner_pipeline::pipeline::tests::publish_output_writes_to_event_bus ... ok
+test planner_pipeline::plan_diff::tests::diff_detects_added_step ... ok
+test planner_pipeline::plan_diff::tests::diff_detects_removed_step ... ok
+test planner_pipeline::plan_diff::tests::diff_empty_to_nonempty ... ok
+test planner_pipeline::plan_diff::tests::diff_identical_plans_is_all_retained ... ok
+test planner_pipeline::plan_diff::tests::diff_ids_match_plans ... ok
+test planner_pipeline::replay::tests::replayer_catches_tampered_id ... ok
+test planner_pipeline::replay::tests::replayer_handles_empty_tape ... ok
+test planner_pipeline::replay::tests::replayer_verifies_multiple_entries ... ok
+test planner_pipeline::replay::tests::replayer_verifies_stable_run ... ok
+test planner_pipeline::replay::tests::tape_is_empty_initially ... ok
+test planner_pipeline::replay::tests::tape_records_entries ... ok
+test planner_pipeline::semantic_mapper::tests::mapper_is_replay_safe ... ok
+test planner_pipeline::semantic_mapper::tests::mapper_orders_by_priority ... ok
+test planner_pipeline::tests::stable_id_differs_on_different_seed ... ok
+test planner_pipeline::tests::stable_id_is_16_chars ... ok
+test planner_pipeline::tests::stable_id_is_deterministic ... ok
+test runtime_manager::tests::base_url_format ... ok
+test runtime_manager::tests::build_info_populates_fields ... ok
+test runtime_manager::tests::config_loads_from_disk ... ok
+test runtime_manager::tests::diagnostic_string_contains_key_info ... ok
+test runtime_manager::tests::runtime_status_display ... ok
+test runtime_manager::tests::status_returns_stopped_when_no_pid ... ok
+test schema::validator::tests::accepts_valid_bias ... ok
+test schema::validator::tests::rejects_additional_properties ... ok
+test schema::validator::tests::rejects_missing_required_field ... ok
+test schema::validator::tests::rejects_unknown_preferred_value ... ok
+test schema::validator::tests::rejects_unknown_version ... ok
+test schema::validator::tests::rejects_unknown_weights_key ... ok
+test semantic_bias::tests::bias_configuration_roundtrip_json ... ok
+test semantic_bias::tests::bias_version_is_v1_by_default ... ok
+test worker::tests::classify_failure_outcome_defaults_to_terminal_failure ... ok
+test worker::tests::classify_failure_outcome_maps_blocked_prefixes ... ok
+test worker::tests::classify_failure_outcome_maps_retry_prefixes ... ok
+test worker::tests::outcome_to_event_type_maps_success_and_blocked ... ok
+test workflow::compiler::tests::all_codefix_failure_signals_converge_to_same_canonical_flow ... ok
+test workflow::compiler::tests::codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::codefix_input_uses_canonical_codefix_flow ... ok
+test workflow::compiler::tests::generic_task_uses_default_execution_flow ... ok
+test workflow::compiler::tests::lint_report_codefix_input_maps_to_codefix_task_class ... ok
+test workflow::compiler::tests::llm_planning_task_uses_canonical_ir_steps ... ok
+test workflow::compiler::tests::planner_hardening_input_maps_to_planner_hardening_task_class ... ok
+test workflow::compiler::tests::workflow_compile_emits_valid_exec_spec ... ok
+test workflow::contract::tests::analyze_and_plan_steps_require_planner_capability ... ok
+test workflow::contract::tests::codefix_steps_require_expected_capabilities ... ok
+test workflow::contract::tests::codefix_task_class_maps_to_canonical_codefix_flow ... ok
+test workflow::contract::tests::contract_v1_metadata_is_stable ... ok
+test workflow::contract::tests::event_type_names_match_execution_event_v1_contract ... ok
+test workflow::contract::tests::every_step_kind_is_present_in_exactly_one_canonical_flow ... ok
+test workflow::contract::tests::every_task_class_has_a_non_empty_canonical_flow ... ok
+test workflow::contract::tests::execute_changes_requires_executor_capability ... ok
+test workflow::contract::tests::generic_task_class_maps_to_default_execution_flow ... ok
+test workflow::contract::tests::planner_hardening_task_class_maps_to_canonical_planner_flow ... ok
+test workflow::contract::tests::retryable_failure_and_blocked_are_not_terminal_outcomes ... ok
+test workflow::contract::tests::step_specs_can_be_lowered_to_steps_with_detail ... ok
+test workflow::contract::tests::success_and_terminal_failure_are_terminal_outcomes ... ok
+test workflow::contract::tests::validate_planner_output_requires_verifier_capability ... ok
+test workflow::planner::tests::apply_semantic_bias_none_is_noop ... ok
+test workflow::planner::tests::apply_semantic_bias_stably_orders_by_weight ... ok
+test workflow::planner::tests::normalize_step_maps_fallback_language ... ok
+test workflow::planner::tests::normalize_step_maps_test_language ... ok
+test workflow::planner::tests::normalize_step_rejects_deployment_language ... ok
+test workflow::planner::tests::parse_steps_extracts_unique_kinds_in_order ... ok
+test workflow::planner::tests::seed_to_bias_replay_safe ... ok
+test workflow::planner::tests::semantic_bias_is_deterministic_across_seed_and_input_matrix ... ok
+test workflow::planner::tests::semantic_bias_none_is_identity_for_generated_inputs ... ok
+test workflow::planner::tests::semantic_bias_none_preserves_identity_for_all_known_permutations ... ok
+test workflow::planner::tests::semantic_bias_preserves_canonical_validation_result ... ok
+test workflow::planner::tests::semantic_bias_preserves_membership_and_length_for_generated_inputs ... ok
+test workflow::planner::tests::semantic_bias_preserves_permutation_closure_across_seed_matrix ... ok
+test workflow::planner::tests::validate_steps_dedupes_and_orders_canonical_steps ... ok
+test workflow::planner::tests::validate_steps_ignores_duplicate_permutations ... ok
+test workflow::planner::tests::validate_steps_is_invariant_under_input_permutation ... ok
+
+test result: ok. 142 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.71s
+
+     Running unittests src/main.rs (target/debug/deps/deterministic_ai_kernel-e84cc9f122722ba0)
+
+running 1 test
+test integrity_json_tests::integrity_json_report_has_expected_shape ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/bin/run.rs (target/debug/deps/run-3b72238cff85d873)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/architecture.rs (target/debug/deps/architecture-bafcb44a3ab51403)
+
+running 9 tests
+test domain_must_not_import_api ... ok
+test domain_must_not_import_cli_json ... ok
+test event_bus_is_persistence_only ... ok
+test execution_is_execution_only ... ok
+test kernel_must_not_import_domain ... ok
+test kernel_must_not_import_interface ... ok
+test llm_and_embeddings_are_external_only ... ok
+test scheduler_is_selection_only ... ok
+test worker_is_ownership_only ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/architecture_invariants.rs (target/debug/deps/architecture_invariants-0906ca08c82b721e)
+
+running 19 tests
+test analyze_and_plan_must_remain_reasoning_only ... ok
+test binding_logic_must_not_override_primitive_kind_from_detail_text ... ok
+test compiler_must_construct_unbound_steps_explicitly ... ok
+test compiler_must_not_use_detail_as_binding_proxy ... ok
+test compiler_paths_must_enforce_primitive_binding_symmetrically ... ok
+test compiler_step_dedup_must_ignore_binding_metadata ... ok
+test execute_changes_must_require_tool_execution ... ok
+test kernel_types_must_not_import_api ... ok
+test llm_compile_path_must_enforce_primitive_binding ... ok
+test primitive_bound_steps_cannot_validate_as_reasoning_only ... ok
+test primitive_bound_steps_require_materialized_artifact ... ok
+test registry_must_not_import_scheduler ... ok
+test registry_must_not_import_worker ... ok
+test run_tests_must_require_tool_execution ... ok
+test semantic_must_not_import_api ... ok
+test semantic_must_not_import_cli_json ... ok
+test snapshot_must_not_import_execution ... ok
+test step_struct_must_expose_primitive_binding_metadata ... ok
+test tool_like_steps_must_require_concrete_primitive_binding ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/artifact_immutability.rs (target/debug/deps/artifact_immutability-2603d80032005a1c)
+
+running 3 tests
+test artifact_count_matches_writes ... ok
+test artifact_older_version_content_is_preserved ... ok
+test artifact_source_generation_is_monotonically_increasing ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/artifact_registry.rs (target/debug/deps/artifact_registry-960e67403f8ae7ac)
+
+running 7 tests
+test find_by_seed_returns_all_matches ... ok
+test find_by_type_filters_correctly ... ok
+test hash_differs_for_different_payloads ... ok
+test hash_is_deterministic_for_same_payload ... ok
+test parent_chain_is_preserved ... ok
+test register_and_retrieve_by_id ... ok
+test registry_is_append_only ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/artifact_replay_contract.rs (target/debug/deps/artifact_replay_contract-4a130d23c90a66eb)
+
+running 2 tests
+test test_artifact_store_then_replay ... ok
+test test_volatile_op_not_stored ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/bias_artifact_cli.rs (target/debug/deps/bias_artifact_cli-94b1091669e9519f)
+
+running 1 test
+test emit_bias_artifact_persists_semantic_bias_v1 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests/bias_explain_cli.rs (target/debug/deps/bias_explain_cli-e71d1ffa426c472f)
+
+running 1 test
+test bias_explain_cli_prints_stable_lines ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/bias_explain_help_cli.rs (target/debug/deps/bias_explain_help_cli-deb89f4f4e2b131f)
+
+running 1 test
+test help_lists_bias_explain_command ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_explain_invalid_cli.rs (target/debug/deps/bias_explain_invalid_cli-fe0b5be663e88876)
+
+running 1 test
+test bias_explain_cli_rejects_unknown_step_kind ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bias_v1_snapshot.rs (target/debug/deps/bias_v1_snapshot-5fff9f58fd19a6da)
+
+running 2 tests
+test bias_v1_explain_snapshot_is_stable ... ok
+test bias_v1_weight_lines_are_stably_sorted ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/capture_capsule_cli.rs (target/debug/deps/capture_capsule_cli-a46bfd8126c3a39a)
+
+running 1 test
+test capture_capsule_cli_outputs_capsule_json ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/capture_capsule_save_cli_json.rs (target/debug/deps/capture_capsule_save_cli_json-8a0b3e6c34a324eb)
+
+running 1 test
+test capture_capsule_save_json_reports_saved_capsule ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/cli_json_contract.rs (target/debug/deps/cli_json_contract-575f17f4f8fed16f)
+
+running 1 test
+test integrity_json_emits_valid_cli_json_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/cli_surface_lock.rs (target/debug/deps/cli_surface_lock-05bda6c3fdc5dacb)
+
+running 4 tests
+test cli_subcommand_count_is_locked ... ok
+test cli_subcommands_are_sorted ... ok
+test cli_surface_contains_core_commands ... ok
+test main_rs_contains_all_locked_subcommands ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/compare_capsules_cli.rs (target/debug/deps/compare_capsules_cli-33ea79b27a1513e9)
+
+running 1 test
+test compare_capsules_cli_reports_identical_for_same_task_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/compare_capsules_cli_divergent.rs (target/debug/deps/compare_capsules_cli_divergent-b5bb4f39ce6dea83)
+
+running 1 test
+test compare_capsules_cli_reports_divergent_for_different_task_states ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/compare_capsules_cli_explain_divergent.rs (target/debug/deps/compare_capsules_cli_explain_divergent-70c42dfa7c1615b8)
+
+running 1 test
+test compare_capsules_explain_reports_divergent_reason ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/compare_capsules_cli_explain_identical.rs (target/debug/deps/compare_capsules_cli_explain_identical-90615ec4df684f54)
+
+running 1 test
+test compare_capsules_explain_reports_identical_reason ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/compare_capsules_cli_explain_invalid.rs (target/debug/deps/compare_capsules_cli_explain_invalid-0d26c610cbd61c0b)
+
+running 1 test
+test compare_capsules_explain_reports_invalid_reason ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/compare_capsules_cli_invalid.rs (target/debug/deps/compare_capsules_cli_invalid-ff7f542c384b862d)
+
+running 1 test
+test compare_capsules_cli_reports_structurally_invalid_when_one_capsule_is_invalid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/compare_capsules_cli_json_divergent.rs (target/debug/deps/compare_capsules_cli_json_divergent-bb4b828b2e58f65e)
+
+running 2 tests
+test cli_json_contract::integrity_json_emits_valid_cli_json_contract ... ok
+test compare_capsules_json_reports_divergent_with_diff_payload ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/compare_capsules_cli_json_identical.rs (target/debug/deps/compare_capsules_cli_json_identical-9fce0dd271be13cd)
+
+running 2 tests
+test cli_json_contract::integrity_json_emits_valid_cli_json_contract ... ok
+test compare_capsules_json_reports_identical ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/compare_capsules_cli_json_invalid.rs (target/debug/deps/compare_capsules_cli_json_invalid-909e655c83c1ae2a)
+
+running 2 tests
+test cli_json_contract::integrity_json_emits_valid_cli_json_contract ... ok
+test compare_capsules_json_reports_structurally_invalid ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/contract_regression_lock.rs (target/debug/deps/contract_regression_lock-a89c0d606bed00b6)
+
+running 5 tests
+test field_set_fingerprint_is_stable ... ok
+test preferred_field_accepts_only_known_values ... ok
+test schema_version_string_is_locked ... ok
+test weight_keys_are_locked ... ok
+test weight_map_rejects_unknown_keys ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/determinism.rs (target/debug/deps/determinism-88dd019bd1d38cb8)
+
+running 1 test
+test deterministic_core_commands_are_stable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/determinism_guarantees.rs (target/debug/deps/determinism_guarantees-de9ea9bb72e393cd)
+
+running 9 tests
+test btreemap_key_order_is_stable ... ok
+test exec_spec_hash_is_stable_after_roundtrip ... ok
+test exec_spec_serialization_is_deterministic ... ok
+test execution_id_stable_hash_is_deterministic ... ok
+test modified_spec_detected_by_hash ... ok
+test primitive_id_deterministic_across_invocations ... ok
+test same_spec_produces_identical_hash_twice ... ok
+test validate_catches_missing_dependency_target ... ok
+test validate_hash_rejects_tampered_spec ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/doctor_json_cli.rs (target/debug/deps/doctor_json_cli-e831ac1d0cb1266f)
+
+running 2 tests
+test cli_json_contract::integrity_json_emits_valid_cli_json_contract ... ok
+test doctor_json_cli_emits_valid_json_report ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/embeddings_routing_contract.rs (target/debug/deps/embeddings_routing_contract-b11a2b97cc65b8f6)
+
+running 1 test
+test test_embeddings_routing_contract_flow ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/emit_bias_artifact_invalid_step_kind.rs (target/debug/deps/emit_bias_artifact_invalid_step_kind-0fe888d85218b4a7)
+
+running 1 test
+test emit_bias_artifact_rejects_unknown_step_kind ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/event_bus_kernel_bridge.rs (target/debug/deps/event_bus_kernel_bridge-53c5e771e7c9d18e)
+
+running 1 test
+test event_bus_exposes_execution_events_and_state_graph ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/event_ordering_fuzz.rs (target/debug/deps/event_ordering_fuzz-6f542066498ad4f8)
+
+running 2 tests
+test invalid_causal_sequence_fails_deterministically ... ok
+test semantic_bias_permutations_keep_replay_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/explain_drift_detection.rs (target/debug/deps/explain_drift_detection-2389738d19c0a7d6)
+
+running 7 tests
+test explain_lines_contains_meta_keys ... ok
+test explain_lines_contains_preferred_key ... ok
+test explain_lines_contains_seed_key ... ok
+test explain_lines_contains_version_key ... ok
+test explain_lines_contains_weight_keys_for_domain ... ok
+test explain_lines_minimum_count_is_locked ... ok
+test explain_lines_version_matches_bias_version ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/final_answer_event_sourced_cli.rs (target/debug/deps/final_answer_event_sourced_cli-d343114d0a33fcbe)
+
+running 1 test
+test final_answer_reads_from_semantic_artifacts ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/final_answer_replay_equivalence.rs (target/debug/deps/final_answer_replay_equivalence-0e971525b5125b76)
+
+running 1 test
+test final_answer_reconstruction_is_equivalent ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/fingerprint_contract.rs (target/debug/deps/fingerprint_contract-565a647c3681aaca)
+
+running 7 tests
+test plan_fingerprint_reordered_steps_different_hash ... ok
+test plan_fingerprint_same_steps_same_hash ... ok
+test step_fingerprint_changed_dep_hash_different_hash ... ok
+test step_fingerprint_changed_env_different_hash ... ok
+test step_fingerprint_same_input_same_hash ... ok
+test task_fingerprint_changed_input_different_hash ... ok
+test task_fingerprint_same_input_same_hash ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/fuzz_step_kind.rs (target/debug/deps/fuzz_step_kind-69bc4767577466af)
+
+running 3 tests
+test fuzz_duplicate_heavy_sequences_normalize ... ok
+test fuzz_malformed_steps_never_crash ... ok
+test fuzz_mixed_valid_invalid_steps_weights_only_for_valid ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.09s
+
+     Running tests/golden_replay_corpus.rs (target/debug/deps/golden_replay_corpus-163a5ddee4b495c1)
+
+running 1 test
+test golden_replay_corpus_scenarios_match_contracts ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/integrity_json_cli.rs (target/debug/deps/integrity_json_cli-63d74afc4d6a304e)
+
+running 2 tests
+test cli_json_contract::integrity_json_emits_valid_cli_json_contract ... ok
+test integrity_json_cli_emits_valid_json_report ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/kernel_hardening.rs (target/debug/deps/kernel_hardening-cc9310f611cd8483)
+
+running 8 tests
+test exec_spec_must_not_import_runtime ... ok
+test execution_abi_must_not_import_runtime ... ok
+test execution_identity_must_not_import_runtime ... ok
+test kernel_core_has_no_direct_filesystem ... ok
+test kernel_core_has_no_direct_network ... ok
+test kernel_core_has_no_hidden_randomness ... ok
+test kernel_error_must_not_import_runtime ... ok
+test providers_must_not_import_scheduler_or_worker ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/kernel_types_contract.rs (target/debug/deps/kernel_types_contract-81821e6f211ed7d5)
+
+running 1 test
+test replay_capsule_v0_is_serializable_and_minimally_valid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/latest_bias_artifact_cli.rs (target/debug/deps/latest_bias_artifact_cli-0596a323a99258f4)
+
+running 1 test
+test latest_bias_artifact_cli_prints_latest_bias_row ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/lm_control_auto_route.rs (target/debug/deps/lm_control_auto_route-526a46c212116eaf)
+
+running 2 tests
+test auto_route_succeeds_for_task_planning_when_ready ... ok
+test send_prompt_returns_mock_response_for_task_planning ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lm_control_blocked.rs (target/debug/deps/lm_control_blocked-d8645dc5ea9d2a65)
+
+running 1 test
+test blocked_paths_return_errors_for_unknown_role ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/lm_control_contract.rs (target/debug/deps/lm_control_contract-d3f2062cf382a958)
+
+running 2 tests
+test dry_run_switch_output_schema_is_stable ... ok
+test safe_switch_output_schema_is_stable ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/lm_control_doctor.rs (target/debug/deps/lm_control_doctor-b527e24de544fb25)
+
+running 1 test
+test doctor_returns_roles_and_ram_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/lm_control_doctor_contract.rs (target/debug/deps/lm_control_doctor_contract-e0d675be69a21b51)
+
+running 1 test
+test doctor_contract_is_stable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lm_control_doctor_json_contract.rs (target/debug/deps/lm_control_doctor_json_contract-b90167ded8264e92)
+
+running 1 test
+test doctor_json_contract_is_stable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/lm_control_policy.rs (target/debug/deps/lm_control_policy-8fd4a86a573f1937)
+
+running 2 tests
+test switch_plan_is_deterministic_for_task_planning ... ok
+test switch_plan_preserves_injected_free_memory ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lm_control_policy_negative.rs (target/debug/deps/lm_control_policy_negative-41c83317e3c64dae)
+
+running 1 test
+test switch_plan_rejects_unknown_role_via_manifest_lookup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lm_control_safe_switch.rs (target/debug/deps/lm_control_safe_switch-7c0ecae77e29d2f7)
+
+running 1 test
+test safe_switch_succeeds_for_task_planning_when_ready ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lm_control_switch.rs (target/debug/deps/lm_control_switch-262b485081e5a92e)
+
+running 1 test
+test dry_run_switch_reports_ready_for_task_planning ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/model_manifest_env.rs (target/debug/deps/model_manifest_env-148a400fbc211608)
+
+running 1 test
+test sync_all_roles_makes_statuses_in_sync ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/native_inference_contract.rs (target/debug/deps/native_inference_contract-97d79ba191df0c9a)
+
+running 1 test
+test test_native_inference_contract_flow ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/plan_identity_contract.rs (target/debug/deps/plan_identity_contract-43ee68b38c5edbe9)
+
+running 1 test
+test verification_plan_exposes_identity_inputs ... plan_file=artifacts/verification_plan.identity_contract.json bytes=2966
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+verdict_file=artifacts/verification_verdict.identity_contract.json bytes=2758
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 4,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ]
+}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/planner_memoization_contract.rs (target/debug/deps/planner_memoization_contract-33c71e3a420a00a7)
+
+running 1 test
+test test_planner_memoization_hit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/primitive_memoization_contract.rs (target/debug/deps/primitive_memoization_contract-766750e54c202d88)
+
+running 2 tests
+test test_primitive_cache_dependency_invalidation ... ok
+test test_primitive_cache_hit_equivalence ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/replay_capsule_builder.rs (target/debug/deps/replay_capsule_builder-f7e547a1d6a9a80e)
+
+running 1 test
+test replay_capsule_is_built_from_task_event_stream ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_classification.rs (target/debug/deps/replay_capsule_classification-43c8ca5341d9c9ee)
+
+running 1 test
+test replay_capsule_classification_returns_expected_labels ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_cli.rs (target/debug/deps/replay_capsule_cli-06f3b8e34cfa594b)
+
+running 1 test
+test replay_capsule_cli_reports_saved_capsule_summary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/replay_capsule_cli_json.rs (target/debug/deps/replay_capsule_cli_json-3232f9be902f8f36)
+
+running 1 test
+test replay_capsule_json_reports_saved_capsule ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/replay_capsule_cli_persistence.rs (target/debug/deps/replay_capsule_cli_persistence-73066d592b0b1801)
+
+running 1 test
+test capture_capsule_save_and_latest_capsule_work_via_cli ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/replay_capsule_cli_validation.rs (target/debug/deps/replay_capsule_cli_validation-12b9421e15d6dbf3)
+
+running 1 test
+test capture_capsule_save_fails_on_empty_task ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_content.rs (target/debug/deps/replay_capsule_content-e9e843e00a6a352c)
+
+running 1 test
+test replay_capsule_contains_captured_events_and_graph_nodes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_diff.rs (target/debug/deps/replay_capsule_diff-0b68a870ce9d8294)
+
+running 1 test
+test replay_capsule_diff_detects_identical_capsules ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_multiple_saves.rs (target/debug/deps/replay_capsule_multiple_saves-6509e8b9ff24f286)
+
+running 1 test
+test latest_replay_capsule_returns_most_recent_capsule_for_same_task ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/replay_capsule_persistence.rs (target/debug/deps/replay_capsule_persistence-9f741988d1eda8d0)
+
+running 1 test
+test replay_capsule_can_be_saved_and_loaded_back ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_structured_diff.rs (target/debug/deps/replay_capsule_structured_diff-e7aa5f5289ff29ad)
+
+running 1 test
+test replay_capsule_structured_diff_detects_event_and_graph_differences ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/replay_capsule_validation.rs (target/debug/deps/replay_capsule_validation-3ebcedd522f9df76)
+
+running 3 tests
+test replay_capsule_validate_accepts_well_formed_capsule ... ok
+test replay_capsule_validate_rejects_empty_events ... ok
+test replay_capsule_validate_rejects_empty_graph ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/replay_equivalence_contract.rs (target/debug/deps/replay_equivalence_contract-9f4a2fb3db1625bf)
+
+running 4 tests
+test contract_ordering_independence_guaranteed ... ok
+test contract_payload_schema_invariants ... ok
+test contract_same_input_identical_snapshot_graph ... ok
+test contract_snapshot_restore_preserves_graph ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+     Running tests/replay_long_chain_equivalence.rs (target/debug/deps/replay_long_chain_equivalence-6e440617661f74b1)
+
+running 1 test
+test replay_long_chain_matches_after_snapshot_restore ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/replay_property.rs (target/debug/deps/replay_property-7dbf602117bbc752)
+
+running 4 tests
+test prop_batch_structural_invariants ... ok
+test prop_repeat_emit_is_idempotent ... ok
+test prop_snapshot_restore_preserves_payload ... ok
+test prop_step_order_does_not_affect_weights ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.60s
+
+     Running tests/replay_seed_matrix_equivalence.rs (target/debug/deps/replay_seed_matrix_equivalence-1ea693fa73cd2974)
+
+running 2 tests
+test seed_matrix_long_chain_replay_equivalence_matches_after_snapshot_restore ... ok
+test seed_matrix_replay_equivalence_matches_after_snapshot_restore ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+     Running tests/replay_snapshot.rs (target/debug/deps/replay_snapshot-28a0d23bda4cd8c1)
+
+running 1 test
+test replay_and_snapshot_do_not_panic_on_clean_db ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/restore_snapshot_artifact_refs_cli.rs (target/debug/deps/restore_snapshot_artifact_refs_cli-cd1a0cb5a1c18928)
+
+running 1 test
+test restore_snapshot_prints_artifact_ref_lines ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/reuse_policy_matrix.rs (target/debug/deps/reuse_policy_matrix-6d71cf7f5ea801d4)
+
+running 1 test
+test reuse_policy_matrix ... plan_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_plan.fast.json bytes=2966
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.fast.warmup.json bytes=2758
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 4,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ]
+}
+plan_file=artifacts/verification_plan.json bytes=2966
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.fast_same_fingerprint_allows_reuse.json bytes=2758
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 4,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ]
+}
+plan_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_plan.fast.json bytes=2966
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.fast.warmup.json bytes=2758
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 4,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ]
+}
+plan_file=artifacts/verification_plan.json bytes=2966
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.fast_different_fingerprint_rejects_reuse.json bytes=1382
+{
+  "ok": false,
+  "status": "invalid_reuse",
+  "reason": "plan_id differed: environment_id differed",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "expected_environment_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "actual_environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "node_count": 0,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": []
+}
+plan_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_plan.deep.json bytes=3384
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+==> node=event_ordering_fuzz@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.deep.warmup.json bytes=3149
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "deep",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 5,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    },
+    {
+      "key": "event_ordering_fuzz@v1",
+      "id": "event_ordering_fuzz",
+      "version": "v1",
+      "stage": "stress",
+      "pipeline": "deep",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 80,
+      "cost": 7,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "determinism_stress_contract"
+      ]
+    }
+  ]
+}
+plan_file=artifacts/verification_plan.json bytes=3384
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+==> node=event_ordering_fuzz@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.deep_same_fingerprint_allows_reuse.json bytes=3149
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "deep",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 5,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    },
+    {
+      "key": "event_ordering_fuzz@v1",
+      "id": "event_ordering_fuzz",
+      "version": "v1",
+      "stage": "stress",
+      "pipeline": "deep",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 80,
+      "cost": 7,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "determinism_stress_contract"
+      ]
+    }
+  ]
+}
+plan_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_plan.deep.json bytes=3384
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+==> node=event_ordering_fuzz@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.deep.warmup.json bytes=3149
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "deep",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 5,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    },
+    {
+      "key": "event_ordering_fuzz@v1",
+      "id": "event_ordering_fuzz",
+      "version": "v1",
+      "stage": "stress",
+      "pipeline": "deep",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 80,
+      "cost": 7,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "determinism_stress_contract"
+      ]
+    }
+  ]
+}
+plan_file=artifacts/verification_plan.json bytes=3384
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.deep_different_fingerprint_rejects_reuse.json bytes=1382
+{
+  "ok": false,
+  "status": "invalid_reuse",
+  "reason": "plan_id differed: environment_id differed",
+  "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
+  "expected_environment_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "actual_environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "deep",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "node_count": 0,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": []
+}
+plan_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_plan.fast.json bytes=2966
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.fast.warmup.json bytes=2758
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 4,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ]
+}
+plan_file=artifacts/verification_plan.json bytes=3384
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.cross_pipeline_reuse_rejected_by_default.json bytes=1286
+{
+  "ok": false,
+  "status": "invalid_reuse",
+  "reason": "plan_id differed: selected_pipeline differed for reuse-plan",
+  "plan_id": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "plan_hash": "5cde3bd3702d6af88f038f3446e17c8715300e569a984230e0305ff65e84998c",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "60ae268467cfd7022790cd5d7eb4a0b6d04041e718481cb57d2ec034aef9e2d5",
+  "expected_selected_pipeline": "fast",
+  "actual_selected_pipeline": "deep",
+  "graph_schema_version": 2,
+  "selected_pipeline": "deep",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "node_count": 0,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": []
+}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+     Running tests/scheduler_integration.rs (target/debug/deps/scheduler_integration-4c75592f49296d07)
+
+running 13 tests
+test blocked_failure_returns_step_to_pending ... ok
+test cli_compile_error_routes_to_codefix_flow ... ok
+test codefix_runtime_flow_uses_lease_backed_claim_and_execution ... ok
+test complete_step_unlocks_dependent_steps ... ok
+test double_commit_is_rejected_after_lease_reclaim ... ok
+test happy_path_chain_completes ... ok
+test retry_and_reclaim_preserve_ownership_invariants ... ok
+test retryable_failure_returns_step_to_pending ... ok
+test scheduler_treats_all_codefix_sources_the_same ... ok
+test stale_worker_is_rejected_after_reclaim ... ok
+test start_step_accepts_generic_worker_and_planner_worker ... ok
+test terminal_failure_rejects_step ... ok
+test unknown_task_class_is_rejected ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/schema_validation.rs (target/debug/deps/schema_validation-0891b3b2eaf4c73c)
+
+running 2 tests
+test rejects_invalid_bias_via_public_api ... ok
+test round_trip_valid_bias ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/seed_interpreter_props.rs (target/debug/deps/seed_interpreter_props-41cc89a0d234c927)
+
+running 7 tests
+test different_seeds_produce_different_orderings ... ok
+test empty_domain_produces_empty_bias ... ok
+test preferred_is_permutation_of_domain ... ok
+test same_seed_produces_identical_bias ... ok
+test weights_are_in_valid_range ... ok
+test weights_cover_all_domain_kinds ... ok
+test zero_seed_does_not_panic ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/semantic_artifact_contract.rs (target/debug/deps/semantic_artifact_contract-219ed303b17aa04e)
+
+running 1 test
+test semantic_artifact_type_contract_is_explicit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/semantic_artifacts.rs (target/debug/deps/semantic_artifacts-d4ed9a4693d0af98)
+
+running 1 test
+test latest_analysis_seed_returns_most_recent_artifact ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/semantic_artifacts_list_cli.rs (target/debug/deps/semantic_artifacts_list_cli-1c2eab051249320d)
+
+running 1 test
+test semantic_artifacts_cli_lists_rows_for_task_and_step ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/semantic_bias_observability_contract.rs (target/debug/deps/semantic_bias_observability_contract-8260035d5e5b8dc8)
+
+running 1 test
+test semantic_bias_observability_contract_is_consistent ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/semantic_bias_replay.rs (target/debug/deps/semantic_bias_replay-ac76eca2b6380eb5)
+
+running 1 test
+test semantic_bias_v1_survives_replay_paths ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/semantic_bias_replay_equivalence.rs (target/debug/deps/semantic_bias_replay_equivalence-b7266599cc90bfee)
+
+running 1 test
+test semantic_bias_v1_is_identical_across_repeat_emits ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/semantic_bias_seed_matrix.rs (target/debug/deps/semantic_bias_seed_matrix-6e985410860b1059)
+
+running 1 test
+test semantic_bias_same_steps_same_payload_across_task_ids ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/semantic_bias_v1_invariants.rs (target/debug/deps/semantic_bias_v1_invariants-02b27cf2bd10000e)
+
+running 1 test
+test semantic_bias_v1_contract_remains_sealed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/smt_primitive_contract.rs (target/debug/deps/smt_primitive_contract-32b5c52d2cab4eab)
+
+running 3 tests
+test test_null_solver_returns_error ... ok
+test test_solver_provider_dispatch ... ok
+test test_static_execute_returns_null_solver_error ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/snapshot_artifact_refs.rs (target/debug/deps/snapshot_artifact_refs-da9f616370fdbbc0)
+
+running 1 test
+test snapshot_payload_includes_semantic_bias_artifact_ref ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/snapshot_artifacts_cli.rs (target/debug/deps/snapshot_artifacts_cli-4df7a9a493d2f497)
+
+running 1 test
+test snapshot_artifacts_cli_prints_latest_snapshot_artifact_refs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/snapshot_replay_compatibility.rs (target/debug/deps/snapshot_replay_compatibility-2b88fa97838fef4f)
+
+running 1 test
+test snapshot_and_replay_contract_stays_compatible ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/snapshot_version_matrix.rs (target/debug/deps/snapshot_version_matrix-a8b2fbbfd15d070e)
+
+running 5 tests
+test restore_future_version_rejected ... ok
+test snapshot_current_to_restore_current_is_compatible ... ok
+test snapshot_v1_to_restore_current_is_compatible ... ok
+test snapshot_v1_to_restore_v1_is_compatible ... ok
+test snapshot_v2_policy_is_reserved_until_schema_exists ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/verification_graph_reuse_policy.rs (target/debug/deps/verification_graph_reuse_policy-c15cd26349957b09)
+
+running 1 test
+test verification_graph_rejects_invalid_reuse_when_environment_fingerprint_differs ... plan_file=artifacts/verification_plan.json bytes=2966
+==> node=integrity@v1
+==> node=snapshot_version_matrix@v1
+==> node=golden_replay_corpus@v1
+==> node=scheduler_integration@v1
+verdict_file=artifacts/verification_verdict.json bytes=2758
+{
+  "ok": true,
+  "status": "ok",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "graph_seconds": 0.0,
+  "node_count": 4,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": [
+    {
+      "key": "integrity@v1",
+      "id": "integrity",
+      "version": "v1",
+      "stage": "preflight",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 10,
+      "cost": 1,
+      "depends_on": [],
+      "outputs": [
+        "integrity_report"
+      ]
+    },
+    {
+      "key": "snapshot_version_matrix@v1",
+      "id": "snapshot_version_matrix",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 20,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "snapshot_policy_contract"
+      ]
+    },
+    {
+      "key": "golden_replay_corpus@v1",
+      "id": "golden_replay_corpus",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 30,
+      "cost": 2,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "replay_corpus_contract"
+      ]
+    },
+    {
+      "key": "scheduler_integration@v1",
+      "id": "scheduler_integration",
+      "version": "v1",
+      "stage": "contract",
+      "pipeline": "fast",
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.001,
+      "priority": 40,
+      "cost": 12,
+      "depends_on": [
+        "integrity@v1"
+      ],
+      "outputs": [
+        "lease_runtime_contract"
+      ]
+    }
+  ]
+}
+plan_file=artifacts/verification_plan.json bytes=2966
+verdict_file=/Users/denissmoliakov/deterministic_ai_kernel/artifacts/verification_verdict.invalid_reuse.json bytes=1413
+{
+  "ok": false,
+  "status": "invalid_reuse",
+  "reason": "plan_hash matched but environment_fingerprint differed",
+  "plan_id": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "plan_hash": "76d80d99a906ff033a4dd3a5d9ec0862b7731bfea01de646ebd4403fc2410a0e",
+  "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "execution_order_id": "af21c91d1b0d93ab45bc57bef9c28f5f7e417ddf2d450e6e4515af29ce3b2e6b",
+  "expected_environment_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+  "actual_environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+  "graph_schema_version": 2,
+  "selected_pipeline": "fast",
+  "selected_only": [],
+  "deterministic_order": "topological_then_priority_then_id_version",
+  "node_count": 0,
+  "environment": {
+    "python": "3.14.6",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "environment_id": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67",
+    "environment_fingerprint": "975f9fe389469bcf48049d2b7ff4650d33909322d942e13da470076299ddce67"
+  },
+  "environment_debug": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+  },
+  "nodes": []
+}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/versioned_snapshot_compatibility.rs (target/debug/deps/versioned_snapshot_compatibility-76a2287930f42fe9)
+
+running 1 test
+test snapshot_restore_contract_is_backward_compatible_with_empty_or_uninitialized_db ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/worker_trace_provenance.rs (target/debug/deps/worker_trace_provenance-2a1ddcd456ee8f3d)
+
+running 1 test
+test worker_lifecycle_emits_traceable_event_sequence ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

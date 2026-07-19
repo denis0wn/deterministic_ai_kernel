@@ -953,6 +953,7 @@ async fn main() {
             return;
         }
         Some("pipeline-run") => {
+            let start_time = std::time::Instant::now();
             let mut task_id: Option<String> = None;
             let mut payload: Option<String> = None;
             let mut seed: u64 = 42;
@@ -1010,6 +1011,7 @@ async fn main() {
                 }
             };
             let task_id = report.plan.id.clone();
+            let compiler_start = std::time::Instant::now();
             let generic_spec =
                 deterministic_ai_kernel::workflow::compiler::Workflow::compile_from_task_llm(
                     &deterministic_ai_kernel::workflow::compiler::TaskInput::generic(
@@ -1021,6 +1023,7 @@ async fn main() {
                     eprintln!("pipeline-run rejected before scheduling: {e}");
                     std::process::exit(1);
                 });
+            let compiler_ms = compiler_start.elapsed().as_millis() as u64;
 
             if generic_spec.steps.iter().any(|step| {
                 step.primitive
@@ -1086,35 +1089,74 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let final_answer = {
-                let bus =
-                    deterministic_ai_kernel::event_bus::EventBus::new(db).unwrap_or_else(|e| {
-                        eprintln!("Failed to open EventBus: {e}");
-                        std::process::exit(1);
-                    });
-
-                match bus.list_semantic_artifacts(&task_id, None) {
-                    Ok(artifacts) => artifacts
-                        .iter()
-                        .rev()
-                        .find(|a| a.artifact_type == "final_answer")
-                        .and_then(|a| serde_json::from_str::<serde_json::Value>(&a.payload).ok())
-                        .and_then(|v| {
-                            v.get("text")
-                                .and_then(|t| t.as_str())
-                                .map(|s| s.to_string())
-                        })
-                        .unwrap_or_else(|| {
-                            "workflow execution completed; no final_answer artifact was published"
-                                .to_string()
-                        }),
-                    Err(_) => {
-                        "workflow execution completed; semantic artifacts unavailable".to_string()
-                    }
+            // 1. Build receipt
+            let receipt = match deterministic_ai_kernel::execution::runtime::build_receipt(
+                db,
+                &task_id,
+                start_time,
+                compiler_ms,
+                true,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("Failed to build execution receipt: {e}");
+                    std::process::exit(1);
                 }
             };
 
-            let status_map = deterministic_ai_kernel::providers::get_storage()
+            // 2. Build summary
+            let summary =
+                match deterministic_ai_kernel::execution::summary::DeterministicSummary::build(
+                    &receipt,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to build deterministic summary: {e}");
+                        std::process::exit(1);
+                    }
+                };
+
+            let storage = deterministic_ai_kernel::providers::get_storage();
+            let existing_final_answer = storage
+                .list_semantic_artifacts(&task_id, None)
+                .ok()
+                .and_then(|artifacts| {
+                    artifacts.into_iter().find_map(|artifact| {
+                        if artifact.artifact_type != "final_answer" {
+                            return None;
+                        }
+
+                        serde_json::from_str::<serde_json::Value>(&artifact.payload)
+                            .ok()
+                            .and_then(|payload| {
+                                payload
+                                    .get("text")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                    })
+                });
+
+            // 3. Prefer a real task result produced by execution; otherwise fall back to summary publisher.
+            let human_summary_res = if existing_final_answer.is_some() {
+                Ok(existing_final_answer.clone().unwrap())
+            } else {
+                deterministic_ai_kernel::execution::summary::render_final_answer_from_summary(
+                    &summary,
+                )
+                .await
+            };
+
+            let final_text = match &human_summary_res {
+                Ok(text) => text.clone(),
+                Err(_) => {
+                    deterministic_ai_kernel::execution::summary::format_deterministic_fallback(
+                        &summary,
+                    )
+                }
+            };
+
+            let status_map = storage
                 .get_current_status_map(&task_id)
                 .unwrap_or_else(|e| {
                     eprintln!("Failed to load step status map: {e}");
@@ -1200,7 +1242,7 @@ async fn main() {
                     "fingerprint": report.fingerprint,
                     "planner_version": report.planner_version,
                     "elapsed_ms": report.elapsed_ms,
-                    "final_answer": final_answer,
+                    "final_answer": final_text,
                     "critic": { "passed": report.critic_report.passed, "warnings": report.critic_report.warnings, "violations": report.critic_report.invariant_violations },
                     "stage_events": report.stage_events.iter().map(|e| serde_json::json!({"stage": e.stage.to_string(), "offset_ms": e.timestamp_offset_ms, "desc": e.description})).collect::<Vec<_>>(),
                     "execution_receipt": {
@@ -1221,7 +1263,7 @@ async fn main() {
                 );
             } else {
                 let cleaned_final =
-                    deterministic_ai_kernel::llm::clean_llm_output(final_answer.trim());
+                    deterministic_ai_kernel::llm::clean_llm_output(final_text.trim());
                 let steps_joined = report.plan.steps.join(" | ");
                 println!("PLAN_ID={}", report.plan.id);
                 println!("SEED={}", report.plan.seed);

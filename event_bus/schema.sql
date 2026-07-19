@@ -168,3 +168,8 @@ CREATE TABLE IF NOT EXISTS verified_artifacts (
     output_payload TEXT NOT NULL,
     dependency_hash TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_verified_artifacts_fp ON verified_artifacts(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_primitive_cache_key ON primitive_execution_cache(cache_key);
+CREATE INDEX IF NOT EXISTS idx_planner_cache_key ON planner_memoization_cache(cache_key);
+CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id);

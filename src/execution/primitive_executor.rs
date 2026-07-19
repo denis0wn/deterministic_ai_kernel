@@ -35,6 +35,25 @@ impl PrimitiveExecutor {
         spec: &PrimitiveSpec,
         task_payload: &str,
     ) -> Result<PrimitiveResult> {
+        // Failure injection interceptor
+        let step_id = &spec.id.0;
+        let idx_str = step_id.split('_').next().unwrap_or("999");
+        if let Ok(idx) = idx_str.parse::<usize>() {
+            if idx
+                == crate::execution::runtime::CURRENT_FAILURE_INDEX
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                let count = crate::execution::runtime::CURRENT_FAILURE_COUNT
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if count
+                    < crate::execution::runtime::CURRENT_FAILURE_LIMIT
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    anyhow::bail!("retry: injected transient network failure");
+                }
+            }
+        }
+
         let payload = &spec.payload;
         let primitive_type = format!("{:?}", spec.kind);
         let primitive_version = get_primitive_version(spec.kind);
@@ -101,7 +120,7 @@ impl PrimitiveExecutor {
             );
         }
 
-        if matches!(spec.kind, PrimitiveKind::Compute) {
+        if matches!(spec.kind, PrimitiveKind::Compute | PrimitiveKind::Reasoning) {
             let operation = payload
                 .get("operation")
                 .and_then(|v| v.as_str())
@@ -141,7 +160,50 @@ impl PrimitiveExecutor {
             }
         }
 
+        if matches!(spec.kind, PrimitiveKind::ToolExecution) {
+            let executable_tool = payload
+                .get("executable_tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if executable_tool.is_empty() {
+                anyhow::bail!(
+                    "ToolExecution primitives must be resolved into executable tool specs before PrimitiveExecutor::run"
+                );
+            }
+        }
+
         let result = match spec.kind {
+            PrimitiveKind::Compute => {
+                let command = payload
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("echo compute");
+
+                let output = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .output()?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let exit_status = output.status.code().unwrap_or(-1);
+
+                PrimitiveResult {
+                    id: spec.id.clone(),
+                    status: if output.status.success() {
+                        "ok".to_string()
+                    } else {
+                        "error".to_string()
+                    },
+                    output: json!({
+                        "command": command,
+                        "stdout": stdout,
+                        "stderr": stderr,
+                        "exit_status": exit_status
+                    }),
+                    artifacts: vec![],
+                }
+            }
             PrimitiveKind::Read => {
                 let path = payload
                     .get("path")
@@ -213,7 +275,12 @@ impl PrimitiveExecutor {
                     artifacts: vec![],
                 }
             }
-            PrimitiveKind::Compute => {
+            PrimitiveKind::ToolExecution => {
+                return Err(crate::kernel_error::KernelError::InvalidState {
+                    detail: "ToolExecution must be resolved into a concrete executable primitive before execution".into(),
+                }.into());
+            }
+            PrimitiveKind::Reasoning => {
                 let operation = payload
                     .get("operation")
                     .and_then(|v| v.as_str())

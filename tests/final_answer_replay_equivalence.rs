@@ -21,7 +21,11 @@ fn load_final_answer(bus: &EventBus, task_id: &str) -> String {
         .rev()
         .find(|a| a.artifact_type == "final_answer")
         .and_then(|a| serde_json::from_str::<serde_json::Value>(&a.payload).ok())
-        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
+        .and_then(|v| {
+            v.get("text")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+        })
         .expect("final_answer artifact")
 }
 
@@ -47,10 +51,8 @@ fn final_answer_reconstruction_is_equivalent() {
 
     let before = load_final_answer(&bus, "task-replay-final-answer");
 
-    let reconstructed_ok = deterministic_ai_kernel::reconstruction::reconstruct_state(
-        db,
-        "task-replay-final-answer",
-    );
+    let reconstructed_ok =
+        deterministic_ai_kernel::reconstruction::reconstruct_state(db, "task-replay-final-answer");
     assert!(reconstructed_ok);
 
     let bus_after = EventBus::new(db).expect("bus after");

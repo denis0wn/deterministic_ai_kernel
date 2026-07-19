@@ -24,11 +24,11 @@ impl StepKind {
             StepKind::AddLlmFallbackHandling => PrimitiveKind::Compute,
             StepKind::AddPlannerTestCoverage => PrimitiveKind::Compute,
             StepKind::ValidatePlannerOutput => PrimitiveKind::Route,
-            StepKind::AnalyzeTask => PrimitiveKind::Compute,
-            StepKind::PlanExecution => PrimitiveKind::Compute,
-            StepKind::ExecuteChanges => PrimitiveKind::Compute,
+            StepKind::AnalyzeTask => PrimitiveKind::Reasoning,
+            StepKind::PlanExecution => PrimitiveKind::Reasoning,
+            StepKind::ExecuteChanges => PrimitiveKind::ToolExecution,
             StepKind::ReadRepository => PrimitiveKind::Read,
-            StepKind::LocateBug => PrimitiveKind::Compute,
+            StepKind::LocateBug => PrimitiveKind::Reasoning,
             StepKind::PatchCode => PrimitiveKind::Write,
             StepKind::RunTests => PrimitiveKind::Compute,
             StepKind::ValidatePatch => PrimitiveKind::Route,
@@ -40,6 +40,7 @@ impl StepKind {
 pub struct Step {
     pub kind: StepKind,
     pub detail: Option<String>,
+    pub primitive_binding: Option<String>,
 }
 
 impl Step {
@@ -85,38 +86,6 @@ impl TaskClass {
     }
 }
 
-fn extract_path(desc: &str) -> Option<String> {
-    let parts: Vec<&str> = desc.split_whitespace().collect();
-    for (i, &word) in parts.iter().enumerate() {
-        let wl = word.to_lowercase();
-        if (wl == "file" || wl == "read" || wl == "write" || wl == "create") && i + 1 < parts.len()
-        {
-            let next = parts[i + 1].trim_matches(|c| c == '\'' || c == '"' || c == '`');
-            let next_lower = next.to_lowercase();
-            if next_lower == "file" && i + 2 < parts.len() {
-                let after_file = parts[i + 2].trim_matches(|c| c == '\'' || c == '"' || c == '`');
-                if !after_file.is_empty() {
-                    return Some(after_file.to_string());
-                }
-            } else if !next.is_empty() && next_lower != "file" {
-                return Some(next.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn extract_content(desc: &str) -> Option<String> {
-    let lower = desc.to_lowercase();
-    if let Some(idx) = lower.find(" with ") {
-        let content = desc[idx + 6..]
-            .trim()
-            .trim_matches(|c| c == '\'' || c == '"' || c == '`');
-        return Some(content.to_string());
-    }
-    None
-}
-
 fn extract_command(desc: &str) -> Option<String> {
     let lower = desc.to_lowercase();
     if let Some(idx) = lower.find("command ") {
@@ -131,7 +100,7 @@ fn extract_command(desc: &str) -> Option<String> {
     None
 }
 
-pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
+pub fn try_steps_to_exec_spec(steps: &[Step]) -> anyhow::Result<crate::exec_spec::ExecSpec> {
     let mut steps_specs = Vec::new();
     let mut transitions = Vec::new();
 
@@ -163,68 +132,43 @@ pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
         };
 
         let primitive_kind = step.kind.to_primitive_kind();
-        let requires_llm = matches!(
-            step.kind,
-            StepKind::ExecuteChanges
-                | StepKind::PatchCode
-                | StepKind::PlanExecution
-                | StepKind::LocateBug
-        );
-        let is_analyze = step.kind == StepKind::AnalyzeTask;
-
         let raw_detail = step.detail.as_deref().unwrap_or("");
-        let detail_lower = raw_detail.to_lowercase();
-        let (prim_kind, prim_payload) =
-            if detail_lower.contains("read file") || detail_lower.contains("read ") {
-                let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
-                (
-                    crate::execution_abi::primitives::PrimitiveKind::Read,
+        let prim_kind = primitive_kind;
+
+        let primitive_binding = step.primitive_binding.as_deref();
+        let prim_payload = if let Some(binding) = primitive_binding {
+            crate::tool_registry::materialize_allowed_tool(binding, step.detail.as_deref())?
+        } else {
+            match primitive_kind {
+                crate::execution_abi::primitives::PrimitiveKind::Compute => {
+                    let cmd =
+                        extract_command(raw_detail).unwrap_or_else(|| "echo 'hello'".to_string());
                     serde_json::json!({
-                        "path": path,
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            } else if detail_lower.contains("write file")
-                || detail_lower.contains("write ")
-                || detail_lower.contains("create file")
-            {
-                let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
-                let content =
-                    extract_content(raw_detail).unwrap_or_else(|| "dummy content".to_string());
-                (
-                    crate::execution_abi::primitives::PrimitiveKind::Write,
-                    serde_json::json!({
-                        "path": path,
-                        "content": content,
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            } else if detail_lower.contains("run command")
-                || detail_lower.contains("run ")
-                || detail_lower.contains("execute ")
-            {
-                let cmd = extract_command(raw_detail).unwrap_or_else(|| "echo 'hello'".to_string());
-                (
-                    crate::execution_abi::primitives::PrimitiveKind::Compute,
-                    serde_json::json!({
+                        "binding": "process.compute",
+                        "tool_version": "v1",
                         "command": cmd,
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            } else {
-                (
-                    primitive_kind,
+                    })
+                }
+                _ => {
                     serde_json::json!({
-                        "requires_llm": requires_llm,
-                        "operation": if is_analyze { "semantic_embedding" } else { "none" },
+                        "requires_llm": matches!(
+                            step.kind,
+                            StepKind::ExecuteChanges
+                                | StepKind::PatchCode
+                                | StepKind::PlanExecution
+                                | StepKind::LocateBug
+                        ),
+                        "operation": if step.kind == StepKind::AnalyzeTask {
+                            "semantic_embedding"
+                        } else {
+                            "none"
+                        },
                         "detail": step.detail.clone(),
                         "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            };
+                    })
+                }
+            }
+        };
 
         let primitive = Some(crate::execution_abi::primitives::PrimitiveSpec {
             id: crate::execution_abi::primitives::PrimitiveId(step_id.clone()),
@@ -292,14 +236,19 @@ pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
         });
     }
 
-    crate::exec_spec::ExecSpec::new(
+    Ok(crate::exec_spec::ExecSpec::new(
         1,
         steps_specs,
         transitions,
         dependencies,
         vec![],
         std::collections::BTreeMap::new(),
-    )
+    ))
+}
+
+pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
+    try_steps_to_exec_spec(steps)
+        .expect("workflow contract invariant violated: unable to materialize exec spec")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -444,6 +393,7 @@ pub fn step_specs_to_steps(step_specs: &[StepSpec], detail: Option<&str>) -> Vec
         .map(|spec| Step {
             kind: spec.kind.clone(),
             detail: detail.map(|d| d.to_string()),
+            primitive_binding: None,
         })
         .collect()
 }
@@ -537,6 +487,19 @@ mod tests {
             required_capability_for_step(&StepKind::ValidatePlannerOutput),
             WorkerCapability::Verifier
         );
+    }
+
+    #[test]
+    fn registry_materializes_allowed_tools() {
+        let payload = crate::tool_registry::materialize_allowed_tool(
+            "repo.run_tests.cargo_all_targets",
+            Some("ignored"),
+        )
+        .unwrap();
+
+        assert_eq!(payload["binding"], "repo.run_tests.cargo_all_targets");
+        assert_eq!(payload["tool_version"], "v1");
+        assert_eq!(payload["executable_tool"], "cargo test --all-targets");
     }
 
     #[test]

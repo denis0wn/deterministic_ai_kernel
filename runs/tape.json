@@ -34,6 +34,21 @@
       "payload": "Customer request: build website. Step 1 create design. Step 2 implement backend. Step 3 run tests. Step 4 deploy.",
       "seed": 42,
       "plan_id": "dcab01464087ea34"
+    },
+    {
+      "payload": "Найди все простые числа от 1 до 50 и посчитай их сумму",
+      "seed": 42,
+      "plan_id": "0f5de0d1b0c99e7f"
+    },
+    {
+      "payload": "Найди все простые числа от 1 до 50 и посчитай их сумму",
+      "seed": 42,
+      "plan_id": "0f5de0d1b0c99e7f"
+    },
+    {
+      "payload": "Вычисли 7 * 13 и верни только число",
+      "seed": 42,
+      "plan_id": "6d9a9c95b4d5669c"
     }
   ]
 }

@@ -23,6 +23,9 @@ pub enum KernelError {
     /// A provider (filesystem, LLM, etc.) returned an error.
     Provider(ProviderError),
 
+    /// The primitive or runtime state was invalid for the requested operation.
+    InvalidState { detail: String },
+
     /// Reconstruction from event log detected inconsistency.
     Reconstruction(ReconstructionError),
 }
@@ -150,6 +153,7 @@ impl fmt::Display for KernelError {
             Self::Validation(e) => write!(f, "validation error: {}", e),
             Self::Execution(e) => write!(f, "execution error: {}", e),
             Self::Provider(e) => write!(f, "provider error: {}", e),
+            Self::InvalidState { detail } => write!(f, "invalid state: {}", detail),
             Self::Reconstruction(e) => write!(f, "reconstruction error: {}", e),
         }
     }

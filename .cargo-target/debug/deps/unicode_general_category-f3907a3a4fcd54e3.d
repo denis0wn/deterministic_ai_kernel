@@ -1,0 +1,12 @@
+/Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/deps/unicode_general_category-f3907a3a4fcd54e3.d: /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/lib.rs /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/category.rs /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/tables.rs /Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/build/unicode-general-category-8897b5871c901605/out/category.rs
+
+/Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/deps/libunicode_general_category-f3907a3a4fcd54e3.rlib: /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/lib.rs /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/category.rs /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/tables.rs /Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/build/unicode-general-category-8897b5871c901605/out/category.rs
+
+/Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/deps/libunicode_general_category-f3907a3a4fcd54e3.rmeta: /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/lib.rs /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/category.rs /Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/tables.rs /Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/build/unicode-general-category-8897b5871c901605/out/category.rs
+
+/Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/lib.rs:
+/Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/category.rs:
+/Users/denissmoliakov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-general-category-1.1.0/src/tables.rs:
+/Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/build/unicode-general-category-8897b5871c901605/out/category.rs:
+
+# env-dep:OUT_DIR=/Users/denissmoliakov/deterministic_ai_kernel/.cargo-target/debug/build/unicode-general-category-8897b5871c901605/out

@@ -62,7 +62,10 @@ impl std::fmt::Display for SolverError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SolverError::Unsupported => {
-                write!(f, "Unsupported: solver backend is not configured (NullSolverProvider)")
+                write!(
+                    f,
+                    "Unsupported: solver backend is not configured (NullSolverProvider)"
+                )
             }
             SolverError::ExecutionFailed(msg) => write!(f, "solver execution failed: {}", msg),
             SolverError::BadPayload(msg) => write!(f, "malformed problem payload: {}", msg),

@@ -1,0 +1,14 @@
+{
+  "plan_id": "6d9a9c95b4d5669c",
+  "seed": 42,
+  "steps": [
+    {
+      "index": 0,
+      "description": "вычисли 7 * 13 и верни только число",
+      "status": "Ok",
+      "duration_ms": 32
+    }
+  ],
+  "total_duration_ms": 76,
+  "success": true
+}

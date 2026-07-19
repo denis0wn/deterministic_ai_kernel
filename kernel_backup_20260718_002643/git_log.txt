@@ -1,0 +1,50 @@
+3834532 (HEAD -> backup/pre-orchestrator-layer-2026-07-11) checkpoint: before architecture refactor 2026-07-16_20-59-40
+59dc612 (broken-runtime-attempt) backup before runtime testing
+5704c5b checkpoint before mock backend isolation patch
+0bf50c4 docs: add architecture audits and ignore runtime artifacts
+5174399 feat: enable deterministic local Gemma runtime with embeddings lifecycle
+4777d8f (tag: v0.1.0-kernel-stable) chore: complete pre-orchestrator stabilization pass, clean clippy, passes 134 tests
+aa37aa3 security: patch quinn-proto and anyhow vulnerabilities via cargo audit
+2f75ed2 (tag: v0.9-pre-orchestrator, origin/backup/pre-orchestrator-layer-2026-07-11) backup: stable state before deterministic orchestrator layer
+6daaa44 (main) Recover dispatched steps with stale leases
+5c8a511 Make worker lease claim idempotent for existing owner
+db2fcea scheduler: preserve monotonic step states during scheduling
+69e9076 (tag: v0.1.0-pipeline-green) feat: end-to-end pipeline operational — planner→scheduler→worker→effects→response
+139e605 Backfill effect ledger from event log for smoke workflow
+de44308 Make workflow smoke path complete dispatched steps end-to-end
+60fb39b Fix pipeline-run smoke path and final answer artifact emission
+e4214a5 add worker trace provenance coverage
+87d0968 Stabilize scheduler integration subprocess target dir
+4dbf450 fix(auto_route): bypass RAM threshold when model already loaded
+9957bf8 (origin/main, agents/project-analysis) fix: add default-run to fix CI cargo run ambiguity
+611db46 docs: add ARCHITECTURE.md
+7946397 chore: cleanup — fix all clippy warnings, fmt, dead_code
+8deb4b1 fix: add BiasConfiguration import in replay tests; update artifacts
+559d49d feat: EventBus integration for PlannerPipeline
+d9b2dcd chore: remove unused imports (cargo fix)
+867d6d0 fix: scheduler tests use correct binary, fix char literal in run.rs
+95b19f5 feat(core): Phase 6 — ExecutionEngine + PersistenceStore (112 tests green)
+8c7f4cb fix: merge duplicate [dev-dependencies] in Cargo.toml
+133f474 feat(engine): ExecutionEngine — StepExecutor trait, fail-fast, ReplayTape integration
+9dbde10 feat(pipeline): Phase 5 — ReplayTape/Replayer + PlanDiff (LCS)
+0d01dc8 feat(pipeline): Normalizer, SemanticMapper, PlannerCritic, stable BLAKE3 IDs
+d582e96 feat(planner_pipeline): add Parser stage with 3 unit tests
+e88ebee feat(planner_pipeline): add PipelineStage trait, PipelineContext, RawInput, IntermediateRepresentation, Plan skeleton
+bc9c874 chore: remove unused BTreeMap import in contract_regression_lock
+84f6eab feat(semantic_bias): add BiasVersion, SemanticBiasRule, BiasConfiguration with serde roundtrip tests
+808f23d feat: add code_review role; make send_prompt async
+ed9e731 fix(event_bus): allow idempotent re-emit at same generation (< instead of <=)
+2cb43cb test(phase4): artifact immutability contract — 3 tests green
+cb61657 merge: guardrails-v1 — Phase 4 contract/drift/immutability guards
+f8fd394 merge: artifact-registry-v1 — ArtifactRegistry + BLAKE3
+67f7ba1 merge: bias-v1 — SemanticBias + SeedInterpreter
+21e2c81 guardrails: Phase 4 complete
+5ef29a2 (origin/guardrails-v1, guardrails-v1) guardrails: Phase 4 §5 explain drift detection
+89adcab guardrails: Phase 4 §4 CLI surface lock
+761230a guardrails: Phase 4 §3 artifact immutability
+10c7f20 guardrails: Phase 4 §2 architecture invariants
+75eb197 guardrails: Phase 4 §1 contract regression lock
+50d1cb6 feat: ArtifactRegistry — Phase 3 §3 (#5)
+2520d43 ci: retrigger checks on bias-v1 (#6)
+1c80e22 (origin/bias-v1, origin/HEAD, bias-v1) ci: retrigger checks on bias-v1
+39234d4 (origin/artifact-registry-v1, artifact-registry-v1) feat: ArtifactRegistry with BLAKE3 hashing and parent chain

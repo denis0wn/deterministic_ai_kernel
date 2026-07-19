@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "suite": "kernel_eval",
+  "cases": [
+    {
+      "id": "compute_exact_001",
+      "category": "baseline_vs_kernel",
+      "seed": 42,
+      "task": "Compute 19 + 23 and return only the integer result.",
+      "oracle": {
+        "kind": "exact_text",
+        "expected": "42"
+      },
+      "budget": {
+        "max_llm_calls": 3,
+        "max_tool_calls": 0,
+        "max_steps": 4
+      }
+    },
+    {
+      "id": "write_exact_001",
+      "category": "codefix",
+      "seed": 42,
+      "task": "Write the exact text kernel_eval_ok to artifacts/kernel_eval/write_exact_001.txt.",
+      "oracle": {
+        "kind": "file_exact",
+        "path": "artifacts/kernel_eval/write_exact_001.txt",
+        "expected": "kernel_eval_ok"
+      },
+      "budget": {
+        "max_llm_calls": 3,
+        "max_tool_calls": 2,
+        "max_steps": 5
+      }
+    },
+    {
+      "id": "planner_order_001",
+      "category": "planner",
+      "seed": 42,
+      "task": "Read the repository, locate the bug, patch the code, run tests, then validate the patch.",
+      "oracle": {
+        "kind": "ordered_step_tokens",
+        "expected_order": [
+          "read",
+          "locate",
+          "patch",
+          "test",
+          "validate"
+        ]
+      },
+      "budget": {
+        "max_llm_calls": 2,
+        "max_tool_calls": 0,
+        "max_steps": 7
+      }
+    },
+    {
+      "id": "reuse_read_001",
+      "category": "recovery",
+      "seed": 42,
+      "task": "Read repository content and report the exact byte length twice without changing the repository.",
+      "oracle": {
+        "kind": "reuse_required",
+        "required_event": "CACHE_HIT"
+      },
+      "budget": {
+        "max_llm_calls": 2,
+        "max_tool_calls": 2,
+        "max_steps": 5
+      }
+    }
+  ]
+}

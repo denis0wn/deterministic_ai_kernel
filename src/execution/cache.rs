@@ -10,6 +10,8 @@ pub trait PrimitiveDeterminism {
 }
 
 pub struct ComputePrimitive;
+pub struct ReasoningPrimitive;
+pub struct ToolExecutionPrimitive;
 pub struct ReadPrimitive;
 pub struct WritePrimitive;
 pub struct RoutePrimitive;
@@ -22,6 +24,12 @@ pub struct SolveConstraintPrimitive;
 
 impl PrimitiveDeterminism for ComputePrimitive {
     const CACHEABLE: bool = true;
+}
+impl PrimitiveDeterminism for ReasoningPrimitive {
+    const CACHEABLE: bool = true;
+}
+impl PrimitiveDeterminism for ToolExecutionPrimitive {
+    const CACHEABLE: bool = false;
 }
 impl PrimitiveDeterminism for ReadPrimitive {
     const CACHEABLE: bool = true;
@@ -55,6 +63,8 @@ impl PrimitiveDeterminism for SolveConstraintPrimitive {
 pub fn is_cacheable(kind: PrimitiveKind) -> bool {
     match kind {
         PrimitiveKind::Compute => <ComputePrimitive as PrimitiveDeterminism>::CACHEABLE,
+        PrimitiveKind::Reasoning => <ReasoningPrimitive as PrimitiveDeterminism>::CACHEABLE,
+        PrimitiveKind::ToolExecution => <ToolExecutionPrimitive as PrimitiveDeterminism>::CACHEABLE,
         PrimitiveKind::Read => <ReadPrimitive as PrimitiveDeterminism>::CACHEABLE,
         PrimitiveKind::Write => <WritePrimitive as PrimitiveDeterminism>::CACHEABLE,
         PrimitiveKind::Route => <RoutePrimitive as PrimitiveDeterminism>::CACHEABLE,
@@ -72,6 +82,10 @@ pub fn is_cacheable(kind: PrimitiveKind) -> bool {
 pub fn get_primitive_version(kind: PrimitiveKind) -> &'static str {
     match kind {
         PrimitiveKind::Compute => <ComputePrimitive as PrimitiveDeterminism>::PRIMITIVE_VERSION,
+        PrimitiveKind::Reasoning => <ReasoningPrimitive as PrimitiveDeterminism>::PRIMITIVE_VERSION,
+        PrimitiveKind::ToolExecution => {
+            <ToolExecutionPrimitive as PrimitiveDeterminism>::PRIMITIVE_VERSION
+        }
         PrimitiveKind::Read => <ReadPrimitive as PrimitiveDeterminism>::PRIMITIVE_VERSION,
         PrimitiveKind::Write => <WritePrimitive as PrimitiveDeterminism>::PRIMITIVE_VERSION,
         PrimitiveKind::Route => <RoutePrimitive as PrimitiveDeterminism>::PRIMITIVE_VERSION,

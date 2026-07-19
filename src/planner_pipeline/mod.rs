@@ -92,6 +92,7 @@ impl Plan {
                 crate::workflow::contract::Step {
                     kind,
                     detail: Some(desc.clone()),
+                    primitive_binding: None,
                 }
             })
             .collect();

@@ -70,6 +70,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS event_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT,
   system_generation INTEGER NOT NULL,
   causal_unit_id INTEGER NOT NULL,
   sequence_in_unit INTEGER NOT NULL,

@@ -1,0 +1,5 @@
+timestamp,runs,completion_rate_pct,replay_success_pct,avg_completed_steps,avg_failed_attempts,avg_retry_count,avg_executed_effect_rows,avg_committed_effects,avg_rejected_effects,step_failure_rate_pct,exit_code,raw_file
+20260718_224958,11,100.0,200.0,3.0,1.0,1.0,3.0,3.0,0.0,14.29,0,benchmark_raw_20260718_224958.txt
+20260718_225021,11,100.0,200.0,3.0,1.0,1.0,3.0,3.0,0.0,14.29,0,benchmark_raw_20260718_225021.txt
+20260718_230051,11,100.0,100.0,3.0,1.0,1.0,3.0,3.0,0.0,14.29,0,benchmark_raw_20260718_230051.txt
+20260718_232338,11,100.0,100.0,3.0,1.0,1.0,3.0,3.0,0.0,14.29,0,benchmark_raw_20260718_232338.txt

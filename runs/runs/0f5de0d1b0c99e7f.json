@@ -1,0 +1,14 @@
+{
+  "plan_id": "0f5de0d1b0c99e7f",
+  "seed": 42,
+  "steps": [
+    {
+      "index": 0,
+      "description": "найди все простые числа от 1 до 50 и посчитай их сумму",
+      "status": "Ok",
+      "duration_ms": 32
+    }
+  ],
+  "total_duration_ms": 77,
+  "success": true
+}

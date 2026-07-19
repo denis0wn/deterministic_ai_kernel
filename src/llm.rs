@@ -1,4 +1,35 @@
 use anyhow::{anyhow, Context, Result};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+pub static PROMPT_TOKENS: AtomicUsize = AtomicUsize::new(0);
+pub static COMPLETION_TOKENS: AtomicUsize = AtomicUsize::new(0);
+pub static REQUEST_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmUsage {
+    pub prompt_tokens: usize,
+    pub completion_tokens: usize,
+    pub request_count: usize,
+}
+
+pub fn get_llm_usage() -> Option<LlmUsage> {
+    let count = REQUEST_COUNT.load(Ordering::Relaxed);
+    if count == 0 {
+        None
+    } else {
+        Some(LlmUsage {
+            prompt_tokens: PROMPT_TOKENS.load(Ordering::Relaxed),
+            completion_tokens: COMPLETION_TOKENS.load(Ordering::Relaxed),
+            request_count: count,
+        })
+    }
+}
+
+pub fn reset_llm_usage() {
+    PROMPT_TOKENS.store(0, Ordering::Relaxed);
+    COMPLETION_TOKENS.store(0, Ordering::Relaxed);
+    REQUEST_COUNT.store(0, Ordering::Relaxed);
+}
 
 use crate::model_registry::{resolve_model, ModelPurpose};
 
@@ -84,12 +115,11 @@ async fn do_chat_request(
     user_prompt: &str,
     model_override: Option<&str>,
 ) -> Result<String> {
+    REQUEST_COUNT.fetch_add(1, Ordering::Relaxed);
     // Deterministic mock backend for contract tests.
     // Prevents accidental dependency on native inference TCP service.
     if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
-        return Ok("analyze current planner flow
-validate deterministic cache behavior
-add memoization hit assertions"
+        return Ok("write artifacts/bench_fact.txt with hello_kernel\nrun tests\nread artifacts/bench_fact.txt"
             .to_string());
     }
 
@@ -152,6 +182,14 @@ add memoization hit assertions"
         .with_context(|| format!("Invalid JSON response from native inference: {}", line))?;
 
     if resp.get("status").and_then(|v| v.as_str()) == Some("ok") {
+        if let Some(usage) = resp.get("usage") {
+            if let Some(prompt) = usage.get("prompt_tokens").and_then(|v| v.as_u64()) {
+                PROMPT_TOKENS.fetch_add(prompt as usize, Ordering::Relaxed);
+            }
+            if let Some(completion) = usage.get("completion_tokens").and_then(|v| v.as_u64()) {
+                COMPLETION_TOKENS.fetch_add(completion as usize, Ordering::Relaxed);
+            }
+        }
         let generated_text = resp
             .get("text")
             .and_then(|v| v.as_str())
@@ -234,16 +272,121 @@ pub struct StructuredResponse {
     pub confidence: f64,
 }
 
-pub fn clean_structured_json(raw: &str) -> Result<String> {
-    let mut temp = raw.to_string();
+/// Strip model control / channel / thought wrappers; keep final content only.
+pub fn clean_llm_output(raw: &str) -> String {
+    let mut s = raw.to_string();
 
-    // Remove closed thought blocks
+    // Gemma / chat-template style channel markers
+    for tag in [
+        "<|channel>thought",
+        "<|channel|>",
+        "<channel|>",
+        "<|channel>",
+        "</channel>",
+    ] {
+        s = s.replace(tag, "");
+    }
+
+    // Closed <thought>...</thought>
+    while let Some(start_idx) = s.find("<thought>") {
+        if let Some(end_idx) = s[start_idx..].find("</thought>") {
+            let end_pos = start_idx + end_idx + "</thought>".len();
+            s.replace_range(start_idx..end_pos, "");
+        } else {
+            s = s.replace("<thought>", "");
+            break;
+        }
+    }
+    s = s.replace("</thought>", "");
+
+    s = s
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string();
+
+    // Prefer content after an explicit answer marker if present
+    for marker in [
+        "final:",
+        "Final:",
+        "FINAL:",
+        "answer:",
+        "Answer:",
+        "ANSWER:",
+        "here's the answer:",
+        "Here's the answer:",
+        "Here is the answer:",
+    ] {
+        if let Some(i) = s.find(marker) {
+            s = s[i + marker.len()..].trim().to_string();
+            break;
+        }
+    }
+
+    // Strip leading boilerplate labels linearly until stable
+    loop {
+        let trimmed = s.trim_start();
+        let next = if let Some(rest) = trimmed.strip_prefix("Goal:") {
+            rest.trim_start().to_string()
+        } else if let Some(rest) = trimmed.strip_prefix("Plan:") {
+            rest.trim_start().to_string()
+        } else if let Some(rest) = trimmed.strip_prefix("Summary:") {
+            rest.trim_start().to_string()
+        } else if let Some(rest) = trimmed.strip_prefix("Certainly!") {
+            rest.trim_start().to_string()
+        } else if let Some(rest) = trimmed.strip_prefix("Sure!") {
+            rest.trim_start().to_string()
+        } else {
+            break;
+        };
+
+        if next == s {
+            break;
+        }
+        s = next;
+    }
+
+    // If the model emits multiple sentences and the last sentence is the shortest
+    // factual tail, prefer that tail over earlier instructional boilerplate.
+    let sentence_parts = s
+        .split('.')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if sentence_parts.len() >= 2 {
+        if let Some(last) = sentence_parts.last() {
+            let first = sentence_parts.first().copied().unwrap_or("");
+            let last_lower = last.to_ascii_lowercase();
+            let first_lower = first.to_ascii_lowercase();
+            let looks_instructional = first_lower.contains("return exactly")
+                || first_lower.contains("nothing else")
+                || first_lower.starts_with("goal:")
+                || first_lower.starts_with("plan:")
+                || first_lower.starts_with("summary:");
+            let looks_compact_final = !last_lower.contains("plan:")
+                && !last_lower.contains("goal:")
+                && !last_lower.contains("summary:")
+                && last.split_whitespace().count() <= 12;
+
+            if looks_instructional && looks_compact_final {
+                s = last.trim().to_string();
+            }
+        }
+    }
+
+    s
+}
+
+pub fn clean_structured_json(raw: &str) -> Result<String> {
+    let mut temp = clean_llm_output(raw);
+
+    // Remove any residual thought wrappers after channel strip
     while let Some(start_idx) = temp.find("<thought>") {
         if let Some(end_idx) = temp[start_idx..].find("</thought>") {
             let end_pos = start_idx + end_idx + "</thought>".len();
             temp.replace_range(start_idx..end_pos, "");
         } else {
-            // Unclosed, just remove the tag itself
             temp = temp.replace("<thought>", "");
             break;
         }
@@ -281,6 +424,68 @@ pub async fn chat_structured(
     Ok(parsed)
 }
 
+pub async fn paraphrase_summary(
+    summary_json: &str,
+    warning_message: Option<&str>,
+) -> Result<String> {
+    let system_prompt = if let Some(warning) = warning_message {
+        format!(
+            "You are a concise summarizer. You will receive a JSON representing the deterministic execution summary of a pipeline run. \
+             Your task is to paraphrase it into a short, user-friendly human-readable description. \
+             CRITICAL RULES: \
+             1. Do NOT add new findings or conclusions. \
+             2. Do NOT change the verdict/status of the workflow. \
+             3. Return exactly one sentence. \
+             4. Do NOT explain your reasoning. \
+             5. Do NOT prepend labels or introductory text such as 'Goal:', 'Plan:', 'Summary:', 'Answer:', or similar boilerplate. \
+             6. Output only the final human-readable answer text. \
+             7. Absolutely do NOT contradict the status or replay validation result. \
+             WARNING: {}",
+            warning
+        )
+    } else {
+        "You are a concise summarizer. You will receive a JSON representing the deterministic execution summary of a pipeline run. \
+         Your task is to paraphrase it into a short, user-friendly human-readable description. \
+         CRITICAL RULES: \
+         1. Do NOT add new findings or conclusions. \
+         2. Do NOT change the verdict/status of the workflow. \
+         3. Return exactly one sentence. \
+         4. Do NOT explain your reasoning. \
+         5. Do NOT prepend labels or introductory text such as 'Goal:', 'Plan:', 'Summary:', 'Answer:', or similar boilerplate. \
+         6. Output only the final human-readable answer text. \
+         7. Absolutely do NOT contradict the status or replay validation result.".to_string()
+    };
+
+    let user_prompt = format!("Execution Summary:\n{}", summary_json);
+
+    let response = if std::env::var("DAK_LM_BACKEND").ok().as_deref() == Some("mock") {
+        if summary_json.contains("\"status\": \"success/committed\"")
+            && summary_json.contains("FORCE_CONTRADICTION")
+        {
+            "The workflow failed despite success status.".to_string()
+        } else {
+            let replay_status = if summary_json.contains("\"replay_valid\": true") {
+                "valid"
+            } else {
+                "invalid"
+            };
+            let status_desc = if summary_json.contains("\"status\": \"success/committed\"") {
+                "completed successfully"
+            } else {
+                "failed"
+            };
+            format!(
+                "Workflow {} with completed steps. Replay is {}, and there were retries.",
+                status_desc, replay_status
+            )
+        }
+    } else {
+        chat_with_purpose(ModelPurpose::CodingAssistant, &system_prompt, &user_prompt).await?
+    };
+
+    Ok(clean_llm_output(&response))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,5 +506,14 @@ mod tests {
             cleaned_unclosed,
             "{\"final_answer\": \"unclosed\", \"confidence\": 0.8}"
         );
+    }
+
+    #[test]
+    fn test_clean_llm_output_strips_channel_thought() {
+        let raw = "<|channel>thought internal plan here <channel|> final content only";
+        let cleaned = clean_llm_output(raw);
+        assert!(!cleaned.contains("<|channel>thought"));
+        assert!(!cleaned.contains("<channel|>"));
+        assert!(cleaned.contains("final content only"));
     }
 }

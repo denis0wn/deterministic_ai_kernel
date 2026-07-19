@@ -38,6 +38,7 @@ pub struct DoctorReport {
     pub embedding_endpoint: Option<String>,
     pub embedding_status: String,
     pub embedding_reason: Option<String>,
+    pub metrics: serde_json::Value,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -364,6 +365,7 @@ pub fn doctor() -> Result<DoctorReport> {
         embedding_endpoint: emb_endpoint,
         embedding_status: emb_status,
         embedding_reason: emb_reason,
+        metrics: crate::metrics::METRICS.snapshot(),
     })
 }
 
@@ -639,6 +641,41 @@ pub async fn print_doctor_text() -> Result<()> {
         "Idle".to_string()
     };
     println!("  Worker Status:       {}", worker_str);
+    println!();
+    println!("Runtime Performance:");
+    println!(
+        "  Avg Timings:         fingerprint={:.2}ms, art_lookup={:.2}ms, prim_cache={:.2}ms, plan_cache={:.2}ms, read={:.2}ms, write={:.2}ms, exec={:.2}ms, llm={:.2}ms",
+        crate::metrics::METRICS.avg_ms(crate::metrics::FINGERPRINT_GENERATION_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::ARTIFACT_LOOKUP_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::PRIMITIVE_CACHE_LOOKUP_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::PLANNER_CACHE_LOOKUP_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::SQLITE_READ_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::SQLITE_WRITE_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::PRIMITIVE_EXECUTION_MS),
+        crate::metrics::METRICS.avg_ms(crate::metrics::LLM_LATENCY_MS)
+    );
+    println!(
+        "  Op Counters:         fingerprint={}, art_lookup={}, prim_cache={}, plan_cache={}, read={}, write={}, exec={}, llm={}",
+        crate::metrics::METRICS.count(crate::metrics::FINGERPRINT_GENERATION_MS),
+        crate::metrics::METRICS.count(crate::metrics::ARTIFACT_LOOKUP_MS),
+        crate::metrics::METRICS.count(crate::metrics::PRIMITIVE_CACHE_LOOKUP_MS),
+        crate::metrics::METRICS.count(crate::metrics::PLANNER_CACHE_LOOKUP_MS),
+        crate::metrics::METRICS.count(crate::metrics::SQLITE_READ_MS),
+        crate::metrics::METRICS.count(crate::metrics::SQLITE_WRITE_MS),
+        crate::metrics::METRICS.count(crate::metrics::PRIMITIVE_EXECUTION_MS),
+        crate::metrics::METRICS.count(crate::metrics::LLM_LATENCY_MS)
+    );
+    println!(
+        "  Last Timings:        fingerprint={}ms, art_lookup={}ms, prim_cache={}ms, plan_cache={}ms, read={}ms, write={}ms, exec={}ms, llm={}ms",
+        crate::metrics::METRICS.last_ms(crate::metrics::FINGERPRINT_GENERATION_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::ARTIFACT_LOOKUP_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::PRIMITIVE_CACHE_LOOKUP_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::PLANNER_CACHE_LOOKUP_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::SQLITE_READ_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::SQLITE_WRITE_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::PRIMITIVE_EXECUTION_MS),
+        crate::metrics::METRICS.last_ms(crate::metrics::LLM_LATENCY_MS)
+    );
     println!();
     println!("Everything OK:         {}", everything_ok);
     println!("═══════════════════════════════════════════");

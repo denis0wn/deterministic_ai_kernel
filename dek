@@ -43,6 +43,7 @@ case "$CMD" in
         echo "Deterministic AI Kernel"
         echo ""
         echo "Usage:"
+        echo "  dek demo \"<task>\"  Demo run (PLAN_ID/SEED/STEPS/STATUS/FINGERPRINT/FINAL_RESULT)"
         echo "  dek \"<task>\"       Run a task through the pipeline"
         echo "  dek doctor         Full system diagnostic"
         echo "  dek stop           Stop the MLX runtime"
@@ -69,8 +70,16 @@ case "$CMD" in
     model)
         exec "$BIN" runtime-model
         ;;
+    demo)
+        shift
+        if [[ $# -lt 1 ]]; then
+            echo "usage: dek demo \"<task>\""
+            exit 1
+        fi
+        exec "$BIN" pipeline-run --payload "$*"
+        ;;
     "")
-        echo "Usage: dek <task> | dek doctor | dek stop | dek restart | dek model | dek help"
+        echo "Usage: dek demo \"<task>\" | dek <task> | dek doctor | dek stop | dek restart | dek model | dek help"
         exit 1
         ;;
     *)

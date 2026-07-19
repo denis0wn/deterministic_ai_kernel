@@ -241,22 +241,27 @@ mod tests {
             Step {
                 kind: StepKind::ValidatePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::AddPlannerTestCoverage,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::NormalizePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::AddPlannerTestCoverage,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::TightenPlannerPrompt,
                 detail: None,
+                primitive_binding: None,
             },
         ];
 
@@ -280,18 +285,22 @@ mod tests {
             Step {
                 kind: StepKind::TightenPlannerPrompt,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::NormalizePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::AddPlannerTestCoverage,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::ValidatePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
         ];
 
@@ -299,18 +308,22 @@ mod tests {
             Step {
                 kind: StepKind::ValidatePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::AddPlannerTestCoverage,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::NormalizePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::TightenPlannerPrompt,
                 detail: None,
+                primitive_binding: None,
             },
         ];
 
@@ -567,26 +580,32 @@ mod tests {
             Step {
                 kind: StepKind::ValidatePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::NormalizePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::ValidatePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::TightenPlannerPrompt,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::AddPlannerTestCoverage,
                 detail: None,
+                primitive_binding: None,
             },
             Step {
                 kind: StepKind::NormalizePlannerOutput,
                 detail: None,
+                primitive_binding: None,
             },
         ];
 

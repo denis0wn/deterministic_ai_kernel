@@ -33,13 +33,6 @@ impl RecordingSolverProvider {
         })
     }
 
-    fn returning_unsupported() -> Arc<Self> {
-        Arc::new(Self {
-            calls: Mutex::new(vec![]),
-            result: Err(SolverError::Unsupported),
-        })
-    }
-
     fn call_count(&self) -> usize {
         self.calls.lock().unwrap().len()
     }

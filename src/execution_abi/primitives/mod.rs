@@ -6,6 +6,8 @@ pub struct PrimitiveId(pub String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PrimitiveKind {
     Compute,
+    Reasoning,
+    ToolExecution,
     Read,
     Write,
     Route,
@@ -76,6 +78,14 @@ mod tests {
         );
         assert_eq!(
             StepKind::AnalyzeTask.to_primitive_kind(),
+            PrimitiveKind::Reasoning
+        );
+        assert_eq!(
+            StepKind::ExecuteChanges.to_primitive_kind(),
+            PrimitiveKind::ToolExecution
+        );
+        assert_eq!(
+            StepKind::RunTests.to_primitive_kind(),
             PrimitiveKind::Compute
         );
         assert_eq!(
