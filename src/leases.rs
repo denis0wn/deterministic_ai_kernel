@@ -1,15 +1,12 @@
+use crate::providers::storage::StorageProvider;
 use anyhow::Result;
 
+// Explicit database routing; no global override state (audit finding M3).
+
 pub fn seed_demo_leases(db: &str, task_id: &str) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().seed_demo_leases(task_id);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).seed_demo_leases(task_id)
 }
 
 pub fn expire_leases(db: &str, task_id: &str) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().expire_leases(task_id);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).expire_leases(task_id)
 }

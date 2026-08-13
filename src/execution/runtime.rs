@@ -9,7 +9,7 @@ impl Runtime {
         Self
     }
 
-    pub async fn execute_step(&self, task_id: &str, step_id: &str, payload: &str) -> Result<()> {
+    pub fn execute_step(&self, task_id: &str, step_id: &str, payload: &str) -> Result<()> {
         let storage = providers::get_storage();
         let spec = storage.load_exec_spec(task_id)?;
 

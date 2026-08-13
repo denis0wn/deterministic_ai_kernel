@@ -12,16 +12,26 @@ use deterministic_ai_kernel::workflow::compiler::Workflow;
 use rusqlite::Connection;
 use std::fs;
 
-fn suppress_nested_cargo_warnings() {
-    if std::env::var_os("RUSTFLAGS").is_none() {
-        unsafe {
-            std::env::set_var("RUSTFLAGS", "-Awarnings");
+/// Unwrap a kernel operation at the CLI boundary without panicking: any
+/// error becomes a clean domain error message and a non-zero exit code.
+/// Fresh/invalid databases must never crash the CLI with a Rust panic
+/// (audit finding H1).
+fn cli_expect<T>(op: &str, result: anyhow::Result<T>) -> T {
+    match result {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{} failed: {}", op, e);
+            std::process::exit(1);
         }
     }
 }
 
 fn print_stats(db: &str) {
-    let conn = Connection::open(db).unwrap();
+    let conn =
+        deterministic_ai_kernel::providers::storage::open_initialized(db).unwrap_or_else(|e| {
+            eprintln!("stats failed: {e}");
+            std::process::exit(1);
+        });
 
     let events: i64 = conn
         .query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get(0))
@@ -84,7 +94,14 @@ fn reset_db(db: &str) {
         return;
     }
 
-    let conn = Connection::open(db).unwrap();
+    let conn =
+        deterministic_ai_kernel::providers::storage::open_initialized(db).unwrap_or_else(|e| {
+            eprintln!("reset failed: {e}");
+            std::process::exit(1);
+        });
+    // Full reset: every kernel table is cleared so no orphaned leases,
+    // artifacts, tasks, capsules, or cache entries survive a reset
+    // (audit finding M2).
     conn.execute_batch(
         r#"
         PRAGMA wal_checkpoint(FULL);
@@ -94,12 +111,22 @@ fn reset_db(db: &str) {
         DELETE FROM step_status;
         DELETE FROM state_snapshots;
         DELETE FROM generations;
+        DELETE FROM leases;
+        DELETE FROM tasks;
+        DELETE FROM semantic_artifacts;
+        DELETE FROM external_effects;
+        DELETE FROM replay_capsules;
+        DELETE FROM execution_cache;
+        DELETE FROM bias_artifacts;
         VACUUM;
         "#,
     )
     .unwrap_or_else(|e| {
-        eprintln!("reset_db execution failed: {e}");
-        std::process::exit(1);
+        deterministic_ai_kernel::kernel_error::exit_with_error(
+            &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
+                "reset_db execution failed: {e}"
+            )),
+        );
     });
 
     println!("RESET OK");
@@ -107,8 +134,11 @@ fn reset_db(db: &str) {
 
 fn integrity_json_report(db: &str) -> serde_json::Value {
     deterministic_ai_kernel::api::integrity_json_report(db).unwrap_or_else(|e| {
-        eprintln!("integrity_json_report failed: {e}");
-        std::process::exit(1);
+        deterministic_ai_kernel::kernel_error::exit_with_error(
+            &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
+                "integrity_json_report failed: {e}"
+            )),
+        )
     })
 }
 
@@ -152,7 +182,11 @@ fn vacuum_db(db: &str) {
         return;
     }
 
-    let conn = Connection::open(db).unwrap();
+    let conn =
+        deterministic_ai_kernel::providers::storage::open_initialized(db).unwrap_or_else(|e| {
+            eprintln!("vacuum failed: {e}");
+            std::process::exit(1);
+        });
     conn.execute_batch(
         r#"
         PRAGMA wal_checkpoint(FULL);
@@ -160,8 +194,11 @@ fn vacuum_db(db: &str) {
         "#,
     )
     .unwrap_or_else(|e| {
-        eprintln!("VACUUM failed: {e}");
-        std::process::exit(1);
+        deterministic_ai_kernel::kernel_error::exit_with_error(
+            &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
+                "VACUUM failed: {e}"
+            )),
+        );
     });
 
     println!("VACUUM OK");
@@ -169,7 +206,6 @@ fn vacuum_db(db: &str) {
 
 #[tokio::main]
 async fn main() {
-    suppress_nested_cargo_warnings();
     deterministic_ai_kernel::model_registry::validate().unwrap();
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {
@@ -192,6 +228,7 @@ async fn main() {
         println!("  llm-smoke");
         println!("  embeddings-smoke");
         println!("  llm-planner-smoke");
+        println!("  lm-lifecycle <status|stop|start>");
         println!("  print-model-manifest");
         println!("  current-models");
         println!("  latest-bias-artifact <task_id> [step_id]");
@@ -359,13 +396,7 @@ async fn main() {
             let bus = deterministic_ai_kernel::event_bus::EventBus::new(db).unwrap();
             match bus.latest_replay_capsule(&task_id) {
                 Ok(Some(capsule)) => {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&capsule).unwrap_or_else(|e| {
-                            eprintln!("Serialization failed: {e}");
-                            std::process::exit(1);
-                        })
-                    );
+                    let _ = emit_json("latest-capsule", serde_json::to_value(&capsule).unwrap());
                 }
                 Ok(None) => {
                     eprintln!("no replay capsule found for task_id={}", task_id);
@@ -389,13 +420,7 @@ async fn main() {
             let bus = deterministic_ai_kernel::event_bus::EventBus::new(db).unwrap();
             match build_replay_capsule(&bus, &task_id) {
                 Ok(capsule) => {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&capsule).unwrap_or_else(|e| {
-                            eprintln!("Serialization failed: {e}");
-                            std::process::exit(1);
-                        })
-                    );
+                    let _ = emit_json("capture-capsule", serde_json::to_value(&capsule).unwrap());
                 }
                 Err(e) => {
                     eprintln!("capture-capsule failed: {e}");
@@ -530,6 +555,154 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            return;
+        }
+        Some("__lifecycle-supervise") => {
+            // P4-C: hidden entrypoint run as a detached supervisor so that
+            // ephemeral CLI processes still get deterministic idle unload.
+            // Not part of the operator surface (not listed in help).
+            std::process::exit(deterministic_ai_kernel::mlx_lifecycle::run_supervisor_loop());
+        }
+        Some("lm-lifecycle") => {
+            // P0 MLX lifecycle operator controls: status | stop | start.
+            let action = args.get(2).cloned().unwrap_or_else(|| "status".to_string());
+            let lc = deterministic_ai_kernel::mlx_lifecycle::global();
+            match action.as_str() {
+                "status" => {
+                    let base = std::env::var("OPENAI_BASE_URL")
+                        .unwrap_or_else(|_| "http://127.0.0.1:8080/v1".to_string());
+                    // Prime base_url so endpoint probing has a target.
+                    let _ = deterministic_ai_kernel::lm_control::probe_mlx_runtime();
+                    let st = lc.status();
+                    println!("STATE={:?}", st.state);
+                    println!("ENABLED={}", st.enabled);
+                    println!(
+                        "PID={}",
+                        st.pid
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    );
+                    println!("OWNED={}", st.owned);
+                    println!("EXTERNAL={}", st.external);
+                    println!(
+                        "ENDPOINT_UP={}",
+                        deterministic_ai_kernel::mlx_lifecycle::probe_endpoint(&base)
+                    );
+                    println!("IDLE_SECS={}", st.idle_secs);
+                    println!("TIMEOUT_SECS={}", st.timeout_secs);
+                    println!("IN_FLIGHT={}", st.in_flight);
+                    if let Some(f) = st.last_failure {
+                        println!("LAST_FAILURE={f}");
+                    }
+                    // Cross-process truth: what the persisted lifecycle state
+                    // file says (written by the owning process).
+                    if let Some(p) = deterministic_ai_kernel::mlx_lifecycle::persisted_snapshot() {
+                        println!("PERSISTED_STATE={:?}", p.state);
+                        println!(
+                            "PERSISTED_PID={}",
+                            p.pid
+                                .map(|x| x.to_string())
+                                .unwrap_or_else(|| "none".to_string())
+                        );
+                        println!("PERSISTED_OWNED={}", p.owned);
+                        println!("LAST_ACTIVITY_UNIX={}", p.last_activity_unix);
+                        println!(
+                            "NOW_UNIX={}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                        );
+                    }
+                }
+                "stop" => match deterministic_ai_kernel::mlx_lifecycle::stop_managed_server() {
+                    Ok(report) => {
+                        println!(
+                            "SHUTDOWN attempted={} pid={} escalated={} process_gone={} endpoint_down={} verified={} detail={}",
+                            report.attempted,
+                            report.pid.map(|p| p.to_string()).unwrap_or_else(|| "none".to_string()),
+                            report.escalated_to_kill,
+                            report.process_gone,
+                            report.endpoint_down,
+                            report.verified(),
+                            report.detail
+                        );
+                        if report.attempted && !report.verified() {
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("lm-lifecycle stop failed: {e}");
+                        std::process::exit(1);
+                    }
+                },
+                "start" => {
+                    let base = std::env::var("OPENAI_BASE_URL")
+                        .unwrap_or_else(|_| "http://127.0.0.1:8080/v1".to_string());
+                    match deterministic_ai_kernel::mlx_lifecycle::ensure_ready(&base) {
+                        Ok(()) => {
+                            let st = lc.status();
+                            println!(
+                                "STARTED state={:?} pid={}",
+                                st.state,
+                                st.pid
+                                    .map(|p| p.to_string())
+                                    .unwrap_or_else(|| "none".to_string())
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("lm-lifecycle start failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                "watch" => {
+                    // Resident lifecycle holder: ensure the server is up, then
+                    // keep this process alive so the idle watcher can perform
+                    // the IDLE_TIMEOUT -> GRACEFUL_SHUTDOWN -> MODEL_UNLOADED
+                    // transition. Exits once a kernel-owned server has been
+                    // unloaded; runs indefinitely when timeout=0.
+                    let base = std::env::var("OPENAI_BASE_URL")
+                        .unwrap_or_else(|_| "http://127.0.0.1:8080/v1".to_string());
+                    if let Err(e) = deterministic_ai_kernel::mlx_lifecycle::ensure_ready(&base) {
+                        eprintln!("lm-lifecycle watch failed to ensure server: {e}");
+                        std::process::exit(1);
+                    }
+                    let st = lc.status();
+                    println!(
+                        "WATCHING state={:?} pid={} owned={} external={} timeout_secs={}",
+                        st.state,
+                        st.pid
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "none".to_string()),
+                        st.owned,
+                        st.external,
+                        st.timeout_secs
+                    );
+                    if st.external {
+                        println!("NOTE: server is external; lifecycle will never unload it");
+                    }
+                    let mut was_loaded = st.owned && !st.external;
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        let st = lc.status();
+                        if was_loaded
+                            && st.state
+                                == deterministic_ai_kernel::mlx_lifecycle::LifecycleState::Unloaded
+                        {
+                            println!("MODEL_UNLOADED verified");
+                            return;
+                        }
+                        if st.owned && !st.external {
+                            was_loaded = true;
+                        }
+                    }
+                }
+                other => {
+                    eprintln!("lm-lifecycle: unknown action '{other}' (use status|stop|start)");
+                    std::process::exit(1);
+                }
+            }
             return;
         }
         Some("embeddings-smoke") => {
@@ -678,7 +851,11 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let conn = rusqlite::Connection::open(db).unwrap();
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("analyze-task failed: {e}");
+                    std::process::exit(1);
+                });
             conn.execute(
                 "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
                 rusqlite::params![task_id],
@@ -687,19 +864,19 @@ async fn main() {
                 eprintln!("Failed to insert task: {e}");
                 std::process::exit(1);
             });
-            drop(conn);
-
-            let runtime = Runtime::new();
-
-            match runtime.execute_step(&task_id, "00_analyze", &detail).await {
-                Ok(()) => {
-                    println!("ANALYZE_TASK_OK task_id={}", task_id);
-                }
-                Err(e) => {
-                    eprintln!("analyze-task failed: {e}");
-                    std::process::exit(1);
-                }
-            };
+            // Persist the input representation so `pipeline-run --task-id`
+            // can resolve it. ANALYZE_TASK_OK is only printed after the
+            // payload is durably stored (audit finding C6: the previous
+            // implementation printed OK after a silent no-op).
+            conn.execute(
+                "INSERT INTO semantic_bias_artifacts (task_id, input_representation) VALUES (?1, ?2)",
+                rusqlite::params![task_id, detail],
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to store input representation: {e}");
+                std::process::exit(1);
+            });
+            println!("ANALYZE_TASK_OK task_id={}", task_id);
             return;
         }
 
@@ -897,7 +1074,11 @@ async fn main() {
             let resolved = if let Some(p) = payload {
                 p
             } else {
-                let conn = rusqlite::Connection::open(db).unwrap();
+                let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                    .unwrap_or_else(|e| {
+                        eprintln!("pipeline-run failed: {e}");
+                        std::process::exit(1);
+                    });
                 let id = task_id.unwrap_or_else(|| {
                     eprintln!("task_id is missing");
                     std::process::exit(1);
@@ -927,10 +1108,37 @@ async fn main() {
                 std::process::exit(1);
             });
             {
-                let conn = rusqlite::Connection::open(db).unwrap();
+                let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                    .unwrap_or_else(|e| {
+                        eprintln!("pipeline-run failed: {e}");
+                        std::process::exit(1);
+                    });
+                // Persist the planner's canonical ExecSpec with the task.
+                // The scheduler must execute the planned graph, not a
+                // regenerated TaskClass default; the spec is only filled in
+                // if the task row has none (first publish wins).
+                let spec_json = serde_json::to_string(&report.plan.spec).unwrap_or_else(|e| {
+                    eprintln!("Failed to serialize plan spec: {e}");
+                    std::process::exit(1);
+                });
+                // Deterministic task-intent classification (P0, H-2 fix):
+                // interrogative plans are stored as Question tasks instead of
+                // the former hardcoded 'Generic' literal. Classification is
+                // kernel-owned; the LLM is never consulted here.
+                let task_class_str =
+                    match deterministic_ai_kernel::workflow::planner::classify_task_class(
+                        &report.plan.steps,
+                    ) {
+                        deterministic_ai_kernel::workflow::contract::TaskClass::Question => {
+                            "Question"
+                        }
+                        _ => "Generic",
+                    };
                 conn.execute(
-                    "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
-                    rusqlite::params![task_id.as_str()],
+                    "INSERT INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?3, ?2)
+                     ON CONFLICT(task_id) DO UPDATE SET exec_spec = excluded.exec_spec
+                     WHERE tasks.exec_spec IS NULL OR tasks.exec_spec = ''",
+                    rusqlite::params![task_id.as_str(), spec_json, task_class_str],
                 )
                 .unwrap_or_else(|e| {
                     eprintln!("Failed to insert task: {e}");
@@ -983,13 +1191,7 @@ async fn main() {
                     "critic": { "passed": report.critic_report.passed, "warnings": report.critic_report.warnings, "violations": report.critic_report.invariant_violations },
                     "stage_events": report.stage_events.iter().map(|e| serde_json::json!({"stage": e.stage.to_string(), "offset_ms": e.timestamp_offset_ms, "desc": e.description})).collect::<Vec<_>>(),
                 });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&out).unwrap_or_else(|e| {
-                        eprintln!("Serialization failed: {e}");
-                        std::process::exit(1);
-                    })
-                );
+                let _ = deterministic_ai_kernel::cli_json::emit_json("pipeline-run", out);
             } else {
                 println!("PLAN_ID={}", report.plan.id);
                 println!("PLANNER_VERSION={}", report.planner_version);
@@ -1043,6 +1245,46 @@ async fn main() {
                     std::process::exit(1);
                 });
 
+            // Persist the compiled plan as the canonical ExecSpec so the
+            // scheduler executes exactly these steps and dependencies
+            // (planner output == persisted spec == scheduler graph).
+            let task_class = input.task_class();
+            let class_name = match task_class {
+                deterministic_ai_kernel::workflow::contract::TaskClass::Generic => "Generic",
+                deterministic_ai_kernel::workflow::contract::TaskClass::PlannerHardening => {
+                    "PlannerHardening"
+                }
+                deterministic_ai_kernel::workflow::contract::TaskClass::CodeFix => "CodeFix",
+                deterministic_ai_kernel::workflow::contract::TaskClass::Question => "Question",
+            };
+            let spec = deterministic_ai_kernel::workflow::contract::steps_to_exec_spec(&steps);
+            let spec_json = serde_json::to_string(&spec).unwrap_or_else(|e| {
+                eprintln!("Failed to serialize exec spec: {e}");
+                std::process::exit(1);
+            });
+            let task_id = format!(
+                "task-{}",
+                &blake3::hash(format!("{}:{}", class_name, task.trim()).as_bytes()).to_hex()[..12]
+            );
+
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("plan-task failed: {e}");
+                    std::process::exit(1);
+                });
+            conn.execute(
+                "INSERT INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(task_id) DO UPDATE SET exec_spec = excluded.exec_spec
+                 WHERE tasks.exec_spec IS NULL OR tasks.exec_spec = ''",
+                rusqlite::params![task_id, class_name, spec_json],
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to insert task: {e}");
+                std::process::exit(1);
+            });
+
+            println!("TASK_ID: {}", task_id);
+            println!("TASK_CLASS: {}", class_name);
             for step in steps {
                 println!("{}", step.as_text());
             }
@@ -1064,13 +1306,13 @@ async fn main() {
         }
         Some("status-map") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            let status = current_status_map(db, task_id).unwrap();
+            let status = cli_expect("status-map", current_status_map(db, task_id));
             println!("STEP_STATUS: {:?}", status);
             return;
         }
         Some("next-ready") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            let step = next_ready_step(db, task_id).unwrap();
+            let step = cli_expect("next-ready", next_ready_step(db, task_id));
             match step {
                 Some(step_id) => println!("NEXT_READY: {}", step_id),
                 None => println!("NEXT_READY: <none>"),
@@ -1087,7 +1329,7 @@ async fn main() {
                 println!("SNAPSHOT OK");
                 return;
             }
-            rebuild_snapshot(db, task_id, false).unwrap();
+            cli_expect("snapshot", rebuild_snapshot(db, task_id, false));
             return;
         }
         Some("restore") => {
@@ -1096,7 +1338,7 @@ async fn main() {
                 println!("RESTORE OK");
                 return;
             }
-            restore_snapshot(db, task_id, false).unwrap();
+            cli_expect("restore", restore_snapshot(db, task_id, false));
             return;
         }
         Some("snapshot-artifacts") => {
@@ -1108,14 +1350,30 @@ async fn main() {
                 return;
             }
 
-            let conn = Connection::open(db).unwrap();
-            let payload: String = conn.query_row(
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("snapshot-artifacts failed: {e}");
+                    std::process::exit(1);
+                });
+            let payload: String = match conn.query_row(
                 "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
                 [task_id],
                 |r| r.get(0),
-            ).unwrap();
+            ) {
+                Ok(p) => p,
+                Err(_) => {
+                    eprintln!("snapshot-artifacts: no snapshot for task_id={}", task_id);
+                    std::process::exit(1);
+                }
+            };
 
-            let payload_json: Value = serde_json::from_str(&payload).unwrap();
+            let payload_json: Value = match serde_json::from_str(&payload) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("snapshot-artifacts: malformed snapshot payload: {e}");
+                    std::process::exit(1);
+                }
+            };
             if let Some(artifacts) = payload_json.get("artifacts").and_then(|v| v.as_object()) {
                 for (artifact_type, artifact_id) in artifacts {
                     println!("ARTIFACT_REF\t{}\t{}", artifact_type, artifact_id);
@@ -1125,55 +1383,73 @@ async fn main() {
         }
         Some("schedule") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            schedule(db, task_id).unwrap();
+            cli_expect("schedule", schedule(db, task_id));
             return;
         }
         Some("reconcile") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            reconcile(db, task_id).unwrap();
+            cli_expect("reconcile", reconcile(db, task_id));
             return;
         }
         Some("execute-effects") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            execute_effects(db, task_id).unwrap();
+            cli_expect("execute-effects", execute_effects(db, task_id));
             return;
         }
         Some("seed-leases") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            seed_demo_leases(db, task_id).unwrap();
+            cli_expect("seed-demo-leases", seed_demo_leases(db, task_id));
             return;
         }
         Some("expire-leases") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            expire_leases(db, task_id).unwrap();
+            cli_expect("expire-leases", expire_leases(db, task_id));
             return;
         }
         Some("submit-task") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
             {
-                let conn = rusqlite::Connection::open(db).unwrap();
+                let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                    .unwrap_or_else(|e| {
+                        eprintln!("submit-task failed: {e}");
+                        std::process::exit(1);
+                    });
                 conn.execute(
                     "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
                     rusqlite::params![task_id],
                 )
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    eprintln!("submit-task failed: {e}");
+                    std::process::exit(1);
+                });
             }
-            deterministic_ai_kernel::scheduler::schedule(db, task_id).unwrap();
+            cli_expect(
+                "schedule",
+                deterministic_ai_kernel::scheduler::schedule(db, task_id),
+            );
             return;
         }
         Some("claim-worker") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
-            deterministic_ai_kernel::worker::claim_worker(db, task_id, worker_id).unwrap();
+            cli_expect(
+                "claim-worker",
+                deterministic_ai_kernel::worker::claim_worker(db, task_id, worker_id),
+            );
             return;
         }
         Some("complete-step") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
             let step_id = args.get(4).map(|s| s.as_str()).expect("step id required");
-            deterministic_ai_kernel::worker::complete_step(db, task_id, worker_id, step_id)
-                .unwrap();
-            deterministic_ai_kernel::scheduler::schedule(db, task_id).unwrap();
+            cli_expect(
+                "complete-step",
+                deterministic_ai_kernel::worker::complete_step(db, task_id, worker_id, step_id),
+            );
+            cli_expect(
+                "schedule",
+                deterministic_ai_kernel::scheduler::schedule(db, task_id),
+            );
             return;
         }
         Some("fail-step") => {
@@ -1181,22 +1457,30 @@ async fn main() {
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
             let step_id = args.get(4).map(|s| s.as_str()).expect("step id required");
             let reason = args.get(5).map(|s| s.as_str()).unwrap_or("worker_error");
-            deterministic_ai_kernel::worker::fail_step(db, task_id, worker_id, step_id, reason)
-                .unwrap();
+            cli_expect(
+                "fail-step",
+                deterministic_ai_kernel::worker::fail_step(db, task_id, worker_id, step_id, reason),
+            );
             return;
         }
         Some("start-step") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
             let step_id = args.get(4).map(|s| s.as_str()).expect("step id required");
-            deterministic_ai_kernel::worker::start_step(db, task_id, worker_id, step_id).unwrap();
+            cli_expect(
+                "start-step",
+                deterministic_ai_kernel::worker::start_step(db, task_id, worker_id, step_id),
+            );
             return;
         }
         Some("heartbeat") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
             let worker_id = args.get(3).map(|s| s.as_str()).unwrap_or("worker-1");
             let step_id = args.get(4).map(|s| s.as_str()).expect("step id required");
-            deterministic_ai_kernel::worker::heartbeat(db, task_id, worker_id, step_id).unwrap();
+            cli_expect(
+                "heartbeat",
+                deterministic_ai_kernel::worker::heartbeat(db, task_id, worker_id, step_id),
+            );
             return;
         }
         Some("rmdb") => {

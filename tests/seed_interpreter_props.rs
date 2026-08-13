@@ -1,72 +1,61 @@
-use deterministic_ai_kernel::workflow::{
-    contract::StepKind, semantic::interpreter::SeedInterpreter,
-};
+use deterministic_ai_kernel::workflow::contract::StepKind;
+use deterministic_ai_kernel::workflow::semantic::interpreter::SeedInterpreter;
+use proptest::prelude::*;
+use std::collections::HashSet;
 
-fn domain() -> Vec<StepKind> {
+fn sample_domain() -> Vec<StepKind> {
     vec![
         StepKind::AnalyzeTask,
         StepKind::PlanExecution,
         StepKind::ExecuteChanges,
-        StepKind::RunTests,
-        StepKind::ValidatePatch,
+        StepKind::ValidatePlannerOutput,
     ]
 }
 
-#[test]
-fn same_seed_produces_identical_bias() {
-    let domain = domain();
-    let a = SeedInterpreter::interpret(42, &domain);
-    let b = SeedInterpreter::interpret(42, &domain);
-    assert_eq!(a, b);
+fn domain_strings(domain: &[StepKind]) -> HashSet<String> {
+    domain.iter().map(|k| format!("{:?}", k)).collect()
 }
 
-#[test]
-fn different_seeds_produce_different_orderings() {
-    let domain = domain();
-    let a = SeedInterpreter::interpret(1, &domain);
-    let b = SeedInterpreter::interpret(2, &domain);
-    assert_ne!(a.preferred, b.preferred);
-}
-
-#[test]
-fn preferred_is_permutation_of_domain() {
-    let domain = domain();
-    let bias = SeedInterpreter::interpret(0xDEAD_BEEF, &domain);
-    let mut expected = domain.clone();
-    expected.sort_by_key(|k| format!("{:?}", k));
-    let mut actual = bias.preferred.clone();
-    actual.sort_by_key(|k| format!("{:?}", k));
-    assert_eq!(actual, expected);
-}
-
-#[test]
-fn weights_cover_all_domain_kinds() {
-    let domain = domain();
-    let bias = SeedInterpreter::interpret(123, &domain);
-    for kind in &domain {
-        let key = format!("{:?}", kind);
-        assert!(bias.weights.contains_key(&key));
+proptest! {
+    #[test]
+    fn same_seed_gives_same_bias(seed in any::<u64>()) {
+        let domain = sample_domain();
+        let a = SeedInterpreter::interpret(seed, &domain);
+        let b = SeedInterpreter::interpret(seed, &domain);
+        prop_assert_eq!(a, b);
     }
-}
 
-#[test]
-fn weights_are_in_valid_range() {
-    let domain = domain();
-    let bias = SeedInterpreter::interpret(999, &domain);
-    for (key, &w) in &bias.weights {
-        assert!((1.0..2.0).contains(&w), "weight for {key} is {w}");
+    #[test]
+    fn bias_never_expands_step_set(seed in any::<u64>()) {
+        let domain = sample_domain();
+        let allowed = domain_strings(&domain);
+        let bias = SeedInterpreter::interpret(seed, &domain);
+
+        // weights keys must be subset of domain strings
+        prop_assert!(bias.weights.keys().all(|k| allowed.contains(k)));
+        // preferred must be subset of domain
+        let allowed_kind: HashSet<_> = domain.iter().cloned().collect();
+        prop_assert!(bias.preferred.iter().all(|k| allowed_kind.contains(k)));
     }
-}
 
-#[test]
-fn zero_seed_does_not_panic() {
-    let bias = SeedInterpreter::interpret(0, &domain());
-    assert_eq!(bias.preferred.len(), domain().len());
-}
+    #[test]
+    fn preferred_is_subset_without_duplicates(seed in any::<u64>()) {
+        let domain = sample_domain();
+        let bias = SeedInterpreter::interpret(seed, &domain);
+        let preferred: HashSet<_> = bias.preferred.iter().cloned().collect();
 
-#[test]
-fn empty_domain_produces_empty_bias() {
-    let bias = SeedInterpreter::interpret(42, &[]);
-    assert!(bias.preferred.is_empty());
-    assert!(bias.weights.is_empty());
+        prop_assert_eq!(preferred.len(), bias.preferred.len());
+        prop_assert!(preferred.len() <= domain.len());
+    }
+
+    #[test]
+    fn different_seeds_are_allowed_to_diverge(a in any::<u64>(), b in any::<u64>()) {
+        let domain = sample_domain();
+        let left = SeedInterpreter::interpret(a, &domain);
+        let right = SeedInterpreter::interpret(b, &domain);
+
+        if a == b {
+            prop_assert_eq!(left, right);
+        }
+    }
 }

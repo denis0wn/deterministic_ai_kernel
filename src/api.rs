@@ -13,23 +13,29 @@ use crate::snapshot;
 pub fn integrity_json_report(db: &str) -> Result<Value> {
     use std::fs;
 
-    if std::path::Path::new(db).exists() {
-        let _ = fs::remove_file(db);
-        let _ = fs::remove_file(format!("{db}-wal"));
-        let _ = fs::remove_file(format!("{db}-shm"));
-    }
-
-    providers::get_storage().set_override_path(Some(db.to_string()));
+    // The integrity check exercises the snapshot/restore machinery against a
+    // disposable scratch database. The user's database is NEVER modified or
+    // deleted by this read-sounding command (audit findings H3/S5: the
+    // previous implementation deleted the target DB file).
+    let _ = db; // signature kept for CLI compatibility; scratch DB is used
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let scratch = std::env::temp_dir().join(format!("dak_integrity_{}.db", nanos));
+    let scratch_str = scratch
+        .to_str()
+        .ok_or_else(|| anyhow!("non-UTF8 temp path"))?
+        .to_string();
 
     let result = (|| -> Result<Value> {
-        let conn = Connection::open(db)?;
-        conn.execute_batch(include_str!("../event_bus/schema.sql"))?;
+        let conn = crate::providers::storage::open_initialized(&scratch_str)?;
         drop(conn);
 
-        snapshot::rebuild_snapshot(db, "integrity-task", true)?;
-        snapshot::restore_snapshot(db, "integrity-task", true)?;
+        snapshot::rebuild_snapshot(&scratch_str, "integrity-task", true)?;
+        snapshot::restore_snapshot(&scratch_str, "integrity-task", true)?;
 
-        let conn = Connection::open(db)?;
+        let conn = Connection::open(&scratch_str)?;
         let payload: String = conn
             .query_row(
                 "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
@@ -50,7 +56,9 @@ pub fn integrity_json_report(db: &str) -> Result<Value> {
         }))
     })();
 
-    providers::get_storage().set_override_path(None);
+    let _ = fs::remove_file(&scratch);
+    let _ = fs::remove_file(format!("{}-wal", scratch_str));
+    let _ = fs::remove_file(format!("{}-shm", scratch_str));
     result
 }
 

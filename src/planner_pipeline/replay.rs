@@ -1,3 +1,4 @@
+use crate::providers::storage::StorageProvider;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
@@ -41,11 +42,22 @@ impl ReplayTape {
 
 pub struct Replayer {
     pipeline: Pipeline,
+    // Explicit database routing (audit finding M3). Defaults to the
+    // KERNEL_DB_PATH environment location for backwards compatibility.
+    db_path: String,
 }
 
 impl Replayer {
     pub fn new(pipeline: Pipeline) -> Self {
-        Self { pipeline }
+        let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+        Self { pipeline, db_path }
+    }
+
+    pub fn with_db(pipeline: Pipeline, db_path: &str) -> Self {
+        Self {
+            pipeline,
+            db_path: db_path.to_string(),
+        }
     }
 
     pub fn verify(&self, tape: &ReplayTape) -> Result<()> {
@@ -56,7 +68,7 @@ impl Replayer {
             );
 
             // 1. Load historical events from database for this task_id
-            let hist_events = crate::providers::get_storage()
+            let hist_events = crate::providers::storage_for(&self.db_path)
                 .query_events(&task_id)
                 .unwrap_or_default();
 
@@ -200,7 +212,8 @@ impl Replayer {
                     )
                     .to_hex()
                     .to_string();
-                    if let Ok(Some(record)) = crate::providers::get_storage().get_cache(&cache_key)
+                    if let Ok(Some(record)) =
+                        crate::providers::storage_for(&self.db_path).get_cache(&cache_key)
                     {
                         ohash = record.output_hash;
                     }
@@ -368,14 +381,14 @@ mod tests {
                 .expect("test failure")
                 .as_nanos();
             let db_path = std::env::temp_dir().join(format!("dak_test_{}_{}.db", name, nanos));
-            let db_path_str = db_path.to_str().expect("test failure").to_string();
-            crate::providers::get_storage().set_override_path(Some(db_path_str));
             Self { db_path }
+        }
+        fn db_path_str(&self) -> String {
+            self.db_path.to_str().expect("test failure").to_string()
         }
     }
     impl Drop for TestDbGuard {
         fn drop(&mut self) {
-            crate::providers::get_storage().set_override_path(None);
             let _ = std::fs::remove_file(&self.db_path);
         }
     }
@@ -409,33 +422,41 @@ mod tests {
 
     #[test]
     fn replayer_verifies_stable_run() {
-        let _guard = TestDbGuard::new("replayer_verifies_stable_run");
+        let guard = TestDbGuard::new("replayer_verifies_stable_run");
         let c = ctx(99);
-        let eng = crate::planner_pipeline::execution_engine::ExecutionEngine::with_default_executor(
-            mkp(),
-        );
+        let eng =
+            crate::planner_pipeline::execution_engine::ExecutionEngine::with_default_executor_db(
+                mkp(),
+                &guard.db_path_str(),
+            );
         let mut tape = ReplayTape::new();
         let r = eng
             .run_with_replay("step one\nstep two\ncritical step", &c, &mut tape)
             .expect("test failure");
         assert!(r.success);
-        assert!(Replayer::new(mkp()).verify(&tape).is_ok());
+        assert!(Replayer::with_db(mkp(), &guard.db_path_str())
+            .verify(&tape)
+            .is_ok());
     }
 
     #[test]
     fn replayer_catches_tampered_id() {
-        let _guard = TestDbGuard::new("replayer_catches_tampered_id");
+        let guard = TestDbGuard::new("replayer_catches_tampered_id");
         let c = ctx(7);
-        let eng = crate::planner_pipeline::execution_engine::ExecutionEngine::with_default_executor(
-            mkp(),
-        );
+        let eng =
+            crate::planner_pipeline::execution_engine::ExecutionEngine::with_default_executor_db(
+                mkp(),
+                &guard.db_path_str(),
+            );
         let mut tape = ReplayTape::new();
         eng.run_with_replay("step one\nstep two", &c, &mut tape)
             .expect("test failure");
 
         let mut tampered_tape = ReplayTape::new();
         tampered_tape.record("step one\nstep two", c.seed, "0000000000000000");
-        assert!(Replayer::new(mkp()).verify(&tampered_tape).is_err());
+        assert!(Replayer::with_db(mkp(), &guard.db_path_str())
+            .verify(&tampered_tape)
+            .is_err());
     }
 
     #[test]
@@ -445,11 +466,13 @@ mod tests {
 
     #[test]
     fn replayer_verifies_multiple_entries() {
-        let _guard = TestDbGuard::new("replayer_verifies_multiple_entries");
+        let guard = TestDbGuard::new("replayer_verifies_multiple_entries");
         let mut tape = ReplayTape::new();
-        let eng = crate::planner_pipeline::execution_engine::ExecutionEngine::with_default_executor(
-            mkp(),
-        );
+        let eng =
+            crate::planner_pipeline::execution_engine::ExecutionEngine::with_default_executor_db(
+                mkp(),
+                &guard.db_path_str(),
+            );
         for seed in [1u64, 2, 3] {
             let c = ctx(seed);
             let payload = format!("task alpha\ntask beta\ntask {seed}");
@@ -458,6 +481,8 @@ mod tests {
                 .expect("test failure");
             assert!(r.success);
         }
-        assert!(Replayer::new(mkp()).verify(&tape).is_ok());
+        assert!(Replayer::with_db(mkp(), &guard.db_path_str())
+            .verify(&tape)
+            .is_ok());
     }
 }

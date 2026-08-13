@@ -9,7 +9,7 @@
     "rustc": "rustc 1.95.0 (59807616e 2026-04-14)"
   },
   "environment_debug": {
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel",
+    "cwd": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean",
     "machine": "arm64",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
     "release": "27.0.0",
@@ -107,7 +107,7 @@
       "version": "v1"
     }
   ],
-  "plan_generated_at_epoch": 1783858867,
+  "plan_generated_at_epoch": 1786649957,
   "plan_hash": "1111111111111111111111111111111111111111111111111111111111111111",
   "plan_id": "1111111111111111111111111111111111111111111111111111111111111111",
   "selected_only": [],

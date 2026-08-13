@@ -92,6 +92,15 @@ pub fn get_llm() -> &'static dyn LlmProvider {
     LLM_PROVIDER.get_or_init(|| Box::new(DefaultLlm)).as_ref()
 }
 
+/// Create a storage instance bound to an explicit database path.
+///
+/// Kernel call chains must use this (or DefaultStorage::with_path) so that
+/// database routing is explicit and two databases can be used concurrently
+/// without interfering (audit finding M3).
+pub fn storage_for(db: &str) -> storage::DefaultStorage {
+    storage::DefaultStorage::with_path(db)
+}
+
 pub fn get_storage() -> &'static dyn storage::StorageProvider {
     STORAGE_PROVIDER
         .get_or_init(|| Box::new(storage::DefaultStorage::new()))

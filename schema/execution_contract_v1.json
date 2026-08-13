@@ -1,11 +1,55 @@
 {
-  "contract_version": 1,
-  "task_envelope": {
-    "required": ["task_id", "run_id", "task_class", "input", "requested_capabilities", "contract_version"]
-  },
-  "event_envelope": {
-    "required": ["event_id", "run_id", "task_id", "event_type", "ts", "payload", "contract_version"]
-  },
-  "terminal_outcomes": ["Success", "TerminalFailure"],
-  "non_terminal_outcomes": ["RetryableFailure", "Blocked"]
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "execution_contract_v1.schema.json",
+  "title": "ExecutionContractV1",
+  "description": "Defines the task and event envelope structure for the deterministic AI kernel execution contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "task_envelope", "event_envelope", "terminal_outcomes", "non_terminal_outcomes"],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version. Only 1 is accepted."
+    },
+    "task_envelope": {
+      "type": "object",
+      "description": "Required fields for a task envelope.",
+      "required": ["task_id", "run_id", "task_class", "input", "requested_capabilities", "contract_version"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "task_class": { "type": "string" },
+        "input": { "type": "string" },
+        "requested_capabilities": { "type": "array", "items": { "type": "string" } },
+        "contract_version": { "type": "integer" }
+      }
+    },
+    "event_envelope": {
+      "type": "object",
+      "description": "Required fields for an event envelope.",
+      "required": ["event_id", "run_id", "task_id", "event_type", "ts", "payload", "contract_version"],
+      "properties": {
+        "event_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "task_id": { "type": "string" },
+        "event_type": { "type": "string" },
+        "ts": { "type": "string" },
+        "payload": { "type": "object" },
+        "contract_version": { "type": "integer" }
+      }
+    },
+    "terminal_outcomes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "const": ["Success", "TerminalFailure"],
+      "description": "Step outcomes that terminate execution."
+    },
+    "non_terminal_outcomes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "const": ["RetryableFailure", "Blocked"],
+      "description": "Step outcomes that allow continuation."
+    }
+  }
 }

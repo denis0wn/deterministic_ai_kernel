@@ -70,14 +70,14 @@ CREATE TABLE IF NOT EXISTS semantic_artifacts (
     task_id TEXT NOT NULL,
     step_id TEXT NOT NULL,
     source_generation BIGINT NOT NULL,
-    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1','pipeline_step','pipeline_report')),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('analysis_seed','retrieval_result','classification','semantic_bias_v1','pipeline_step','pipeline_report','primitive_result_v1')),
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
     task_id TEXT PRIMARY KEY,
-    task_class TEXT NOT NULL CHECK(task_class IN ('Generic','PlannerHardening','CodeFix')),
+    task_class TEXT NOT NULL CHECK(task_class IN ('Generic','PlannerHardening','CodeFix','Question')),
     exec_spec TEXT
 );
 
@@ -139,3 +139,17 @@ CREATE TABLE IF NOT EXISTS execution_cache (
     metadata TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Persisted pipeline input payloads keyed by task id.
+-- analyze-task writes the input representation here; pipeline-run --task-id
+-- resolves it before planning (audit finding C6: the table previously did
+-- not exist anywhere, so the documented analyze -> pipeline flow failed).
+CREATE TABLE IF NOT EXISTS semantic_bias_artifacts (
+    artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    input_representation TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_bias_artifacts_task
+ON semantic_bias_artifacts(task_id, artifact_id);

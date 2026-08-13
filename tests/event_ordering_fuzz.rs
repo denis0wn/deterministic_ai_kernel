@@ -117,11 +117,66 @@ fn semantic_bias_permutations_keep_replay_deterministic() {
 
 #[test]
 fn invalid_causal_sequence_fails_deterministically() {
+    // Regression (audit findings C1/M9 + "fake ordering tests"): malformed
+    // event streams must be rejected by the replay validator. The previous
+    // version of this test created NO events and asserted only that an
+    // unrelated command printed something — it never exercised ordering.
     let db = unique_db("event_ordering_invalid_causal_sequence");
     cleanup(&db);
 
-    let err = run_fail(&db, &["schedule", "invalid-order-task"]);
-    assert!(!err.trim().is_empty(), "expected non-empty failure output");
+    // Real production events first: submit + schedule dispatches step 00.
+    let _ = run_ok(&db, &["submit-task", "t1"]);
+    let _ = run_ok(&db, &["schedule", "t1"]);
+
+    // Sanity: a clean scheduler-produced lifecycle validates.
+    let clean = run_ok(&db, &["replay", "t1"]);
+    assert!(clean.contains("REPLAY OK: true"), "{clean}");
+
+    // Inject malformed units directly into the event log.
+    let sql = r#"
+        -- unit 9000: STEP_COMPLETED sequenced BEFORE STEP_STARTED
+        INSERT INTO event_log
+            (task_id, causal_unit_id, sequence_in_unit, event_type, payload,
+             system_generation, logical_generation, step_id)
+        VALUES
+            ('t1', 9000, 0, 'STEP_COMPLETED',
+             '{"step_id":"00_analyze_task","outcome":"Success"}',
+             9000, 9000, '00_analyze_task'),
+            ('t1', 9000, 1, 'STEP_STARTED',
+             '{"step_id":"00_analyze_task","worker_id":"w"}',
+             9000, 9000, '00_analyze_task');
+        -- unit 9001: sequence gap (0 then 2)
+        INSERT INTO event_log
+            (task_id, causal_unit_id, sequence_in_unit, event_type, payload,
+             system_generation, logical_generation, step_id)
+        VALUES
+            ('t1', 9001, 0, 'STEP_STARTED',
+             '{"step_id":"01_plan_execution","worker_id":"w"}',
+             9001, 9001, '01_plan_execution'),
+            ('t1', 9001, 2, 'STEP_COMPLETED',
+             '{"step_id":"01_plan_execution","outcome":"Success"}',
+             9001, 9001, '01_plan_execution');
+    "#;
+    let status = std::process::Command::new("sqlite3")
+        .arg(&db)
+        .arg(sql)
+        .status()
+        .expect("sqlite3 must be available");
+    assert!(status.success(), "event injection failed");
+
+    // The validator must now reject the task, citing concrete violations.
+    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
+        .env("KERNEL_DB_PATH", &db)
+        .args(["replay", "t1"])
+        .output()
+        .expect("test failure");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(combined.contains("REPLAY OK: false"), "{combined}");
+    assert!(combined.contains("INVALID"), "{combined}");
 
     cleanup(&db);
 }

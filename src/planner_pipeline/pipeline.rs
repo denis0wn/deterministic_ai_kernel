@@ -28,15 +28,28 @@ fn query_mlx_server(payload: &str) -> Option<Vec<String>> {
         crate::model_registry::resolve_model(crate::model_registry::ModelPurpose::TaskPlanning)
             .ok()?;
 
-    // 3. Build blocking client with a short timeout
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .ok()?;
+    // 2b. P0 MLX lifecycle: the planning probe participates in the same
+    // lifecycle as inference — start a managed server when unloaded, reuse
+    // it when running, never touch external servers. Unresolvable lifecycle
+    // failures fall back to the deterministic parser, matching this path's
+    // existing "LLM unavailable" semantics.
+    if crate::mlx_lifecycle::ensure_ready(&config.base_url).is_err() {
+        return None;
+    }
+
+    // 3. Use shared blocking client with connection pooling
+    static BLOCKING_CLIENT: std::sync::LazyLock<reqwest::blocking::Client> =
+        std::sync::LazyLock::new(|| {
+            reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .pool_max_idle_per_host(2)
+                .build()
+                .expect("failed to build blocking HTTP client")
+        });
 
     // 4. Test reachability (GET base_url/models)
     let models_url = format!("{}/models", config.base_url.trim_end_matches('/'));
-    client.get(&models_url).send().ok()?;
+    BLOCKING_CLIENT.get(&models_url).send().ok()?;
 
     // 5. Send completions request
     let completions_url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
@@ -55,7 +68,7 @@ fn query_mlx_server(payload: &str) -> Option<Vec<String>> {
         "temperature": 0.0
     });
 
-    let res = client
+    let res = BLOCKING_CLIENT
         .post(completions_url)
         .bearer_auth(&config.api_key)
         .json(&payload_json)
@@ -125,7 +138,18 @@ impl Pipeline {
         }
 
         let ir = match steps {
-            Some(s) => IntermediateRepresentation { steps: s },
+            Some(s) => {
+                // If MLX returned only 1 step, try decomposition
+                if s.len() == 1 {
+                    if let Some(decomposed) = Parser::decompose_free_form(&s[0]) {
+                        IntermediateRepresentation { steps: decomposed }
+                    } else {
+                        IntermediateRepresentation { steps: s }
+                    }
+                } else {
+                    IntermediateRepresentation { steps: s }
+                }
+            }
             None => Parser.run(normalized, ctx)?,
         };
 

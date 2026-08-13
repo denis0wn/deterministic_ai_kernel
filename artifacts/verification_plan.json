@@ -17,7 +17,7 @@
   "selected_only": [],
   "deterministic_order": "topological_then_priority_then_id_version",
   "manifest_path": "docs/verification_graph.json",
-  "plan_generated_at_epoch": 1783858898,
+  "plan_generated_at_epoch": 1786649992,
   "environment": {
     "python": "3.14.6",
     "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
@@ -30,7 +30,7 @@
     "system": "Darwin",
     "release": "27.0.0",
     "machine": "arm64",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+    "cwd": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean"
   },
   "ordered_nodes": [
     {

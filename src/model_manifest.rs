@@ -91,7 +91,11 @@ pub fn sync_env_for_role(role: &str) -> Result<String> {
 
     // In mock/test mode, skip writing .env (file may be quarantine-locked)
     if std::env::var("DAK_LM_BACKEND").as_deref() != Ok("mock") {
-        fs::write(env_path, &text)?;
+        // Atomic write: temp file + rename prevents corruption on crash.
+        let dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let tmp = tempfile::NamedTempFile::new_in(&dir)?;
+        std::fs::write(tmp.path(), &text)?;
+        tmp.persist(env_path)?;
     }
     Ok(model.id)
 }
@@ -188,8 +192,7 @@ mod tests {
     fn task_planning_model_is_present() {
         let manifest = load_manifest().expect("failed to load manifest");
         assert!(manifest.models.iter().any(|m| {
-            m.id == "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
-                && m.role == "task_planning"
+            m.id == "/Users/denissmoliakov/Models/gemma4-reasoning" && m.role == "task_planning"
         }));
     }
 
@@ -199,7 +202,7 @@ mod tests {
         let embedding = manifest
             .models
             .iter()
-            .find(|m| m.id == "text-embedding-nomic-embed-text-v1.5")
+            .find(|m| m.role == "embeddings")
             .expect("embedding model not found in manifest");
 
         assert_eq!(embedding.role, "embeddings");
@@ -209,10 +212,7 @@ mod tests {
     fn best_enabled_task_planning_model_prefers_priority_one() {
         let model =
             best_enabled_model_for_role("task_planning").expect("best model for role not found");
-        assert_eq!(
-            model.id,
-            "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit"
-        );
+        assert_eq!(model.id, "/Users/denissmoliakov/Models/gemma4-reasoning");
     }
 
     #[test]

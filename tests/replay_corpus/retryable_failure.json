@@ -1,8 +1,14 @@
 {
   "name": "retryable_failure",
   "commands": [
+    ["submit-task", "task_retry"],
+    ["schedule", "task_retry"],
+    ["claim-worker", "task_retry", "worker-planner"],
+    ["start-step", "task_retry", "worker-planner", "00_analyze_task"],
+    ["fail-step", "task_retry", "worker-planner", "00_analyze_task", "retry: transient blip"],
+    ["reconcile", "task_retry"],
     ["replay", "task_retry"]
   ],
-  "expect_substrings": ["REPLAY"],
+  "expect_substrings": ["REPLAY OK", "true"],
   "expected_artifact_refs": []
 }

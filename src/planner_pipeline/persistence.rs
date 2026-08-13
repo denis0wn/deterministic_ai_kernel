@@ -113,6 +113,8 @@ mod tests {
                 .collect(),
             total_duration_ms: descs.len() as u64,
             success: true,
+            final_answer: String::new(),
+            critique_status: String::new(),
         }
     }
 

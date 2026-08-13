@@ -15,6 +15,7 @@ use deterministic_ai_kernel::planner_pipeline::plan_diff::{PlanDiff, StepChange}
 use deterministic_ai_kernel::planner_pipeline::replay::{ReplayTape, Replayer};
 use deterministic_ai_kernel::planner_pipeline::PipelineContext;
 use deterministic_ai_kernel::planner_pipeline::Plan;
+use deterministic_ai_kernel::providers::storage::StorageProvider;
 use deterministic_ai_kernel::semantic_bias::{BiasConfiguration, BiasVersion, SemanticBiasRule};
 
 fn default_bias() -> BiasConfiguration {
@@ -169,7 +170,9 @@ fn cmd_run_replay(args: &[String]) -> Result<()> {
         );
         if entry_task_id == *task_id || entry.plan_id == *task_id {
             found = true;
-            let verifier = Replayer::new(Pipeline::new(default_bias()));
+            let db_path =
+                std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
+            let verifier = Replayer::with_db(Pipeline::new(default_bias()), &db_path);
             let single = {
                 let mut t = ReplayTape::new();
                 t.record(&entry.payload, entry.seed, &entry.plan_id);
@@ -237,7 +240,7 @@ fn cmd_run_status(args: &[String]) -> Result<()> {
     // Determine state
     let task_state =
         deterministic_ai_kernel::planner_pipeline::execution_engine::get_current_task_state(
-            task_id,
+            &db_path, task_id,
         )
         .unwrap_or(deterministic_ai_kernel::planner_pipeline::execution_engine::TaskState::None);
     let state_str = format!("{:?}", task_state);
@@ -353,12 +356,13 @@ fn cmd_run(args: &[String]) -> Result<()> {
     let seed = seed.ok_or_else(|| anyhow::anyhow!("--seed required"))?;
 
     let task_id = format!("task_{}", &blake3::hash(payload.as_bytes()).to_hex()[..16]);
+    let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
     let ctx = PipelineContext {
         seed,
         bias_version: BiasVersion::V1,
         task_id: Some(task_id),
     };
-    let engine = ExecutionEngine::with_default_executor(Pipeline::new(default_bias()));
+    let engine = ExecutionEngine::with_default_executor_db(Pipeline::new(default_bias()), &db_path);
     let store = make_store(&store_dir)?;
     let mut tape = store.load_tape().unwrap_or_else(|_| ReplayTape::new());
 
@@ -384,6 +388,14 @@ fn cmd_run(args: &[String]) -> Result<()> {
             println!("  [{:>2}] {} -- {}", s.index, status, s.description);
         }
         println!();
+        if !report.final_answer.is_empty() {
+            println!("--- Final Answer ---");
+            println!("{}", report.final_answer);
+            println!("--- End ---");
+        }
+        if !report.critique_status.is_empty() {
+            println!("critique: {}", report.critique_status);
+        }
         println!("tape    : {} entries  (store: {store_dir})", tape.len());
     }
     if !report.success {
@@ -646,8 +658,7 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
 
-    deterministic_ai_kernel::providers::get_storage().set_override_path(Some(db_path));
-    deterministic_ai_kernel::providers::get_storage().emit_bias_artifact(
+    deterministic_ai_kernel::providers::storage_for(&db_path).emit_bias_artifact(
         &id,
         task_bias_id,
         step_bias_id,
@@ -655,7 +666,6 @@ fn cmd_emit_bias_artifact(args: &[String]) -> Result<()> {
         "semantic_bias_v1",
         &serde_json::to_string(&payload)?,
     )?;
-    deterministic_ai_kernel::providers::get_storage().set_override_path(None);
 
     println!("ok\t{id}");
     Ok(())
@@ -672,11 +682,9 @@ fn cmd_latest_bias_artifact(args: &[String]) -> Result<()> {
 
     let db_path = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string());
 
-    deterministic_ai_kernel::providers::get_storage().set_override_path(Some(db_path));
-    let row = deterministic_ai_kernel::providers::get_storage()
+    let row = deterministic_ai_kernel::providers::storage_for(&db_path)
         .latest_bias_artifact(task_bias_id, step_bias_id)
         .map_err(|_| anyhow::anyhow!("no artifact found for {task_bias_id}/{step_bias_id}"))?;
-    deterministic_ai_kernel::providers::get_storage().set_override_path(None);
 
     println!(
         "{}\t{}\t{}\t{}\t{}\t{}",

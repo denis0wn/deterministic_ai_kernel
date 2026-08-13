@@ -1,8 +1,13 @@
 {
   "name": "delayed_event_injection",
   "commands": [
-    ["replay", "task_reclaim"],
-    ["replay", "task_reclaim"]
+    ["submit-task", "task_replay_idem"],
+    ["schedule", "task_replay_idem"],
+    ["claim-worker", "task_replay_idem", "worker-planner"],
+    ["start-step", "task_replay_idem", "worker-planner", "00_analyze_task"],
+    ["complete-step", "task_replay_idem", "worker-planner", "00_analyze_task"],
+    ["replay", "task_replay_idem"],
+    ["replay", "task_replay_idem"]
   ],
   "expect_substrings": ["REPLAY OK", "true"],
   "expected_artifact_refs": []

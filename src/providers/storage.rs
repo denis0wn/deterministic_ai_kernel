@@ -21,6 +21,11 @@ pub trait StorageProvider: Send + Sync {
         event_type: &str,
         payload: &Value,
     ) -> Result<i64>;
+    fn append_event_batch(
+        &self,
+        task_id: &str,
+        events: &[(Option<&str>, &str, Value)],
+    ) -> Result<()>;
     fn append_semantic_artifact(
         &self,
         task_id: &str,
@@ -54,9 +59,6 @@ pub trait StorageProvider: Send + Sync {
     // Snapshots
     fn rebuild_snapshot(&self, task_id: &str, quiet: bool) -> Result<()>;
     fn restore_snapshot(&self, task_id: &str, quiet: bool) -> Result<()>;
-
-    // Override helper
-    fn set_override_path(&self, path: Option<String>);
 
     // CLI helpers
     fn print_stats(&self) -> Result<(i64, i64, i64, i64)>;
@@ -101,6 +103,9 @@ pub trait StorageProvider: Send + Sync {
     fn fail_step(&self, task_id: &str, worker_id: &str, step_id: &str, reason: &str) -> Result<()>;
     fn complete_step(&self, task_id: &str, worker_id: &str, step_id: &str) -> Result<()>;
     fn replay_validate(&self, task_id: &str) -> bool;
+    /// Task-level state derived from the canonical event fold. Never stored
+    /// independently: it is recomputed from events on every call.
+    fn task_state(&self, task_id: &str) -> Result<crate::kernel_types::TaskState>;
 
     // EventBus methods migrated to StorageProvider boundary
     fn commit_causal_unit(
@@ -121,6 +126,19 @@ pub trait StorageProvider: Send + Sync {
     ) -> Result<Option<crate::kernel_types::ReplayCapsule>>;
     fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>>;
     fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()>;
+
+    // ── Read-only observation queries (operator UI boundary) ────────────
+    // These methods never mutate state. They exist so observation layers
+    // (operator TUI, diagnostics) read canonical kernel data instead of
+    // re-deriving it.
+    fn list_tasks(&self) -> Result<Vec<TaskListRow>>;
+    fn list_leases(&self) -> Result<Vec<LeaseListRow>>;
+    /// Chronological detail event rows, optionally filtered by task.
+    fn event_rows(&self, task_id: Option<&str>, limit: u32) -> Result<Vec<EventDetailRow>>;
+    /// Concrete canonical-fold violations for a task. Runs the SAME fold as
+    /// replay_validate — callers must not implement their own validator.
+    fn replay_violations(&self, task_id: &str) -> Result<Vec<String>>;
+    fn effect_ledger_rows(&self, task_id: &str) -> Result<Vec<EffectLedgerRow>>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -131,10 +149,50 @@ pub struct CacheRecord {
     pub metadata: String,
 }
 
-thread_local! {
-    static OVERRIDE_PATH: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+/// One row of the `tasks` table (read-only observation).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskListRow {
+    pub task_id: String,
+    pub task_class: String,
+    pub has_exec_spec: bool,
 }
 
+/// One row of the `leases` table (read-only observation).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LeaseListRow {
+    pub lease_id: String,
+    pub task_id: String,
+    pub step_id: String,
+    pub worker_id: String,
+    pub acquired_generation: i64,
+    pub expires_at_generation: i64,
+    pub state: String,
+}
+
+/// One detailed event_log row (read-only observation).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EventDetailRow {
+    pub id: i64,
+    pub system_generation: i64,
+    pub causal_unit_id: i64,
+    pub sequence_in_unit: i64,
+    pub task_id: String,
+    pub step_id: Option<String>,
+    pub event_type: String,
+    pub payload: String,
+}
+
+/// One row of the materialized effect ledger (read-only observation).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EffectLedgerRow {
+    pub effect_id: String,
+    pub task_id: String,
+    pub step_id: String,
+    pub reservation_generation: i64,
+    pub state: String,
+}
+
+#[derive(Clone)]
 pub struct DefaultStorage {
     db_path: String,
 }
@@ -151,10 +209,23 @@ impl DefaultStorage {
         Self { db_path }
     }
 
+    /// Storage bound to an explicit database path. All kernel call chains
+    /// must route through this (or `providers::storage_for`) instead of
+    /// mutating process/thread-global state (audit finding M3: the former
+    /// thread-local OVERRIDE_PATH let one component silently retarget
+    /// another component's database operations).
+    pub fn with_path(db_path: &str) -> Self {
+        Self {
+            db_path: db_path.to_string(),
+        }
+    }
+
+    pub fn db_path(&self) -> &str {
+        &self.db_path
+    }
+
     fn conn(&self) -> Result<Connection> {
-        let target_path = OVERRIDE_PATH
-            .with(|p| p.borrow().clone())
-            .unwrap_or_else(|| self.db_path.clone());
+        let target_path = self.db_path.clone();
         if let Some(parent) = std::path::Path::new(&target_path).parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
                 let _ = std::fs::create_dir_all(parent);
@@ -187,6 +258,7 @@ fn ordered_step_ids(conn: &Connection, task_id: &str) -> Result<Vec<String>> {
                 "Generic" => TaskClass::Generic,
                 "PlannerHardening" => TaskClass::PlannerHardening,
                 "CodeFix" => TaskClass::CodeFix,
+                "Question" => TaskClass::Question,
                 other => anyhow::bail!("unknown task_class '{}'", other),
             };
             task_class.to_exec_spec(None)
@@ -234,95 +306,432 @@ fn failed_step_status_from_payload(payload: &str) -> &'static str {
     }
 }
 
-fn replay_events(conn: &Connection, task_id: &str) -> Result<()> {
+// =====================================================================
+// Canonical event model (single source of truth for event -> state).
+// =====================================================================
+//
+// Single logical clock: every appended causal unit draws its id from the
+// monotonic `generations` allocator (`allocate_causal_unit`). The previous
+// design had two independent allocators (`generations` ids vs
+// MAX(system_generation)+1 reads of event_log), which collided under the
+// global UNIQUE(causal_unit_id, sequence_in_unit) constraint and silently
+// dropped event batches.
+//
+// Semantics:
+//   causal_unit_id    -- identity of an atomically appended event group.
+//   system_generation -- position in the global total-order clock; equal to
+//                        the causal_unit_id of the unit that produced it.
+//   sequence_in_unit  -- ordering inside one atomic group.
+//
+// Producer contract (unit shapes):
+//   [LEASE_ACQUIRED, STEP_DISPATCHED]  -- scheduler dispatch pair
+//   [EFFECT_RESERVED, STEP_COMPLETED]  -- atomic worker commit
+//   [single event]                     -- claim/start/heartbeat/fail/expiry
+//   [pipeline.* ...]                   -- pipeline publish batch
+// Terminal step events (STEP_COMPLETED / STEP_FAILED) are emitted in later
+// units, never inside the dispatch unit.
+//
+// Canonical step lifecycle (event fold):
+//   pending -> dispatched -> (started) -> committed
+//                                        -> pending   (STEP_FAILED retryable/blocked)
+//                                        -> rejected  (STEP_FAILED terminal)
+//   LEASE_EXPIRED returns dispatched/started steps to pending (redispatchable).
+// `started` is an event-stream property only: the step_status schema does not
+// carry it, so materialized state maps started steps back to `dispatched`.
+
+/// Allocate the next causal unit (== next system_generation) inside `tx`.
+///
+/// Transactional, monotonic, concurrency-safe: SQLite serializes writers and
+/// AUTOINCREMENT guarantees a fresh, never-reused id. Legacy event rows that
+/// were written before the unified allocator are seeded into the sequence so
+/// the clock never steps on an existing causal_unit_id.
+///
+/// Note: the seed condition must live on the aggregated result (subselect),
+/// not on the source rows — a bare aggregate always emits one row, so a
+/// WHERE on event_log rows alone would insert unconditionally.
+fn allocate_causal_unit(tx: &rusqlite::Transaction) -> Result<i64> {
+    tx.execute_batch(
+        "INSERT INTO generations (id)
+         SELECT m FROM (SELECT COALESCE(MAX(causal_unit_id), 0) AS m FROM event_log)
+         WHERE m > COALESCE((SELECT MAX(id) FROM generations), 0);",
+    )?;
+    let unit: i64 = tx.query_row(
+        "INSERT INTO generations DEFAULT VALUES RETURNING id",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(unit)
+}
+
+/// Read-only view of the current clock (max allocated generation).
+fn read_clock(conn: &Connection) -> Result<i64> {
+    let clock: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(clock)
+}
+
+/// Open a SQLite connection with the canonical kernel schema applied.
+///
+/// Every CLI/API entry point must obtain connections through this function
+/// (or through the storage provider, which does the same). Direct
+/// `Connection::open` on a fresh database leaves the schema uninitialized
+/// and turns the first real query into a panic (audit finding H1).
+pub fn open_initialized(db_path: &str) -> Result<Connection> {
+    let conn = Connection::open(db_path)?;
+    conn.execute_batch(include_str!("../../event_bus/schema.sql"))?;
+    Ok(conn)
+}
+
+#[derive(Debug, Clone)]
+struct StepFold {
+    /// Live-status vocabulary (step_status CHECK constraint):
+    /// pending | ready | dispatched | committed | rejected.
+    status: &'static str,
+    /// Event-stream property: STEP_STARTED observed for the current dispatch.
+    started: bool,
+    active_lease: Option<String>,
+    /// Fold state of the latest lease for this step, if any:
+    /// active | completed | released | expired.
+    lease_state: Option<&'static str>,
+}
+
+impl StepFold {
+    fn new() -> Self {
+        StepFold {
+            status: "pending",
+            started: false,
+            active_lease: None,
+            lease_state: None,
+        }
+    }
+
+    fn terminal(&self) -> bool {
+        matches!(self.status, "committed" | "rejected")
+    }
+}
+
+/// Canonical fold of a task's event history. Used by replay materialization,
+/// snapshot reconstruction, replay validation, and task-state derivation.
+#[derive(Debug)]
+struct TaskFold {
+    steps: BTreeMap<String, StepFold>,
+    violations: Vec<String>,
+    last_unit: i64,
+    done: bool,
+}
+
+fn canonical_event_kind(event_type: &str) -> &'static str {
+    match event_type {
+        "PrimitiveScheduled" | "STEP_DISPATCHED" => "STEP_DISPATCHED",
+        "PrimitiveStarted" | "STEP_STARTED" => "STEP_STARTED",
+        "PrimitiveCompleted" | "STEP_COMPLETED" => "STEP_COMPLETED",
+        "PrimitiveFailed" | "STEP_FAILED" => "STEP_FAILED",
+        "LEASE_ACQUIRED" => "LEASE_ACQUIRED",
+        "WORKER_CLAIMED" => "WORKER_CLAIMED",
+        "WORKER_HEARTBEAT" => "WORKER_HEARTBEAT",
+        "LEASE_EXPIRED" => "LEASE_EXPIRED",
+        "EFFECT_RESERVED" => "EFFECT_RESERVED",
+        "ArtifactProduced" => "ArtifactProduced",
+        "DONE" => "DONE",
+        _ => "",
+    }
+}
+
+impl TaskFold {
+    fn new(all_steps: &[String]) -> Self {
+        let mut steps = BTreeMap::new();
+        for step_id in all_steps {
+            steps.insert(step_id.clone(), StepFold::new());
+        }
+        TaskFold {
+            steps,
+            violations: Vec::new(),
+            last_unit: 0,
+            done: false,
+        }
+    }
+
+    fn step_mut(&mut self, step_id: &str) -> &mut StepFold {
+        self.steps
+            .entry(step_id.to_string())
+            .or_insert_with(StepFold::new)
+    }
+
+    fn violate(&mut self, msg: String) {
+        self.violations.push(msg);
+    }
+
+    fn apply_unit(&mut self, unit: i64, events: &[(i64, String, Option<String>, String)]) {
+        self.last_unit = unit.max(self.last_unit);
+
+        // Sequence contiguity inside the atomic group.
+        for (i, (seq, _, _, _)) in events.iter().enumerate() {
+            if *seq != i as i64 {
+                self.violate(format!("INVALID unit {}: gap at {}", unit, i));
+            }
+        }
+
+        // Unit shape check (producer contract).
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|(_, t, _, _)| canonical_event_kind(t))
+            .collect();
+        let shape_ok = match kinds.len() {
+            1 => true,
+            2 => {
+                (kinds[0] == "LEASE_ACQUIRED" && kinds[1] == "STEP_DISPATCHED")
+                    || (kinds[0] == "EFFECT_RESERVED" && kinds[1] == "STEP_COMPLETED")
+            }
+            _ => events.iter().all(|(_, t, _, _)| t.starts_with("pipeline.")),
+        };
+        if !shape_ok {
+            self.violate(format!(
+                "INVALID unit {}: illegal event combination {:?}",
+                unit,
+                events
+                    .iter()
+                    .map(|(_, t, _, _)| t.clone())
+                    .collect::<Vec<_>>()
+            ));
+        }
+
+        for (_, event_type, step_id, payload) in events {
+            self.apply_event(unit, event_type, step_id.as_deref(), payload);
+        }
+    }
+
+    fn apply_event(&mut self, unit: i64, event_type: &str, step_id: Option<&str>, payload: &str) {
+        // Pipeline publish batches and unknown engine vocabulary are outside
+        // the canonical step lifecycle; they never invalidate the fold.
+        if event_type.starts_with("pipeline.") {
+            return;
+        }
+        let kind = canonical_event_kind(event_type);
+        match kind {
+            "DONE" => {
+                self.done = true;
+                return;
+            }
+            "EFFECT_RESERVED" | "ArtifactProduced" | "" => return,
+            _ => {}
+        }
+
+        let step_id = match step_id {
+            Some(s) if !s.is_empty() => s,
+            _ => return,
+        };
+
+        let payload_lease = serde_json::from_str::<serde_json::Value>(payload)
+            .ok()
+            .and_then(|v| {
+                v.get("lease_id")
+                    .and_then(|l| l.as_str())
+                    .map(str::to_string)
+            });
+
+        // Mutate the step fold in a nested scope and collect violations
+        // locally so the mutable borrow of `self.steps` does not overlap the
+        // `self.violations` write.
+        let mut local_violations: Vec<String> = Vec::new();
+        {
+            let s = self.step_mut(step_id);
+            match kind {
+                "LEASE_ACQUIRED" => {
+                    if s.active_lease.is_some() {
+                        local_violations.push(format!(
+                            "INVALID step {}: LEASE_ACQUIRED (unit {}) while a lease is still active",
+                            step_id, unit
+                        ));
+                    }
+                    s.active_lease = payload_lease;
+                    s.lease_state = Some("active");
+                }
+                "STEP_DISPATCHED" => {
+                    if s.active_lease.is_none() {
+                        local_violations.push(format!(
+                            "INVALID step {}: STEP_DISPATCHED (unit {}) without an active lease",
+                            step_id, unit
+                        ));
+                    }
+                    if s.terminal() {
+                        local_violations.push(format!(
+                            "INVALID step {}: STEP_DISPATCHED (unit {}) after terminal state {}",
+                            step_id, unit, s.status
+                        ));
+                    } else {
+                        s.status = "dispatched";
+                        s.started = false;
+                    }
+                }
+                "WORKER_CLAIMED" => {
+                    if s.active_lease.is_none() {
+                        local_violations.push(format!(
+                            "INVALID step {}: WORKER_CLAIMED (unit {}) without an active lease",
+                            step_id, unit
+                        ));
+                    }
+                }
+                "STEP_STARTED" => {
+                    if s.status != "dispatched" || s.started {
+                        local_violations.push(format!(
+                            "INVALID step {}: STEP_STARTED (unit {}) without a prior STEP_DISPATCHED",
+                            step_id, unit
+                        ));
+                    } else {
+                        s.started = true;
+                    }
+                }
+                "WORKER_HEARTBEAT" => {
+                    if !s.started || s.terminal() {
+                        local_violations.push(format!(
+                            "INVALID step {}: WORKER_HEARTBEAT (unit {}) for a step that is not started",
+                            step_id, unit
+                        ));
+                    }
+                }
+                "STEP_COMPLETED" => {
+                    // Live worker operations (complete_step) require an owned
+                    // active lease but NOT an explicit STEP_STARTED, so the
+                    // fold accepts completion of a dispatched-but-not-started
+                    // step (implicit start). Completing a step that was never
+                    // dispatched is still a violation (audit finding C1/R2:
+                    // replay must equal live state).
+                    if s.status != "dispatched" && !s.started {
+                        local_violations.push(format!(
+                            "INVALID step {}: STEP_COMPLETED (unit {}) without a prior STEP_DISPATCHED",
+                            step_id, unit
+                        ));
+                    } else {
+                        if let (Some(event_lease), Some(active_lease)) =
+                            (&payload_lease, &s.active_lease)
+                        {
+                            if event_lease != active_lease {
+                                local_violations.push(format!(
+                                    "INVALID step {}: STEP_COMPLETED (unit {}) references lease {} but active lease is {}",
+                                    step_id, unit, event_lease, active_lease
+                                ));
+                            }
+                        }
+                        s.status = "committed";
+                        s.lease_state = Some("completed");
+                        s.active_lease = None;
+                    }
+                }
+                "STEP_FAILED" => {
+                    // Symmetric to STEP_COMPLETED: a dispatched-but-not-started
+                    // step may fail (implicit start); a never-dispatched step
+                    // may not.
+                    if s.status != "dispatched" && !s.started {
+                        local_violations.push(format!(
+                            "INVALID step {}: STEP_FAILED (unit {}) without a prior STEP_DISPATCHED",
+                            step_id, unit
+                        ));
+                    } else {
+                        s.status = failed_step_status_from_payload(payload);
+                        s.lease_state = Some("released");
+                        s.active_lease = None;
+                        s.started = false;
+                    }
+                }
+                "LEASE_EXPIRED" => {
+                    if s.lease_state != Some("active") {
+                        local_violations.push(format!(
+                            "INVALID step {}: LEASE_EXPIRED (unit {}) without an active lease",
+                            step_id, unit
+                        ));
+                    } else {
+                        s.lease_state = Some("expired");
+                        s.active_lease = None;
+                        if !s.terminal() {
+                            s.status = "pending";
+                            s.started = false;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.violations.extend(local_violations);
+    }
+}
+
+fn load_task_event_rows(
+    conn: &Connection,
+    task_id: &str,
+) -> Result<Vec<(i64, i64, String, Option<String>, String)>> {
     let mut stmt = conn.prepare(
-        "SELECT step_id, event_type, payload
+        "SELECT causal_unit_id, sequence_in_unit, event_type, step_id, payload
          FROM event_log
-         WHERE task_id = ?1 AND step_id IS NOT NULL
+         WHERE task_id = ?1
          ORDER BY causal_unit_id, sequence_in_unit, id",
     )?;
-
     let rows = stmt.query_map([task_id], |r| {
         Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
+            r.get::<_, i64>(0)?,
+            r.get::<_, i64>(1)?,
             r.get::<_, String>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, String>(4)?,
         ))
     })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
 
-    for row in rows.filter_map(|r| r.ok()) {
-        let (step_id, event_type, payload) = row;
+/// Canonical fold of all events of a task. The single event -> state
+/// derivation used by replay, reconcile, snapshot reconstruction, and the
+/// replay validator.
+fn fold_task_events(conn: &Connection, task_id: &str) -> Result<TaskFold> {
+    let all_steps = ordered_step_ids(conn, task_id).unwrap_or_default();
+    let rows = load_task_event_rows(conn, task_id)?;
 
-        match event_type.as_str() {
-            "STEP_COMPLETED" | "PrimitiveCompleted" => {
+    let mut fold = TaskFold::new(&all_steps);
+    let mut current_unit: i64 = i64::MIN;
+    let mut unit_events: Vec<(i64, String, Option<String>, String)> = Vec::new();
+
+    for (unit, seq, event_type, step_id, payload) in rows {
+        if unit != current_unit {
+            if !unit_events.is_empty() {
+                let events = std::mem::take(&mut unit_events);
+                fold.apply_unit(current_unit, &events);
+            }
+            current_unit = unit;
+        }
+        unit_events.push((seq, event_type, step_id, payload));
+    }
+    if !unit_events.is_empty() {
+        fold.apply_unit(current_unit, &unit_events);
+    }
+
+    Ok(fold)
+}
+
+/// Materialize the canonical fold into the state tables (step_status and
+/// lease terminal transitions). This is the ONLY writer that derives live
+/// state from events; all consumers must agree with it.
+fn replay_events(conn: &Connection, task_id: &str) -> Result<()> {
+    let fold = fold_task_events(conn, task_id)?;
+
+    for (step_id, st) in &fold.steps {
+        conn.execute(
+            "INSERT INTO step_status (task_id, step_id, status) VALUES (?1, ?2, ?3)
+             ON CONFLICT(task_id, step_id) DO UPDATE SET status = excluded.status",
+            params![task_id, step_id, st.status],
+        )?;
+        if let Some(lease_state) = st.lease_state {
+            if lease_state != "active" {
                 conn.execute(
-                    "UPDATE step_status SET status = 'committed'
-                     WHERE task_id = ?1 AND step_id = ?2",
-                    params![task_id, step_id],
-                )?;
-                conn.execute(
-                    "UPDATE leases
-                     SET state = 'completed'
+                    "UPDATE leases SET state = ?3
                      WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
-                    params![task_id, step_id],
+                    params![task_id, step_id, lease_state],
                 )?;
             }
-            "STEP_FAILED" | "PrimitiveFailed" => {
-                conn.execute(
-                    "UPDATE step_status SET status = ?3
-                     WHERE task_id = ?1 AND step_id = ?2",
-                    params![task_id, step_id, failed_step_status_from_payload(&payload)],
-                )?;
-                conn.execute(
-                    "UPDATE leases
-                     SET state = 'released'
-                     WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
-                    params![task_id, step_id],
-                )?;
-            }
-            "STEP_DISPATCHED" | "PrimitiveScheduled" => {
-                let current: String = conn.query_row(
-                    "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-                    params![task_id, step_id],
-                    |r| r.get(0),
-                )?;
-                if !status_outcome(&current)
-                    .as_ref()
-                    .map(terminal_outcome)
-                    .unwrap_or(false)
-                {
-                    conn.execute(
-                        "UPDATE step_status SET status = 'dispatched'
-                         WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id],
-                    )?;
-                }
-            }
-            "LEASE_EXPIRED" => {
-                let current: String = conn.query_row(
-                    "SELECT status FROM step_status WHERE task_id = ?1 AND step_id = ?2",
-                    params![task_id, step_id],
-                    |r| r.get(0),
-                )?;
-                if !status_outcome(&current)
-                    .as_ref()
-                    .map(terminal_outcome)
-                    .unwrap_or(false)
-                {
-                    conn.execute(
-                        "UPDATE step_status SET status = 'pending'
-                         WHERE task_id = ?1 AND step_id = ?2",
-                        params![task_id, step_id],
-                    )?;
-                    conn.execute(
-                        "UPDATE leases
-                         SET state = 'expired'
-                         WHERE task_id = ?1 AND step_id = ?2 AND state = 'active'",
-                        params![task_id, step_id],
-                    )?;
-                }
-            }
-            _ => {}
         }
     }
 
@@ -389,17 +798,30 @@ fn unlock_ready_steps(conn: &Connection, task_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn classify_failure_outcome(reason: &str) -> StepOutcome {
-    if reason.starts_with("retry:") || reason.contains("timeout waiting for lock") {
-        return StepOutcome::RetryableFailure;
+/// Typed failure classification contract.
+///
+/// The outcome is an explicit enum value carried in the STEP_FAILED event
+/// payload ("outcome" field); the reason string is only the input language
+/// at CLI/API boundaries. Rules:
+/// - `fatal:` prefix            -> TerminalFailure (the ONLY path that
+///   permanently rejects a step; must be explicit)
+/// - `blocked:` prefix          -> Blocked (step returns to pending)
+/// - `retry:` prefix            -> RetryableFailure
+/// - lock/provider/model errors -> RetryableFailure (transient by nature)
+/// - anything else              -> RetryableFailure (fail-safe default: an
+///   unknown or infrastructure error must never permanently corrupt a task;
+///   terminal semantics are opt-in, see audit finding C4)
+pub fn classify_failure_outcome(reason: &str) -> StepOutcome {
+    if reason.starts_with("fatal:") {
+        return StepOutcome::TerminalFailure;
     }
     if reason.starts_with("blocked:") {
         return StepOutcome::Blocked;
     }
-    StepOutcome::TerminalFailure
+    StepOutcome::RetryableFailure
 }
 
-fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
+pub fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
     match outcome {
         StepOutcome::Success => "STEP_COMPLETED",
         StepOutcome::TerminalFailure => "STEP_FAILED",
@@ -493,6 +915,7 @@ impl StorageProvider for DefaultStorage {
             "Generic" => TaskClass::Generic,
             "PlannerHardening" => TaskClass::PlannerHardening,
             "CodeFix" => TaskClass::CodeFix,
+            "Question" => TaskClass::Question,
             other => anyhow::bail!("unknown task_class '{}'", other),
         };
         Ok(task_class.to_exec_spec(None))
@@ -529,11 +952,7 @@ impl StorageProvider for DefaultStorage {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
 
-        let unit_gen: i64 = tx.query_row(
-            "INSERT INTO generations DEFAULT VALUES RETURNING id",
-            [],
-            |r| r.get(0),
-        )?;
+        let unit_gen: i64 = allocate_causal_unit(&tx)?;
 
         let event_id = payload
             .get("event_id")
@@ -567,6 +986,54 @@ impl StorageProvider for DefaultStorage {
 
         tx.commit()?;
         Ok(unit_gen)
+    }
+
+    fn append_event_batch(
+        &self,
+        task_id: &str,
+        events: &[(Option<&str>, &str, Value)],
+    ) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+
+        for (step_id, event_type, payload) in events {
+            let unit_gen: i64 = allocate_causal_unit(&tx)?;
+
+            let event_id = payload
+                .get("event_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    format!(
+                        "evt_{}",
+                        &blake3::hash(
+                            format!("{}:{}:{}", task_id, event_type, unit_gen).as_bytes()
+                        )
+                        .to_hex()[..16]
+                    )
+                });
+
+            let payload_str = canonical_json(payload)?;
+
+            tx.execute(
+                "INSERT INTO event_log
+                 (event_id, system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    event_id,
+                    unit_gen,
+                    unit_gen,
+                    task_id,
+                    step_id,
+                    event_type,
+                    payload_str,
+                    unit_gen
+                ],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
     }
 
     fn append_semantic_artifact(
@@ -663,11 +1130,7 @@ impl StorageProvider for DefaultStorage {
             return Err(anyhow!("lease claim lost"));
         }
 
-        let next_generation: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-            [],
-            |r| r.get(0),
-        )?;
+        let next_generation: i64 = allocate_causal_unit(&tx)?;
 
         let claim_payload = json!({
             "lease_id": lease_id,
@@ -768,13 +1231,17 @@ impl StorageProvider for DefaultStorage {
         let tx = conn.transaction()?;
 
         let mut reserve_stmt = tx.prepare(
-            "SELECT step_id, payload
+            "SELECT step_id, payload, system_generation
              FROM event_log
              WHERE task_id = ?1 AND event_type IN ('EFFECT_RESERVED', 'ArtifactProduced')
              ORDER BY id",
         )?;
         let reserve_rows = reserve_stmt.query_map([task_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })?;
         let mut reserved = Vec::new();
         for r in reserve_rows {
@@ -782,14 +1249,14 @@ impl StorageProvider for DefaultStorage {
         }
         drop(reserve_stmt);
 
-        for (step_id, payload) in reserved {
+        for (step_id, payload, generation) in reserved {
             let v: serde_json::Value = serde_json::from_str(&payload)?;
             if let Some(effect_id) = v.get("effect_id").and_then(|x| x.as_str()) {
                 tx.execute(
                     "INSERT OR IGNORE INTO effect_ledger
                      (effect_id, task_id, step_id, reservation_generation, state)
-                     VALUES (?1, ?2, ?3, 0, 'reserved')",
-                    params![effect_id, task_id, step_id],
+                     VALUES (?1, ?2, ?3, ?4, 'reserved')",
+                    params![effect_id, task_id, step_id, generation],
                 )?;
             }
         }
@@ -912,87 +1379,21 @@ impl StorageProvider for DefaultStorage {
     fn rebuild_snapshot(&self, task_id: &str, quiet: bool) -> Result<()> {
         let conn = self.conn()?;
 
-        let latest = conn.query_row(
-            "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
-            [task_id],
-            |r| r.get::<_, String>(0),
-        ).optional()?;
+        // Canonical fold over the FULL event history. A snapshot is a
+        // materialized checkpoint of the same fold that drives replay and
+        // reconcile, so it can never diverge from them: retryable failures
+        // stay pending, terminal failures become rejected, and every spec
+        // step is present (not only the ones with terminal events).
+        let fold = fold_task_events(&conn, task_id)?;
 
-        let (base_generation, mut steps, mut done) = match latest {
-            Some(payload_str) => {
-                let payload: Value = serde_json::from_str(&payload_str)?;
-                let last_generation = payload
-                    .get("last_generation")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-                let done = payload
-                    .get("done")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-
-                let mut steps = BTreeMap::new();
-                if let Some(obj) = payload.get("steps").and_then(|v| v.as_object()) {
-                    for (k, v) in obj {
-                        if let Some(s) = v.as_str() {
-                            steps.insert(k.clone(), s.to_string());
-                        }
-                    }
-                }
-                (last_generation, steps, done)
-            }
-            None => (0, BTreeMap::new(), false),
-        };
-
-        let mut stmt = conn.prepare(
-            "SELECT system_generation, step_id, event_type, payload
-             FROM event_log
-             WHERE task_id = ?1 AND system_generation > ?2
-             ORDER BY causal_unit_id, sequence_in_unit",
-        )?;
-
-        let rows = stmt.query_map(params![task_id, base_generation], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, Option<String>>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-            ))
-        })?;
-
-        let mut last_generation = base_generation;
-        for row in rows {
-            let (generation, step_id, event_type, _payload) = row?;
-            last_generation = generation;
-
-            match event_type.as_str() {
-                "STEP_COMPLETED" | "PrimitiveCompleted" => {
-                    if let Some(step_id) = step_id {
-                        steps.insert(step_id, "committed".to_string());
-                    }
-                }
-                "STEP_FAILED" | "PrimitiveFailed" => {
-                    if let Some(step_id) = step_id {
-                        steps.insert(step_id, "rejected".to_string());
-                    }
-                }
-                "STEP_DISPATCHED" | "PrimitiveScheduled" => {
-                    if let Some(step_id) = step_id {
-                        steps
-                            .entry(step_id)
-                            .or_insert_with(|| "dispatched".to_string());
-                    }
-                }
-                "LEASE_ACQUIRED" => {
-                    if let Some(step_id) = step_id {
-                        steps.entry(step_id).or_insert_with(|| "leased".to_string());
-                    }
-                }
-                "DONE" => {
-                    done = true;
-                }
-                _ => {}
-            }
-        }
+        let base_generation: i64 = 0;
+        let steps: BTreeMap<String, String> = fold
+            .steps
+            .iter()
+            .map(|(step_id, st)| (step_id.clone(), st.status.to_string()))
+            .collect();
+        let done = fold.done;
+        let last_generation = fold.last_unit;
 
         let mut artifact_refs: BTreeMap<String, Value> = BTreeMap::new();
         let mut stmt2 = conn.prepare(
@@ -1017,7 +1418,8 @@ impl StorageProvider for DefaultStorage {
         });
 
         let created_at = last_generation;
-        let state_hash = serde_json::to_string(&state_payload)?.len() as u64;
+        let state_hash_bytes = blake3::hash(serde_json::to_string(&state_payload)?.as_bytes());
+        let state_hash = u64::from_le_bytes(state_hash_bytes.as_bytes()[..8].try_into().unwrap());
 
         let payload = json!({
             "snapshot_version": 1,
@@ -1077,10 +1479,54 @@ impl StorageProvider for DefaultStorage {
             ));
         }
 
+        // Tamper check: the stored state_hash must match the canonical hash
+        // of the embedded state payload.
+        if let Some(state_value) = payload_json.get("state") {
+            let expected_hash: Option<u64> =
+                payload_json.get("state_hash").and_then(|v| v.as_u64());
+            let recomputed = u64::from_le_bytes(
+                blake3::hash(serde_json::to_string(state_value)?.as_bytes()).as_bytes()[..8]
+                    .try_into()
+                    .unwrap(),
+            );
+            if let Some(expected) = expected_hash {
+                if expected != recomputed {
+                    return Err(anyhow!(
+                        "snapshot state_hash mismatch: stored {} != recomputed {}",
+                        expected,
+                        recomputed
+                    ));
+                }
+            }
+        }
+
+        // Real restore: materialize the checkpointed step states into the
+        // live state tables. The snapshot is a materialized view of the
+        // canonical fold at `last_generation`; restoring it re-establishes
+        // the derived state without touching the append-only event log.
+        let mut restored_steps = 0usize;
+        if let Some(obj) = payload_json.get("steps").and_then(|v| v.as_object()) {
+            let tx = conn.unchecked_transaction()?;
+            for (step_id, status) in obj {
+                let status = match status.as_str() {
+                    Some(s) => s,
+                    None => continue,
+                };
+                tx.execute(
+                    "INSERT INTO step_status (task_id, step_id, status) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(task_id, step_id) DO UPDATE SET status = excluded.status",
+                    params![task_id, step_id, status],
+                )?;
+                restored_steps += 1;
+            }
+            tx.commit()?;
+        }
+
         if !quiet {
             println!("RESTORE OK");
             println!("SNAPSHOT_ID: {}", snapshot_id);
             println!("SNAPSHOT_GENERATION: {}", last_generation);
+            println!("RESTORED_STEPS: {}", restored_steps);
 
             if let Some(artifacts) = payload_json.get("artifacts").and_then(|v| v.as_object()) {
                 for (artifact_type, artifact_id) in artifacts {
@@ -1090,12 +1536,6 @@ impl StorageProvider for DefaultStorage {
             println!("{}", payload);
         }
         Ok(())
-    }
-
-    fn set_override_path(&self, path: Option<String>) {
-        OVERRIDE_PATH.with(|p| {
-            *p.borrow_mut() = path;
-        });
     }
 
     fn list_event_log(&self, task_id: &str) -> Result<EventLogRows> {
@@ -1238,11 +1678,11 @@ impl StorageProvider for DefaultStorage {
         println!("READY_QUEUE: {:?}", ready);
 
         for step_id in ready {
-            let current_generation: i64 = tx.query_row(
-                "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
-                [],
-                |r| r.get(0),
-            )?;
+            // Canonical allocator: the dispatch unit id is the logical clock
+            // value of the dispatch itself. Lease timing is expressed against
+            // the same clock (acquired at `unit`, expires two ticks later).
+            let unit = allocate_causal_unit(&tx)?;
+            let current_generation = unit;
 
             let lease_seq: i64 = tx.query_row(
                 "SELECT COALESCE(COUNT(*), 0) + 1 FROM leases WHERE task_id = ?1 AND step_id = ?2",
@@ -1273,7 +1713,7 @@ impl StorageProvider for DefaultStorage {
                 params![task_id, step_id],
             )?;
 
-            let causal_unit_id = current_generation + 1;
+            let causal_unit_id = unit;
 
             let lease_payload = json!({
                 "lease_id": lease_id,
@@ -1418,16 +1858,16 @@ impl StorageProvider for DefaultStorage {
     }
 
     fn expire_leases(&self, task_id: &str) -> Result<()> {
-        let conn = self.conn()?;
-        let current_generation: i64 = conn
-            .query_row(
-                "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
+        let mut conn = self.conn()?;
+        // Atomic: lease state updates, LEASE_EXPIRED events, and step_status
+        // transitions commit together. There is no reachable state where the
+        // leases table says "expired" but the event log has no record of it
+        // (or vice versa). Each expired lease gets its own causal unit.
+        let tx = conn.transaction()?;
 
-        let mut stmt = conn.prepare(
+        let current_generation: i64 = read_clock(&tx)?;
+
+        let mut stmt = tx.prepare(
             "SELECT lease_id, step_id FROM leases WHERE task_id = ?1 AND state = 'active' AND expires_at_generation <= ?2 ORDER BY step_id",
         )?;
 
@@ -1436,12 +1876,15 @@ impl StorageProvider for DefaultStorage {
         })?;
 
         let expired: Vec<(String, String)> = rows.filter_map(|r| r.ok()).collect();
+        drop(stmt);
 
         for (lease_id, step_id) in &expired {
-            conn.execute(
+            tx.execute(
                 "UPDATE leases SET state = 'expired' WHERE lease_id = ?1 AND state = 'active'",
                 [lease_id],
             )?;
+
+            let unit = allocate_causal_unit(&tx)?;
 
             let payload = json!({
                 "lease_id": lease_id,
@@ -1449,25 +1892,23 @@ impl StorageProvider for DefaultStorage {
             });
             let payload_str = canonical_json(&payload)?;
 
-            conn.execute(
+            tx.execute(
                 "INSERT INTO event_log
                  (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
                  VALUES (?1, ?2, 0, ?3, ?4, 'LEASE_EXPIRED', ?5, ?6)",
-                params![
-                    current_generation + 1,
-                    current_generation + 1,
-                    task_id,
-                    step_id,
-                    payload_str,
-                    current_generation + 1
-                ],
+                params![unit, unit, task_id, step_id, payload_str, unit],
             )?;
 
-            conn.execute(
-                "UPDATE step_status SET status = 'ready' WHERE task_id = ?1 AND step_id = ?2 AND status = 'dispatched'",
+            // Fold-consistent transition: an expired lease returns a
+            // dispatched step to `pending`; the scheduler's unlock pass
+            // promotes it back to `ready` when dependencies allow.
+            tx.execute(
+                "UPDATE step_status SET status = 'pending' WHERE task_id = ?1 AND step_id = ?2 AND status IN ('dispatched', 'ready')",
                 params![task_id, step_id],
             )?;
         }
+
+        tx.commit()?;
 
         println!("LEASE_EXPIRE_OK");
         println!("EXPIRED_LEASES: {}", expired.len());
@@ -1616,11 +2057,7 @@ impl StorageProvider for DefaultStorage {
             .optional()?
             .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
 
-        let next_generation: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-            [],
-            |r| r.get(0),
-        )?;
+        let next_generation: i64 = allocate_causal_unit(&tx)?;
 
         let payload = json!({
             "lease_id": lease_id,
@@ -1662,11 +2099,7 @@ impl StorageProvider for DefaultStorage {
             .optional()?
             .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
 
-        let current_generation: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
-            [],
-            |r| r.get(0),
-        )?;
+        let current_generation: i64 = read_clock(&tx)?;
 
         tx.execute(
             "UPDATE leases
@@ -1675,7 +2108,7 @@ impl StorageProvider for DefaultStorage {
             params![current_generation + 2, lease_id, worker_id],
         )?;
 
-        let next_generation: i64 = current_generation + 1;
+        let next_generation: i64 = allocate_causal_unit(&tx)?;
         let payload = json!({
             "lease_id": lease_id,
             "worker_id": worker_id,
@@ -1717,11 +2150,7 @@ impl StorageProvider for DefaultStorage {
             .optional()?
             .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
 
-        let next_generation: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-            [],
-            |r| r.get(0),
-        )?;
+        let next_generation: i64 = allocate_causal_unit(&tx)?;
 
         let outcome = classify_failure_outcome(reason);
         let fail_payload = json!({
@@ -1783,11 +2212,10 @@ impl StorageProvider for DefaultStorage {
             .optional()?
             .ok_or_else(|| anyhow!("no active lease owned by worker for step"))?;
 
-        let next_generation: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(system_generation), 0) + 1 FROM event_log",
-            [],
-            |r| r.get(0),
-        )?;
+        // Atomic commit unit: EFFECT_RESERVED (seq 0) + STEP_COMPLETED (seq 1)
+        // share one causal unit, matching the producer contract the fold and
+        // the replay validator both implement.
+        let next_generation: i64 = allocate_causal_unit(&tx)?;
 
         let outcome = StepOutcome::Success;
         let effect_id = format!("effect/{}/{}", task_id, step_id);
@@ -1813,7 +2241,7 @@ impl StorageProvider for DefaultStorage {
             ],
         )?;
 
-        let complete_generation = next_generation + 1;
+        let complete_generation = next_generation;
         let complete_payload = json!({
             "effect_id": effect_id,
             "lease_id": lease_id,
@@ -1826,7 +2254,7 @@ impl StorageProvider for DefaultStorage {
         tx.execute(
             "INSERT INTO event_log
              (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
-             VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
+             VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7)",
             params![
                 complete_generation,
                 complete_generation,
@@ -1855,96 +2283,49 @@ impl StorageProvider for DefaultStorage {
         Ok(())
     }
 
+    fn task_state(&self, task_id: &str) -> Result<crate::kernel_types::TaskState> {
+        use crate::kernel_types::TaskState;
+        let conn = self.conn()?;
+        let fold = fold_task_events(&conn, task_id)?;
+
+        if fold.steps.is_empty() {
+            return Ok(TaskState::Pending);
+        }
+        let mut all_committed = true;
+        for st in fold.steps.values() {
+            if st.status == "rejected" {
+                return Ok(TaskState::Failed);
+            }
+            if st.status != "committed" {
+                all_committed = false;
+            }
+        }
+        if all_committed {
+            Ok(TaskState::Completed)
+        } else {
+            Ok(TaskState::Running)
+        }
+    }
+
     fn replay_validate(&self, task_id: &str) -> bool {
         let conn = match self.conn() {
             Ok(c) => c,
             Err(_) => return false,
         };
 
-        let mut stmt = match conn.prepare(
-            "SELECT causal_unit_id, sequence_in_unit, event_type
-             FROM event_log
-             WHERE task_id = ?1
-             ORDER BY causal_unit_id, sequence_in_unit",
-        ) {
-            Ok(s) => s,
+        // Canonical fold: unit-shape checks, sequence gaps, and step
+        // lifecycle ordering violations are all detected by the same fold
+        // that drives replay/reconcile/snapshot, so the validator can never
+        // disagree with the producer contract again.
+        let fold = match fold_task_events(&conn, task_id) {
+            Ok(f) => f,
             Err(_) => return false,
         };
-
-        let rows = match stmt.query_map([task_id], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        }) {
-            Ok(r) => r,
-            Err(_) => return false,
-        };
-
-        let mut units: BTreeMap<i64, Vec<(i64, String)>> = BTreeMap::new();
-        for row in rows.filter_map(|r| r.ok()) {
-            units.entry(row.0).or_default().push((row.1, row.2));
-        }
 
         let mut ok = true;
-        for (unit_id, events) in &units {
-            for (i, (seq, _)) in events.iter().enumerate() {
-                if *seq != i as i64 {
-                    eprintln!("INVALID unit {}: gap at {}", unit_id, i);
-                    ok = false;
-                }
-            }
-
-            let types: Vec<&str> = events.iter().map(|(_, t)| t.as_str()).collect();
-            let pos = |name: &str| types.iter().position(|&t| t == name);
-
-            let pos_reserved = || pos("EFFECT_RESERVED").or_else(|| pos("ArtifactProduced"));
-            let pos_dispatched = || pos("STEP_DISPATCHED").or_else(|| pos("PrimitiveScheduled"));
-            let pos_completed = || pos("STEP_COMPLETED").or_else(|| pos("PrimitiveCompleted"));
-            let pos_failed = || pos("STEP_FAILED").or_else(|| pos("PrimitiveFailed"));
-
-            if let (Some(a), Some(b)) = (pos("LEASE_ACQUIRED"), pos_reserved()) {
-                if a >= b {
-                    eprintln!(
-                        "INVALID unit {}: LEASE_ACQUIRED must precede EFFECT_RESERVED",
-                        unit_id
-                    );
-                    ok = false;
-                }
-            }
-
-            if let (Some(a), Some(b)) = (pos_reserved(), pos_dispatched()) {
-                if a >= b {
-                    eprintln!(
-                        "INVALID unit {}: EFFECT_RESERVED must precede STEP_DISPATCHED",
-                        unit_id
-                    );
-                    ok = false;
-                }
-            }
-
-            let completed = pos_completed();
-            let failed = pos_failed();
-
-            if completed.is_some() && failed.is_some() {
-                eprintln!(
-                    "INVALID unit {}: both STEP_COMPLETED and STEP_FAILED present",
-                    unit_id
-                );
-                ok = false;
-            }
-
-            if completed.is_none()
-                && failed.is_none()
-                && (types.contains(&"STEP_DISPATCHED") || types.contains(&"PrimitiveScheduled"))
-            {
-                eprintln!(
-                    "INVALID unit {}: dispatched step has no terminal event",
-                    unit_id
-                );
-                ok = false;
-            }
+        for violation in &fold.violations {
+            eprintln!("{}", violation);
+            ok = false;
         }
 
         let reserved: i64 = conn
@@ -1994,11 +2375,7 @@ impl StorageProvider for DefaultStorage {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
 
-        let unit_gen: i64 = tx.query_row(
-            "INSERT INTO generations DEFAULT VALUES RETURNING id",
-            [],
-            |r| r.get(0),
-        )?;
+        let unit_gen: i64 = allocate_causal_unit(&tx)?;
 
         for (seq, (event_type, payload)) in events.iter().enumerate() {
             if event_type == "EFFECT_RESERVED" || event_type == "ArtifactProduced" {
@@ -2219,6 +2596,168 @@ impl StorageProvider for DefaultStorage {
             ],
         )?;
         Ok(())
+    }
+
+    // ── Read-only observation queries (operator UI boundary) ────────────
+
+    fn list_tasks(&self) -> Result<Vec<TaskListRow>> {
+        let conn = self.conn()?;
+        if !self.table_exists("tasks") {
+            return Ok(Vec::new());
+        }
+        let mut stmt = conn.prepare(
+            "SELECT task_id, task_class, exec_spec IS NOT NULL AND exec_spec != ''
+             FROM tasks ORDER BY task_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(TaskListRow {
+                task_id: r.get(0)?,
+                task_class: r.get(1)?,
+                has_exec_spec: r.get(2)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    fn list_leases(&self) -> Result<Vec<LeaseListRow>> {
+        let conn = self.conn()?;
+        if !self.table_exists("leases") {
+            return Ok(Vec::new());
+        }
+        let mut stmt = conn.prepare(
+            "SELECT lease_id, task_id, step_id, worker_id,
+                    acquired_generation, expires_at_generation, state
+             FROM leases ORDER BY task_id, step_id, lease_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(LeaseListRow {
+                lease_id: r.get(0)?,
+                task_id: r.get(1)?,
+                step_id: r.get(2)?,
+                worker_id: r.get(3)?,
+                acquired_generation: r.get(4)?,
+                expires_at_generation: r.get(5)?,
+                state: r.get(6)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    fn event_rows(&self, task_id: Option<&str>, limit: u32) -> Result<Vec<EventDetailRow>> {
+        let conn = self.conn()?;
+        if !self.table_exists("event_log") {
+            return Ok(Vec::new());
+        }
+        let limit = limit.max(1);
+        let mut out = Vec::new();
+        match task_id {
+            Some(task) => {
+                let mut stmt = conn.prepare(
+                    "SELECT id, system_generation, causal_unit_id, sequence_in_unit,
+                            task_id, step_id, event_type, payload
+                     FROM event_log WHERE task_id = ?1
+                     ORDER BY causal_unit_id, sequence_in_unit, id
+                     LIMIT ?2",
+                )?;
+                let rows = stmt.query_map(params![task, limit], |r| {
+                    Ok(EventDetailRow {
+                        id: r.get(0)?,
+                        system_generation: r.get(1)?,
+                        causal_unit_id: r.get(2)?,
+                        sequence_in_unit: r.get(3)?,
+                        task_id: r.get(4)?,
+                        step_id: r.get(5)?,
+                        event_type: r.get(6)?,
+                        payload: r.get(7)?,
+                    })
+                })?;
+                for row in rows {
+                    out.push(row?);
+                }
+            }
+            None => {
+                let mut stmt = conn.prepare(
+                    "SELECT id, system_generation, causal_unit_id, sequence_in_unit,
+                            task_id, step_id, event_type, payload
+                     FROM event_log
+                     ORDER BY causal_unit_id, sequence_in_unit, id
+                     LIMIT ?1",
+                )?;
+                let rows = stmt.query_map(params![limit], |r| {
+                    Ok(EventDetailRow {
+                        id: r.get(0)?,
+                        system_generation: r.get(1)?,
+                        causal_unit_id: r.get(2)?,
+                        sequence_in_unit: r.get(3)?,
+                        task_id: r.get(4)?,
+                        step_id: r.get(5)?,
+                        event_type: r.get(6)?,
+                        payload: r.get(7)?,
+                    })
+                })?;
+                for row in rows {
+                    out.push(row?);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn replay_violations(&self, task_id: &str) -> Result<Vec<String>> {
+        let conn = self.conn()?;
+        // Same canonical fold used by replay_validate — the UI must never
+        // implement its own validator.
+        let fold = fold_task_events(&conn, task_id)?;
+        let mut violations = fold.violations;
+
+        let reserved: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'reserved'",
+                [task_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if reserved != 0 {
+            violations.push(format!(
+                "INVALID task {}: {} reserved effects remain",
+                task_id, reserved
+            ));
+        }
+        Ok(violations)
+    }
+
+    fn effect_ledger_rows(&self, task_id: &str) -> Result<Vec<EffectLedgerRow>> {
+        let conn = self.conn()?;
+        if !self.table_exists("effect_ledger") {
+            return Ok(Vec::new());
+        }
+        let mut stmt = conn.prepare(
+            "SELECT effect_id, task_id, step_id, reservation_generation, state
+             FROM effect_ledger WHERE task_id = ?1
+             ORDER BY reservation_generation, effect_id",
+        )?;
+        let rows = stmt.query_map([task_id], |r| {
+            Ok(EffectLedgerRow {
+                effect_id: r.get(0)?,
+                task_id: r.get(1)?,
+                step_id: r.get(2)?,
+                reservation_generation: r.get(3)?,
+                state: r.get(4)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 
     fn print_stats(&self) -> Result<(i64, i64, i64, i64)> {

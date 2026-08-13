@@ -1,0 +1,16 @@
+[env]
+# P0 MLX lifecycle — test/development determinism.
+#
+# The model lifecycle manager (src/mlx_lifecycle.rs) auto-starts and
+# auto-unloads mlx_lm.server for local inference. Under cargo-driven
+# commands (test/build/run) it is disabled so the test suite keeps its
+# legacy deterministic contract: no LLM backend listens at
+# OPENAI_BASE_URL and provider calls fail fast instead of spawning a
+# 6.3 GB model mid-suite.
+#
+# The lifecycle itself is covered by:
+#   - tests/mlx_lifecycle_p0.rs (explicit-config manager; real process
+#     spawn/SIGTERM/verify against a lightweight fake server), and
+#   - live acceptance runs that invoke the built binary DIRECTLY
+#     (MLX_IDLE_TIMEOUT_SECS, `lm-lifecycle start|status|stop|watch`).
+MLX_LIFECYCLE = "off"

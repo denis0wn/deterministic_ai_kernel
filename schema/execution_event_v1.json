@@ -1,22 +1,41 @@
 {
-  "contract_version": 1,
-  "event_envelope": {
-    "required": [
-      "event_id",
-      "run_id",
-      "task_id",
-      "event_type",
-      "ts",
-      "payload",
-      "contract_version"
-    ],
-    "event_types": [
-      "task.created",
-      "task.started",
-      "task.progress",
-      "task.succeeded",
-      "task.failed",
-      "task.blocked"
-    ]
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "execution_event_v1.schema.json",
+  "title": "ExecutionEventV1",
+  "description": "Defines the event envelope structure and valid event types for the deterministic AI kernel.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "event_envelope"],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version. Only 1 is accepted."
+    },
+    "event_envelope": {
+      "type": "object",
+      "description": "Required fields and valid types for an event envelope.",
+      "required": ["event_id", "run_id", "task_id", "event_type", "ts", "payload", "contract_version"],
+      "properties": {
+        "event_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "task_id": { "type": "string" },
+        "event_type": {
+          "type": "string",
+          "enum": [
+            "task.created",
+            "task.started",
+            "task.progress",
+            "task.succeeded",
+            "task.failed",
+            "task.blocked"
+          ],
+          "description": "Valid event types for the execution contract."
+        },
+        "ts": { "type": "string" },
+        "payload": { "type": "object" },
+        "contract_version": { "type": "integer" }
+      }
+    }
   }
 }

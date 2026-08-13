@@ -1,24 +1,19 @@
+use crate::providers::storage::StorageProvider;
 use anyhow::Result;
 
+// Worker facades take an explicit database path; no global routing state
+// (audit finding M3).
+
 pub fn claim_worker(db: &str, task_id: &str, worker_id: &str) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().claim_worker(task_id, worker_id);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).claim_worker(task_id, worker_id)
 }
 
 pub fn start_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().start_step(task_id, worker_id, step_id);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).start_step(task_id, worker_id, step_id)
 }
 
 pub fn heartbeat(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().heartbeat(task_id, worker_id, step_id);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).heartbeat(task_id, worker_id, step_id)
 }
 
 pub fn fail_step(
@@ -28,51 +23,20 @@ pub fn fail_step(
     step_id: &str,
     reason: &str,
 ) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().fail_step(task_id, worker_id, step_id, reason);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).fail_step(task_id, worker_id, step_id, reason)
 }
 
 pub fn complete_step(db: &str, task_id: &str, worker_id: &str, step_id: &str) -> Result<()> {
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
-    let res = crate::providers::get_storage().complete_step(task_id, worker_id, step_id);
-    crate::providers::get_storage().set_override_path(None);
-    res
+    crate::providers::storage_for(db).complete_step(task_id, worker_id, step_id)
 }
 
 #[cfg(test)]
 mod tests {
+    // Regression: these tests exercise the PRODUCTION classification
+    // functions (the previous module tested private local clones that could
+    // silently diverge — audit finding "tests of production clones").
+    use crate::providers::storage::{classify_failure_outcome, outcome_to_event_type};
     use crate::workflow::contract::StepOutcome;
-
-    fn classify_failure_outcome(reason: &str) -> StepOutcome {
-        let lower = reason.trim().to_ascii_lowercase();
-
-        if lower.starts_with("retry:")
-            || lower.starts_with("transient:")
-            || lower.starts_with("timeout")
-        {
-            return StepOutcome::RetryableFailure;
-        }
-
-        if lower.starts_with("blocked:")
-            || lower.starts_with("waiting_on:")
-            || lower.starts_with("dependency:")
-        {
-            return StepOutcome::Blocked;
-        }
-
-        StepOutcome::TerminalFailure
-    }
-
-    fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
-        match outcome {
-            StepOutcome::Success => "STEP_COMPLETED",
-            StepOutcome::RetryableFailure | StepOutcome::TerminalFailure | StepOutcome::Blocked => {
-                "STEP_FAILED"
-            }
-        }
-    }
 
     #[test]
     fn classify_failure_outcome_maps_retry_prefixes() {
@@ -95,9 +59,20 @@ mod tests {
     }
 
     #[test]
-    fn classify_failure_outcome_defaults_to_terminal_failure() {
+    fn classify_failure_outcome_is_fail_safe_retryable_by_default() {
+        // Audit finding C4: unknown/provider errors must NEVER become
+        // terminal by default; terminal classification is opt-in via
+        // an explicit `fatal:` prefix.
         assert_eq!(
             classify_failure_outcome("syntax error"),
+            StepOutcome::RetryableFailure
+        );
+        assert_eq!(
+            classify_failure_outcome("primitive_execution_error: mlx request failed"),
+            StepOutcome::RetryableFailure
+        );
+        assert_eq!(
+            classify_failure_outcome("fatal: unrecoverable corruption"),
             StepOutcome::TerminalFailure
         );
     }

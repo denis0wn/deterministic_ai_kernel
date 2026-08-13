@@ -54,12 +54,18 @@ fn capture_capsule_save_and_latest_capsule_work_via_cli() {
 
     let (out, success) = run_kernel(&db, &["latest-capsule", "task-cli-persist"]);
     assert!(success, "latest-capsule failed: {}", out);
-    assert!(
-        out.contains("\"execution_id\": \"task-cli-persist\""),
-        "{}",
-        out
-    );
-    assert!(out.contains("\"event_ids\""), "{}", out);
+
+    // Parse the cli-json-v1 envelope
+    let envelope: serde_json::Value =
+        serde_json::from_str(&out).expect("output must be valid JSON");
+    assert_eq!(envelope["schema_version"], "cli-json-v1");
+    assert_eq!(envelope["command"], "latest-capsule");
+    assert_eq!(envelope["ok"], true);
+
+    // Check report contents
+    let report = &envelope["report"];
+    assert_eq!(report["execution_id"], "task-cli-persist");
+    assert!(report.get("event_ids").is_some());
 
     let _ = fs::remove_file(&db);
     let _ = fs::remove_file(format!("{}-wal", db.display()));

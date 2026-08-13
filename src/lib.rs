@@ -24,8 +24,11 @@ pub mod model_manifest;
 
 pub mod lm_control;
 
+pub mod mlx_lifecycle;
+
 pub mod embeddings;
 pub mod kernel_types;
 pub mod planner_pipeline;
 pub mod registry;
 pub mod semantic_bias;
+pub mod tools;

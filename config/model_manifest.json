@@ -10,7 +10,7 @@
       "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
-      "id": "mlx-community/gemma-4-12b-coder-fable5-composer2.5-4bit",
+      "id": "/Users/denissmoliakov/Models/gemma4-reasoning",
       "role": "task_planning",
       "priority": 1,
       "ram_class": "medium",
@@ -61,7 +61,7 @@
       "priority": 1,
       "ram_class": "light",
       "enabled": true,
-      "notes": "Embedding-only model; not for chat.",
+      "notes": "Embedding-only model; not for chat. Install text-embedding-nomic-embed-text-v1.5 to use.",
       "system_prompt": ""
     }
   ]

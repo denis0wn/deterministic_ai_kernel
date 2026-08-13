@@ -36,14 +36,28 @@ impl ArtifactRecord {
         parent: Option<Uuid>,
         payload_bytes: &[u8],
     ) -> Self {
+        // Deterministic ID: hash of seed + artifact_type + payload hash
+        let payload_hash = blake3::hash(payload_bytes).to_hex().to_string();
+        let id_input = format!(
+            "{}:{:?}:{:?}:{}",
+            seed, artifact_type, version, payload_hash
+        );
+        let id_bytes = blake3::hash(id_input.as_bytes()).as_bytes()[..16]
+            .try_into()
+            .unwrap();
+        let id = Uuid::from_bytes(id_bytes);
+
+        // Deterministic timestamp: epoch + seed (monotonic, reproducible)
+        let timestamp = DateTime::from_timestamp(seed as i64, 0).unwrap_or_else(Utc::now);
+
         Self {
-            id: Uuid::new_v4(),
+            id,
             artifact_type,
             seed,
             version,
-            timestamp: Utc::now(),
+            timestamp,
             parent,
-            hash: blake3::hash(payload_bytes).to_hex().to_string(),
+            hash: payload_hash,
         }
     }
 }

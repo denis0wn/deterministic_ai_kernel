@@ -1,8 +1,14 @@
 {
   "name": "blocked_failure",
   "commands": [
+    ["submit-task", "task_blocked"],
+    ["schedule", "task_blocked"],
+    ["claim-worker", "task_blocked", "worker-planner"],
+    ["start-step", "task_blocked", "worker-planner", "00_analyze_task"],
+    ["fail-step", "task_blocked", "worker-planner", "00_analyze_task", "blocked: waiting on dependency"],
+    ["reconcile", "task_blocked"],
     ["replay", "task_blocked"]
   ],
-  "expect_substrings": ["REPLAY"],
+  "expect_substrings": ["REPLAY OK", "true"],
   "expected_artifact_refs": []
 }

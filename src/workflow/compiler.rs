@@ -231,6 +231,7 @@ mod tests {
                 StepKind::ReadRepository,
                 StepKind::LocateBug,
                 StepKind::PatchCode,
+                StepKind::ApplyPatch,
                 StepKind::RunTests,
                 StepKind::ValidatePatch,
             ]

@@ -4,9 +4,14 @@ kernel.db-shm
 kernel.db-wal
 .DS_Store
 .aider*
+
+# Environment / secrets — never commit
 .env
-.env
-.env
-.env
+.env.backup.*
+
+# Test/build artifacts and generated output
 artifacts/
-.env
+*.bak
+*.db
+.replay_os/
+runs/

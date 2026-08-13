@@ -1,6 +1,19 @@
 {
   "name": "simple_success",
-  "commands": [["replay", "empty-task"]],
-  "expect_substrings": ["REPLAY OK", "true"],
+  "commands": [
+    ["submit-task", "task_success"],
+    ["schedule", "task_success"],
+    ["claim-worker", "task_success", "worker-planner"],
+    ["start-step", "task_success", "worker-planner", "00_analyze_task"],
+    ["complete-step", "task_success", "worker-planner", "00_analyze_task"],
+    ["claim-worker", "task_success", "worker-planner"],
+    ["start-step", "task_success", "worker-planner", "01_plan_execution"],
+    ["complete-step", "task_success", "worker-planner", "01_plan_execution"],
+    ["claim-worker", "task_success", "worker-executor"],
+    ["start-step", "task_success", "worker-executor", "02_execute_changes"],
+    ["complete-step", "task_success", "worker-executor", "02_execute_changes"],
+    ["replay", "task_success"]
+  ],
+  "expect_substrings": ["REPLAY OK", "true", "COMMITTED_EFFECTS"],
   "expected_artifact_refs": []
 }

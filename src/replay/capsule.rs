@@ -11,13 +11,24 @@ pub fn build_replay_capsule(bus: &EventBus, task_id: &str) -> Result<ReplayCapsu
 
     let event_ids = events.iter().map(|e| e.id.clone()).collect::<Vec<_>>();
 
+    // Deterministic created_at derived from event IDs (not wall clock).
+    let id_concat = event_ids.join(":");
+    let created_at = format!("evt-{}", &blake3::hash(id_concat.as_bytes()).to_hex()[..16]);
+
+    // Populate artifacts from semantic_artifacts table.
+    let artifacts = bus
+        .list_semantic_artifacts(task_id, None)?
+        .into_iter()
+        .map(|row| format!("{}:{}", row.artifact_type, row.step_id))
+        .collect();
+
     Ok(ReplayCapsule {
         capsule_id: format!("capsule-{}", task_id),
         execution_id: task_id.to_string(),
-        created_at: "now".to_string(),
+        created_at,
         state_graph,
         event_ids,
-        artifacts: vec![],
+        artifacts,
         environment: BTreeMap::from([
             ("source".to_string(), "event_bus".to_string()),
             ("capture_mode".to_string(), "v0".to_string()),

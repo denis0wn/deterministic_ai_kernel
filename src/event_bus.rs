@@ -1,3 +1,4 @@
+use crate::providers::storage::StorageProvider;
 use anyhow::Result;
 use serde_json::Value;
 use std::path::Path;
@@ -41,20 +42,32 @@ pub struct SemanticArtifactRow {
 
 #[derive(Clone)]
 pub struct EventBus {
-    _db_path: String,
+    // Storage is bound to this bus's database path at construction time.
+    // The bus never mutates process/thread-global routing state, so two
+    // buses on different databases can coexist safely (audit finding M3).
+    storage: crate::providers::storage::DefaultStorage,
 }
 
 impl EventBus {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
         let db_str = db_path.as_ref().to_string_lossy().into_owned();
-        crate::providers::get_storage().set_override_path(Some(db_str.clone()));
-        let conn = rusqlite::Connection::open(&db_str)?;
-        conn.execute_batch(include_str!("../event_bus/schema.sql"))?;
-        Ok(Self { _db_path: db_str })
+        let storage = crate::providers::storage_for(&db_str);
+        // open_initialized applies the canonical schema idempotently.
+        let conn = crate::providers::storage::open_initialized(&db_str)?;
+        drop(conn);
+        Ok(Self { storage })
+    }
+
+    pub fn db_path(&self) -> &str {
+        self.storage.db_path()
+    }
+
+    pub(crate) fn storage(&self) -> &crate::providers::storage::DefaultStorage {
+        &self.storage
     }
 
     pub fn latest_generation_for_task(&self, task_id: &str) -> Result<i64> {
-        crate::providers::get_storage().latest_generation_for_task(task_id)
+        self.storage.latest_generation_for_task(task_id)
     }
 
     #[allow(dead_code)]
@@ -65,7 +78,17 @@ impl EventBus {
         event_type: &str,
         payload: &Value,
     ) -> Result<i64> {
-        crate::providers::get_storage().append_event(task_id, step_id, event_type, payload)
+        self.storage
+            .append_event(task_id, step_id, event_type, payload)
+    }
+
+    #[allow(dead_code)]
+    pub fn append_event_batch(
+        &self,
+        task_id: &str,
+        events: &[(Option<&str>, &str, Value)],
+    ) -> Result<()> {
+        self.storage.append_event_batch(task_id, events)
     }
 
     pub fn append_semantic_artifact(
@@ -76,7 +99,7 @@ impl EventBus {
         artifact_type: &str,
         payload: &Value,
     ) -> Result<()> {
-        crate::providers::get_storage().append_semantic_artifact(
+        self.storage.append_semantic_artifact(
             task_id,
             step_id,
             source_generation,
@@ -101,7 +124,7 @@ impl EventBus {
         task_id: &str,
         step_id: Option<&str>,
     ) -> Result<Vec<SemanticArtifactRow>> {
-        crate::providers::get_storage().list_semantic_artifacts(task_id, step_id)
+        self.storage.list_semantic_artifacts(task_id, step_id)
     }
 
     #[allow(dead_code)]
@@ -111,16 +134,16 @@ impl EventBus {
         step_id: &str,
         events: Vec<(String, Value)>,
     ) -> Result<i64> {
-        crate::providers::get_storage().commit_causal_unit(task_id, step_id, events)
+        self.storage.commit_causal_unit(task_id, step_id, events)
     }
 
     #[allow(dead_code)]
     pub fn query(&self, task_id: &str) -> Result<Vec<EventRow>> {
-        crate::providers::get_storage().query_events(task_id)
+        self.storage.query_events(task_id)
     }
 
     pub fn list_execution_events(&self, task_id: &str) -> Result<Vec<ExecutionEvent>> {
-        crate::providers::get_storage().list_execution_events(task_id)
+        self.storage.list_execution_events(task_id)
     }
 
     pub fn build_state_graph(&self, task_id: &str) -> Result<StateGraph> {
@@ -149,14 +172,14 @@ impl EventBus {
     }
 
     pub fn save_replay_capsule(&self, capsule: &crate::kernel_types::ReplayCapsule) -> Result<()> {
-        crate::providers::get_storage().save_replay_capsule(capsule)
+        self.storage.save_replay_capsule(capsule)
     }
 
     pub fn latest_replay_capsule(
         &self,
         task_id: &str,
     ) -> Result<Option<crate::kernel_types::ReplayCapsule>> {
-        crate::providers::get_storage().latest_replay_capsule(task_id)
+        self.storage.latest_replay_capsule(task_id)
     }
 
     #[allow(dead_code)]
@@ -176,27 +199,26 @@ impl EventBus {
     ) -> Result<()> {
         use serde_json::json;
 
-        self.append_event(
-            task_id,
+        let mut batch: Vec<(Option<String>, String, Value)> = Vec::new();
+
+        batch.push((
             None,
-            "pipeline.started",
-            &json!({ "seed": seed, "planner_version": planner_version }),
-        )?;
+            "pipeline.started".to_string(),
+            json!({ "seed": seed, "planner_version": planner_version }),
+        ));
 
         for (stage, desc, offset_ms) in stage_events {
-            self.append_event(
-                task_id,
+            batch.push((
                 None,
-                &format!("pipeline.stage.{}", stage),
-                &json!({ "desc": desc, "offset_ms": offset_ms }),
-            )?;
+                format!("pipeline.stage.{}", stage),
+                json!({ "desc": desc, "offset_ms": offset_ms }),
+            ));
         }
 
-        self.append_event(
-            task_id,
+        batch.push((
             None,
-            "pipeline.completed",
-            &json!({
+            "pipeline.completed".to_string(),
+            json!({
                 "plan_id": plan_id,
                 "fingerprint": fingerprint,
                 "steps": steps,
@@ -204,9 +226,14 @@ impl EventBus {
                 "critic_passed": critic_passed,
                 "warnings": warnings,
             }),
-        )?;
+        ));
 
-        Ok(())
+        let borrowed: Vec<(Option<&str>, &str, Value)> = batch
+            .iter()
+            .map(|(s, t, p)| (s.as_deref(), t.as_str(), p.clone()))
+            .collect();
+
+        self.append_event_batch(task_id, &borrowed)
     }
 
     #[allow(dead_code)]

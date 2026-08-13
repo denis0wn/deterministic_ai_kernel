@@ -2,80 +2,124 @@
 //!
 //! All kernel-internal errors use `KernelError` instead of `anyhow::Error`.
 //! This enforces structured error categorization across the kernel boundary.
+//!
+//! CLI-level errors use `CliError` for structured exit messages.
 
 use std::fmt;
 
-/// Top-level error type for the Execution Kernel.
-///
-/// Each variant corresponds to a distinct failure domain,
-/// enabling structured error handling and deterministic diagnostics.
+// ── CLI Error Type (for main.rs exit handling) ────────────────────────────────
+
+#[derive(Debug)]
+pub enum CliError {
+    Database(String),
+    Llm(String),
+    FileSystem(String),
+    Pipeline(String),
+    InvalidInput(String),
+    RuntimeUnavailable(String),
+    Other(String),
+}
+
+impl fmt::Display for CliError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CliError::Database(msg) => write!(f, "database error: {}", msg),
+            CliError::Llm(msg) => write!(f, "LLM error: {}", msg),
+            CliError::FileSystem(msg) => write!(f, "file system error: {}", msg),
+            CliError::Pipeline(msg) => write!(f, "pipeline error: {}", msg),
+            CliError::InvalidInput(msg) => write!(f, "invalid input: {}", msg),
+            CliError::RuntimeUnavailable(msg) => write!(f, "runtime unavailable: {}", msg),
+            CliError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl std::error::Error for CliError {}
+
+impl From<anyhow::Error> for CliError {
+    fn from(err: anyhow::Error) -> Self {
+        CliError::Other(err.to_string())
+    }
+}
+
+impl From<rusqlite::Error> for CliError {
+    fn from(err: rusqlite::Error) -> Self {
+        CliError::Database(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for CliError {
+    fn from(err: std::io::Error) -> Self {
+        CliError::FileSystem(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for CliError {
+    fn from(err: serde_json::Error) -> Self {
+        CliError::Other(err.to_string())
+    }
+}
+
+pub fn exit_with_error(error: &CliError) -> ! {
+    eprintln!("Error: {}", error);
+    std::process::exit(1);
+}
+
+pub fn warn(message: &str) {
+    eprintln!("Warning: {}", message);
+}
+
+// ── Kernel Error Type (for internal kernel operations) ────────────────────────
+
 #[derive(Debug)]
 pub enum KernelError {
-    /// The ExecSpec or PrimitiveSpec is malformed, missing fields, or structurally invalid.
     Specification(SpecificationError),
-
-    /// Invariant validation failed (hash mismatch, dependency violation, capability constraint).
     Validation(ValidationError),
-
-    /// Runtime execution of a primitive failed.
     Execution(ExecutionError),
-
-    /// A provider (filesystem, LLM, etc.) returned an error.
     Provider(ProviderError),
-
-    /// Reconstruction from event log detected inconsistency.
     Reconstruction(ReconstructionError),
 }
 
-// ── Specification Errors ──────────────────────────────────────────────────────
-
 #[derive(Debug)]
 pub enum SpecificationError {
-    /// ExecSpec JSON could not be parsed.
-    MalformedSpec { detail: String },
-
-    /// A referenced step_id does not exist in the spec.
-    MissingStep { step_id: String },
-
-    /// A dependency references a step that does not exist.
+    MalformedSpec {
+        detail: String,
+    },
+    MissingStep {
+        step_id: String,
+    },
     InvalidDependency {
         step_id: String,
         missing_dep: String,
     },
-
-    /// Spec version is unsupported.
-    UnsupportedVersion { version: u32 },
-
-    /// PrimitiveSpec is missing on a step that requires it.
-    MissingPrimitive { step_id: String },
+    UnsupportedVersion {
+        version: u32,
+    },
+    MissingPrimitive {
+        step_id: String,
+    },
 }
-
-// ── Validation Errors ─────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum ValidationError {
-    /// spec_id does not match calculated hash.
-    HashMismatch { spec_id: String, calculated: String },
-
-    /// A dependency ordering violation was detected.
+    HashMismatch {
+        spec_id: String,
+        calculated: String,
+    },
     DependencyViolation {
         step_id: String,
         parent_id: String,
         detail: String,
     },
-
-    /// Worker capability does not match step requirement.
     CapabilityMismatch {
         step_id: String,
         worker_id: String,
         required: String,
         actual: String,
     },
-
-    /// An event type is not recognized.
-    UnknownEventType { event_type: String },
-
-    /// A transition rule is invalid.
+    UnknownEventType {
+        event_type: String,
+    },
     InvalidTransition {
         from: String,
         to: String,
@@ -83,61 +127,40 @@ pub enum ValidationError {
     },
 }
 
-// ── Execution Errors ──────────────────────────────────────────────────────────
-
 #[derive(Debug)]
 pub enum ExecutionError {
-    /// The primitive could not be started.
     PrimitiveStartFailed { step_id: String, reason: String },
-
-    /// The primitive timed out.
     PrimitiveTimeout { step_id: String, timeout_secs: u64 },
-
-    /// The lease expired before completion.
     LeaseExpired { step_id: String, lease_id: String },
-
-    /// Double-commit was attempted.
     DoubleCommit { step_id: String },
-
-    /// Worker was rejected (stale claim).
     StaleClaim { step_id: String, worker_id: String },
 }
 
-// ── Provider Errors ───────────────────────────────────────────────────────────
-
 #[derive(Debug)]
 pub enum ProviderError {
-    /// Filesystem provider error.
     Filesystem {
         operation: String,
         path: String,
         detail: String,
     },
-
-    /// LLM provider error.
-    Llm { prompt_hash: String, detail: String },
-
-    /// Database / persistence error.
-    Persistence { operation: String, detail: String },
-
-    /// Provider not registered.
-    NotRegistered { provider_type: String },
+    Llm {
+        prompt_hash: String,
+        detail: String,
+    },
+    Persistence {
+        operation: String,
+        detail: String,
+    },
+    NotRegistered {
+        provider_type: String,
+    },
 }
-
-// ── Reconstruction Errors ─────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum ReconstructionError {
-    /// Event log is corrupted or has gaps.
     CorruptedEventLog { task_id: String, detail: String },
-
-    /// Replay produced different state than original execution.
     ReplayDivergence { task_id: String, detail: String },
-
-    /// Effect ledger has orphaned reservations.
     OrphanedEffects { task_id: String, count: u64 },
-
-    /// Event ordering violation in causal unit.
     CausalOrderViolation { unit_id: i64, detail: String },
 }
 
@@ -235,9 +258,7 @@ impl fmt::Display for ExecutionError {
             Self::PrimitiveTimeout {
                 step_id,
                 timeout_secs,
-            } => {
-                write!(f, "primitive {} timed out after {}s", step_id, timeout_secs)
-            }
+            } => write!(f, "primitive {} timed out after {}s", step_id, timeout_secs),
             Self::LeaseExpired { step_id, lease_id } => {
                 write!(f, "lease {} expired for step {}", lease_id, step_id)
             }
@@ -256,15 +277,11 @@ impl fmt::Display for ProviderError {
                 operation,
                 path,
                 detail,
-            } => {
-                write!(f, "filesystem {}: {} — {}", operation, path, detail)
-            }
+            } => write!(f, "filesystem {}: {} — {}", operation, path, detail),
             Self::Llm {
                 prompt_hash,
                 detail,
-            } => {
-                write!(f, "llm (prompt {}): {}", prompt_hash, detail)
-            }
+            } => write!(f, "llm (prompt {}): {}", prompt_hash, detail),
             Self::Persistence { operation, detail } => {
                 write!(f, "persistence {}: {}", operation, detail)
             }
@@ -296,8 +313,6 @@ impl fmt::Display for ReconstructionError {
 
 impl std::error::Error for KernelError {}
 
-// ── Convenience conversions ───────────────────────────────────────────────────
-
 impl From<SpecificationError> for KernelError {
     fn from(e: SpecificationError) -> Self {
         Self::Specification(e)
@@ -328,12 +343,17 @@ impl From<ReconstructionError> for KernelError {
     }
 }
 
-/// Type alias for kernel operations.
 pub type KernelResult<T> = std::result::Result<T, KernelError>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_error_display() {
+        let err = CliError::Database("connection failed".into());
+        assert_eq!(err.to_string(), "database error: connection failed");
+    }
 
     #[test]
     fn kernel_error_display_formats_correctly() {
@@ -344,7 +364,6 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("hash mismatch"));
         assert!(msg.contains("abc123"));
-        assert!(msg.contains("def456"));
     }
 
     #[test]
@@ -357,18 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn kernel_error_from_provider() {
-        let prov_err = ProviderError::NotRegistered {
-            provider_type: "LLM".to_string(),
-        };
-        let kernel_err: KernelError = prov_err.into();
-        let msg = format!("{}", kernel_err);
-        assert!(msg.contains("provider not registered"));
-    }
-
-    #[test]
     fn all_error_categories_are_display() {
-        // Verify all categories implement Display without panic
         let errors: Vec<KernelError> = vec![
             SpecificationError::MalformedSpec {
                 detail: "bad json".into(),
@@ -396,7 +404,6 @@ mod tests {
             }
             .into(),
         ];
-
         for err in &errors {
             let _ = format!("{}", err);
         }

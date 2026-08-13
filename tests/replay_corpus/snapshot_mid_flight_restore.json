@@ -1,11 +1,15 @@
 {
   "name": "snapshot_mid_flight_restore",
   "commands": [
-    ["replay", "empty-task"],
-    ["snapshot", "empty-task"],
-    ["restore", "empty-task"],
-    ["replay", "empty-task"]
+    ["submit-task", "task_snap_mid"],
+    ["schedule", "task_snap_mid"],
+    ["claim-worker", "task_snap_mid", "worker-planner"],
+    ["start-step", "task_snap_mid", "worker-planner", "00_analyze_task"],
+    ["complete-step", "task_snap_mid", "worker-planner", "00_analyze_task"],
+    ["snapshot", "task_snap_mid"],
+    ["restore", "task_snap_mid"],
+    ["replay", "task_snap_mid"]
   ],
-  "expect_substrings": ["SNAPSHOT OK", "RESTORE OK", "REPLAY OK"],
+  "expect_substrings": ["SNAPSHOT OK", "RESTORE OK", "REPLAY OK", "true"],
   "expected_artifact_refs": []
 }

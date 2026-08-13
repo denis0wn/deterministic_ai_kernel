@@ -1,4 +1,62 @@
-use crate::workflow::contract::{Step, StepKind};
+use crate::workflow::contract::{Step, StepKind, TaskClass};
+
+/// English interrogative/auxiliary openers that mark a direct question.
+const QUESTION_STARTERS_EN: &[&str] = &[
+    "what", "why", "how", "which", "who", "whom", "when", "where", "is", "are", "was", "were",
+    "does", "do", "did", "can", "could", "will", "would", "should",
+];
+
+/// Russian interrogative openers that mark a direct question.
+const QUESTION_STARTERS_RU: &[&str] = &[
+    "сколько",
+    "что",
+    "чему",
+    "какой",
+    "какая",
+    "какое",
+    "какие",
+    "кто",
+    "когда",
+    "где",
+    "почему",
+    "зачем",
+    "как",
+];
+
+/// Imperative compute openers (EN+RU): tasks that demand a concrete value,
+/// not code changes.
+const COMPUTE_OPENERS_EN: &[&str] = &["calculate", "compute"];
+const COMPUTE_OPENERS_RU: &[&str] = &[
+    "вычисли",
+    "вычислите",
+    "посчитай",
+    "посчитайте",
+    "рассчитай",
+    "рассчитайте",
+];
+
+fn strip_token_punctuation(token: &str) -> &str {
+    token.trim_matches(|c: char| !c.is_alphanumeric())
+}
+
+/// Deterministic question detection (P0, H-2 fix).
+///
+/// A step text is a question when it opens with an interrogative (EN+RU),
+/// opens with a compute imperative, ends with '?', or asks "сколько".
+/// This runs AFTER CodeFix keyword pairs (so "can you find the bug?" stays
+/// a CodeFix step) and BEFORE PlannerHardening keywords (so "what is a unit
+/// test?" is a question, not planner hardening).
+fn is_question(lower: &str, tokens: &[&str]) -> bool {
+    let first = tokens.first().copied().unwrap_or("");
+    QUESTION_STARTERS_EN.contains(&first)
+        || QUESTION_STARTERS_RU.contains(&first)
+        || COMPUTE_OPENERS_EN.contains(&first)
+        || COMPUTE_OPENERS_RU.contains(&first)
+        || lower.ends_with('?')
+        || tokens
+            .iter()
+            .any(|t| strip_token_punctuation(t) == "сколько")
+}
 
 pub fn normalize_step(raw: &str) -> Option<StepKind> {
     let cleaned = raw
@@ -15,8 +73,19 @@ pub fn normalize_step(raw: &str) -> Option<StepKind> {
         return None;
     }
 
-    let lower = cleaned.to_ascii_lowercase();
-    let tokens: Vec<&str> = lower.split_whitespace().collect();
+    // Full Unicode lowercase (not to_ascii_lowercase): Russian question
+    // detection requires Cyrillic capitals to fold ("Сколько" -> "сколько").
+    // For pure-ASCII inputs this is identical to the previous behavior.
+    let lower = cleaned.to_lowercase();
+    // Tokens are stripped of surrounding punctuation so keyword matching
+    // survives real payloads ("patch code, run tests" -> "code", not
+    // "code,"). Without this, CodeFix pairs silently miss on commas/periods
+    // (observed live in the P1 CodeFix run).
+    let tokens: Vec<&str> = lower
+        .split_whitespace()
+        .map(strip_token_punctuation)
+        .filter(|t| !t.is_empty())
+        .collect();
 
     let has = |needle: &str| tokens.contains(&needle);
     let contains_pair = |a: &str, b: &str| has(a) && has(b);
@@ -33,6 +102,41 @@ pub fn normalize_step(raw: &str) -> Option<StepKind> {
 
     if contains_pair("parse", "cli") || contains_pair("parse", "arguments") {
         return None;
+    }
+
+    // CodeFix step kinds (must precede PlannerHardening patterns to avoid
+    // "test"/"validate" keyword collisions).
+    if contains_pair("read", "repository") || contains_pair("read", "repo") {
+        return Some(StepKind::ReadRepository);
+    }
+
+    if contains_pair("locate", "bug") || contains_pair("find", "bug") {
+        return Some(StepKind::LocateBug);
+    }
+
+    if contains_pair("patch", "code") || contains_pair("fix", "code") {
+        return Some(StepKind::PatchCode);
+    }
+
+    // P2: applying a validated patch is a kernel-only effect step, distinct
+    // from generating one. It was previously folded into PatchCode, which
+    // re-invoked the LLM instead of applying anything.
+    if contains_pair("apply", "patch") {
+        return Some(StepKind::ApplyPatch);
+    }
+
+    if contains_pair("run", "tests") {
+        return Some(StepKind::RunTests);
+    }
+
+    if contains_pair("validate", "patch") {
+        return Some(StepKind::ValidatePatch);
+    }
+
+    // Interrogative/analytical questions route to the answer flow instead of
+    // falling through to the ExecuteChanges default (P0, H-2 fix).
+    if is_question(&lower, &tokens) {
+        return Some(StepKind::AnswerQuestion);
     }
 
     if has("fallback") || has("error") {
@@ -189,11 +293,29 @@ pub fn validate_steps(steps: Vec<Step>) -> Vec<Step> {
     validated
 }
 
+/// Deterministic task-intent classification for the production pipeline.
+///
+/// Kernel-owned: no LLM input is consulted. A plan whose steps are ALL
+/// interrogative/answer steps is a `Question` task; anything else keeps the
+/// conservative `Generic` classification (P0, H-2 fix). Empty plans are
+/// Generic so the existing empty-plan error surfaces stay unchanged.
+pub fn classify_task_class(step_texts: &[String]) -> TaskClass {
+    if !step_texts.is_empty()
+        && step_texts
+            .iter()
+            .all(|text| normalize_step(text) == Some(StepKind::AnswerQuestion))
+    {
+        TaskClass::Question
+    } else {
+        TaskClass::Generic
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_semantic_bias, normalize_step, parse_steps, validate_steps, SemanticBias, Step,
-        StepKind,
+        apply_semantic_bias, classify_task_class, normalize_step, parse_steps, validate_steps,
+        SemanticBias, Step, StepKind,
     };
     use crate::workflow::planner::seed_to_bias;
     use proptest::prelude::*;
@@ -600,6 +722,162 @@ mod tests {
                 StepKind::AddPlannerTestCoverage,
                 StepKind::ValidatePlannerOutput,
             ]
+        );
+    }
+
+    #[test]
+    fn normalize_step_maps_codefix_step_kinds() {
+        assert_eq!(
+            normalize_step("Read Repository"),
+            Some(StepKind::ReadRepository)
+        );
+        assert_eq!(normalize_step("Locate Bug"), Some(StepKind::LocateBug));
+        assert_eq!(normalize_step("Patch Code"), Some(StepKind::PatchCode));
+        assert_eq!(normalize_step("Run Tests"), Some(StepKind::RunTests));
+        assert_eq!(
+            normalize_step("Validate Patch"),
+            Some(StepKind::ValidatePatch)
+        );
+    }
+
+    #[test]
+    fn normalize_step_codefix_patterns_precede_planner_hardening() {
+        // "Run Tests" must not match AddPlannerTestCoverage
+        assert_eq!(normalize_step("Run Tests"), Some(StepKind::RunTests));
+        // "Validate Patch" must not match ValidatePlannerOutput
+        assert_eq!(
+            normalize_step("Validate Patch"),
+            Some(StepKind::ValidatePatch)
+        );
+    }
+
+    #[test]
+    fn normalize_step_codefix_variants() {
+        assert_eq!(normalize_step("read repo"), Some(StepKind::ReadRepository));
+        assert_eq!(
+            normalize_step("find bug in parser"),
+            Some(StepKind::LocateBug)
+        );
+        assert_eq!(
+            normalize_step("apply patch to auth module"),
+            Some(StepKind::ApplyPatch)
+        );
+        assert_eq!(
+            normalize_step("patch code in auth module"),
+            Some(StepKind::PatchCode)
+        );
+    }
+
+    // ── P0 (H-2): question detection ───────────────────────────────────────
+
+    #[test]
+    fn normalize_step_maps_english_arithmetic_question() {
+        assert_eq!(
+            normalize_step("What is 17 × 19?"),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_maps_russian_question_from_acceptance() {
+        assert_eq!(
+            normalize_step(
+                "На складе было 7 насосов, 3 забрали. Сколько осталось? Ответь по-русски."
+            ),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_maps_russian_compute_imperative() {
+        assert_eq!(
+            normalize_step("Вычисли сумму чисел от 1 до 10."),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_maps_english_compute_imperative() {
+        assert_eq!(
+            normalize_step("Calculate the total throughput over 8 hours"),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_question_mark_alone_marks_question() {
+        assert_eq!(
+            normalize_step("The line rate is 90 units per hour, correct?"),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_codefix_pairs_precede_question_detection() {
+        // "can you find the bug?" must stay a CodeFix step, not a question.
+        assert_eq!(
+            normalize_step("Can you find the bug in auth?"),
+            Some(StepKind::LocateBug)
+        );
+        assert_eq!(
+            normalize_step("Please run tests now?"),
+            Some(StepKind::RunTests)
+        );
+    }
+
+    #[test]
+    fn normalize_step_questions_precede_planner_hardening_keywords() {
+        // "what is a unit test?" is a question, not AddPlannerTestCoverage.
+        assert_eq!(
+            normalize_step("What is a unit test?"),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_imperatives_are_not_questions() {
+        assert_eq!(normalize_step("Refactor the scheduler module"), None);
+        assert_eq!(
+            normalize_step("Write tests for planner output"),
+            Some(StepKind::AddPlannerTestCoverage)
+        );
+    }
+
+    #[test]
+    fn classify_task_class_question_payload() {
+        let steps = vec!["What is 17 × 19?".to_string()];
+        assert_eq!(
+            classify_task_class(&steps),
+            crate::workflow::contract::TaskClass::Question
+        );
+    }
+
+    #[test]
+    fn classify_task_class_generic_payload() {
+        let steps = vec!["Refactor the parser and add tests".to_string()];
+        assert_eq!(
+            classify_task_class(&steps),
+            crate::workflow::contract::TaskClass::Generic
+        );
+    }
+
+    #[test]
+    fn classify_task_class_mixed_plan_is_generic() {
+        let steps = vec![
+            "What is the bottleneck?".to_string(),
+            "Patch code to fix it".to_string(),
+        ];
+        assert_eq!(
+            classify_task_class(&steps),
+            crate::workflow::contract::TaskClass::Generic
+        );
+    }
+
+    #[test]
+    fn classify_task_class_empty_plan_is_generic() {
+        assert_eq!(
+            classify_task_class(&[]),
+            crate::workflow::contract::TaskClass::Generic
         );
     }
 }

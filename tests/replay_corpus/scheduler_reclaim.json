@@ -1,8 +1,16 @@
 {
   "name": "scheduler_reclaim",
   "commands": [
+    ["submit-task", "task_reclaim"],
+    ["schedule", "task_reclaim"],
+    ["claim-worker", "task_reclaim", "worker-planner"],
+    ["start-step", "task_reclaim", "worker-planner", "00_analyze_task"],
+    ["expire-leases", "task_reclaim"],
+    ["schedule", "task_reclaim"],
+    ["claim-worker", "task_reclaim", "worker-planner"],
+    ["complete-step", "task_reclaim", "worker-planner", "00_analyze_task"],
     ["replay", "task_reclaim"]
   ],
-  "expect_substrings": ["REPLAY"],
+  "expect_substrings": ["EXPIRED_LEASES: 1", "REPLAY OK", "true"],
   "expected_artifact_refs": []
 }

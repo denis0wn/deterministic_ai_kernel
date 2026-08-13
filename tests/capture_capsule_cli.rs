@@ -50,13 +50,19 @@ fn capture_capsule_cli_outputs_capsule_json() {
 
     let (out, success) = run_kernel(&db, &["capture-capsule", "task-cli-capsule"]);
     assert!(success, "capture-capsule failed: {}", out);
-    assert!(
-        out.contains("\"execution_id\": \"task-cli-capsule\""),
-        "{}",
-        out
-    );
-    assert!(out.contains("\"event_ids\""), "{}", out);
-    assert!(out.contains("\"determinism_envelope\""), "{}", out);
+
+    // Parse the cli-json-v1 envelope
+    let envelope: serde_json::Value =
+        serde_json::from_str(&out).expect("output must be valid JSON");
+    assert_eq!(envelope["schema_version"], "cli-json-v1");
+    assert_eq!(envelope["command"], "capture-capsule");
+    assert_eq!(envelope["ok"], true);
+
+    // Check report contents
+    let report = &envelope["report"];
+    assert_eq!(report["execution_id"], "task-cli-capsule");
+    assert!(report.get("event_ids").is_some());
+    assert!(report.get("determinism_envelope").is_some());
 
     let _ = fs::remove_file(&db);
     let _ = fs::remove_file(format!("{}-wal", db.display()));

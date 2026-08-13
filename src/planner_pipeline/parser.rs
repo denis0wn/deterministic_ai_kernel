@@ -5,7 +5,300 @@ use anyhow::{bail, Result};
 
 pub struct Parser;
 
+/// Coordination conjunctions that signal multiple actions in free-form text.
+const CONJUNCTIONS: &[&str] = &[
+    " and ",
+    " then ",
+    " also ",
+    " additionally ",
+    " furthermore ",
+    " and then ",
+    " after that ",
+    " и ",
+    " затем ",
+    " также ",
+    " после этого ",
+    " и также ",
+];
+
+/// Minimum payload length to consider for decomposition.
+const DECOMPOSE_LENGTH_THRESHOLD: usize = 60;
+
+/// Action verbs (English) — words that signal an actionable step.
+const ACTION_VERBS_EN: &[&str] = &[
+    "refactor",
+    "add",
+    "update",
+    "analyze",
+    "propose",
+    "read",
+    "find",
+    "patch",
+    "audit",
+    "classify",
+    "recommend",
+    "fix",
+    "write",
+    "create",
+    "remove",
+    "test",
+    "document",
+    "implement",
+    "debug",
+    "optimize",
+    "review",
+    "deploy",
+    "build",
+    "configure",
+    "migrate",
+    "validate",
+    "verify",
+    "extract",
+    "rename",
+    "move",
+    "split",
+    "merge",
+    "delete",
+    "insert",
+    "replace",
+    "check",
+    "measure",
+    "profile",
+    "benchmark",
+    "compare",
+    "evaluate",
+    "design",
+    "plan",
+    "estimate",
+    "calculate",
+    "compute",
+    "parse",
+    "normalize",
+    "transform",
+    "convert",
+    "encode",
+    "decode",
+    "encrypt",
+    "decrypt",
+    "compress",
+    "decompress",
+    "upload",
+    "download",
+    "sync",
+];
+
+/// Action verbs (Russian) — words that signal an actionable step.
+const ACTION_VERBS_RU: &[&str] = &[
+    "сделай",
+    "добавь",
+    "обнови",
+    "проверь",
+    "найди",
+    "исправь",
+    "удали",
+    "напиши",
+    "создай",
+    "реализуй",
+    "настрой",
+    "мигрируй",
+    "валидируй",
+    "отладь",
+    "оптимизируй",
+    "проведи",
+    "разверни",
+    "собери",
+    "нарисуй",
+    "проанализируй",
+    "предложи",
+    "прочитай",
+    "замени",
+    "переименуй",
+    "перемести",
+    "раздели",
+    "объедини",
+    "вставь",
+    "запусти",
+    "останови",
+    "измени",
+    "измерь",
+    "сравни",
+    "оцени",
+    "спроектируй",
+];
+
+/// Minimum length for a chunk to be considered a valid step after action-chunk split.
+const ACTION_CHUNK_MIN_LEN: usize = 15;
+
+/// Maximum number of steps we'll produce from action-chunk detection.
+const ACTION_CHUNK_MAX_STEPS: usize = 8;
+
 impl Parser {
+    /// Check if a text starts with an action verb (after trimming).
+    fn starts_with_action_verb(chunk: &str) -> bool {
+        let lower = chunk.trim().to_lowercase();
+        ACTION_VERBS_EN.iter().any(|v| lower.starts_with(v))
+            || ACTION_VERBS_RU.iter().any(|v| lower.starts_with(v))
+    }
+
+    /// Split text by comma+conjunction boundaries, producing raw chunks.
+    /// Splits on ", " and conjunctions, but keeps "and X" attached to the previous chunk
+    /// when the next chunk doesn't start with an action verb.
+    fn split_action_chunks(text: &str) -> Vec<String> {
+        let lower = text.to_lowercase();
+        let mut chunks = Vec::new();
+
+        // First split by comma
+        for part in text.split(',') {
+            let part = part.trim().to_string();
+            if !part.is_empty() {
+                chunks.push(part);
+            }
+        }
+
+        // If comma split produced only 1 chunk, try conjunction split
+        if chunks.len() <= 1 {
+            chunks.clear();
+            for conj in CONJUNCTIONS {
+                if lower.contains(conj) {
+                    for part in lower.split(conj) {
+                        let part = part.trim().to_string();
+                        if !part.is_empty() {
+                            chunks.push(part);
+                        }
+                    }
+                    break; // use first matching conjunction
+                }
+            }
+        }
+
+        // Post-process: merge trailing fragments that don't start with action verbs
+        // into the previous chunk (e.g., "and tests" → merge into previous)
+        let mut merged: Vec<String> = Vec::new();
+        for chunk in chunks {
+            let chunk = chunk.trim().trim_end_matches('.').trim().to_string();
+            if chunk.is_empty() {
+                continue;
+            }
+
+            if let Some(last) = merged.last_mut() {
+                // If this chunk doesn't start with an action verb, it's likely a continuation
+                if !Self::starts_with_action_verb(&chunk) && last.len() + chunk.len() < 200 {
+                    last.push_str(", ");
+                    last.push_str(&chunk);
+                    continue;
+                }
+            }
+            merged.push(chunk);
+        }
+
+        merged
+    }
+
+    /// Decompose a single-step free-form task into multiple actionable steps.
+    /// Returns None if the task doesn't need decomposition.
+    pub(crate) fn decompose_free_form(text: &str) -> Option<Vec<String>> {
+        let trimmed = text.trim();
+
+        // Don't decompose short tasks
+        if trimmed.len() < DECOMPOSE_LENGTH_THRESHOLD {
+            return None;
+        }
+
+        // Level 1: split by semicolons (highest confidence, no conjunction needed)
+        let parts = Self::split_by_semicolons(trimmed);
+        if parts.len() > 1 {
+            return Some(parts);
+        }
+
+        // Level 2: split by coordination conjunctions (need conjunctions present)
+        if Self::has_conjunctions(trimmed) {
+            let conj_parts = Self::split_by_conjunctions(trimmed);
+            if conj_parts.len() > 1 {
+                return Some(conj_parts);
+            }
+        }
+
+        // Level 3: action-chunk detection — split by comma/conjunction,
+        // validate each chunk starts with an action verb
+        let action_chunks = Self::split_action_chunks(trimmed);
+        let valid_chunks: Vec<String> = action_chunks
+            .iter()
+            .filter(|c| c.len() >= ACTION_CHUNK_MIN_LEN)
+            .cloned()
+            .collect();
+
+        if valid_chunks.len() >= 2 && valid_chunks.len() <= ACTION_CHUNK_MAX_STEPS {
+            // Verify at least half the chunks start with action verbs
+            let verb_count = valid_chunks
+                .iter()
+                .filter(|c| Self::starts_with_action_verb(c))
+                .count();
+            if verb_count >= (valid_chunks.len() + 1) / 2 {
+                return Some(valid_chunks);
+            }
+        }
+
+        None
+    }
+
+    /// Check if a text contains coordination conjunctions between action phrases.
+    fn has_conjunctions(text: &str) -> bool {
+        let lower = text.to_lowercase();
+        CONJUNCTIONS.iter().any(|c| lower.contains(c))
+    }
+
+    /// Split text by semicolons as a first-pass decomposition.
+    fn split_by_semicolons(text: &str) -> Vec<String> {
+        text.split(';')
+            .map(|s| s.trim().trim_end_matches('.').trim().to_string())
+            .filter(|s| !s.is_empty() && s.len() > 5)
+            .collect()
+    }
+
+    /// Count how many action verbs appear in the text (case-insensitive).
+    fn count_action_verbs(text: &str) -> usize {
+        let lower = text.to_lowercase();
+        let mut count = 0;
+        for verb in ACTION_VERBS_EN.iter().chain(ACTION_VERBS_RU.iter()) {
+            if lower.contains(verb) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Split text by coordination conjunctions ("and", "then", "also", "и", "затем", "также").
+    /// Only splits when each resulting part is a meaningful action (>10 chars).
+    fn split_by_conjunctions(text: &str) -> Vec<String> {
+        let lower = text.to_lowercase();
+        let mut best_parts: Vec<String> = Vec::new();
+
+        // Try each conjunction pattern, pick the one that produces the most meaningful parts
+        for conj in CONJUNCTIONS {
+            if !lower.contains(conj) {
+                continue;
+            }
+            // Find the actual position of the conjunction in the original text
+            let conj_lower = conj.trim();
+            let parts: Vec<String> = text
+                .split(|c: char| {
+                    let _cl = c.to_lowercase().next().unwrap_or(c);
+                    // Check if this char starts a conjunction match
+                    let remaining = &text[text.find(c).unwrap_or(0)..];
+                    remaining.to_lowercase().starts_with(conj_lower)
+                })
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty() && s.len() > 10)
+                .collect();
+
+            if parts.len() > best_parts.len() {
+                best_parts = parts;
+            }
+        }
+
+        best_parts
+    }
+
     fn extract_explicit_steps(payload: &str) -> Vec<String> {
         let mut steps = Vec::new();
 
@@ -171,11 +464,21 @@ impl Parser {
         }
 
         // Fallback: non-empty lines
-        lines
+        let fallback: Vec<String> = lines
             .iter()
             .map(|l| l.trim().to_string())
             .filter(|l| !l.is_empty())
-            .collect()
+            .collect();
+
+        // Decomposition: if we got exactly 1 step from a long free-form payload,
+        // try to decompose it into actionable sub-steps
+        if fallback.len() == 1 {
+            if let Some(decomposed) = Self::decompose_free_form(&fallback[0]) {
+                return decomposed;
+            }
+        }
+
+        fallback
     }
 }
 
@@ -188,6 +491,44 @@ impl PipelineStage for Parser {
 
         if steps.is_empty() {
             bail!("Parser: payload produced no steps after trimming");
+        }
+
+        // Observability: log decomposition result
+        let action_count = Self::count_action_verbs(&input.payload);
+        let trigger = if steps.len() > 1 {
+            // Determine which strategy produced the steps
+            if Self::split_by_semicolons(&input.payload).len() > 1 {
+                "semicolon"
+            } else if Self::has_conjunctions(&input.payload)
+                && Self::split_by_conjunctions(&input.payload).len() > 1
+            {
+                "conjunction"
+            } else if Self::split_action_chunks(&input.payload).len() > 1 {
+                "action_chunk"
+            } else {
+                "explicit"
+            }
+        } else {
+            "none"
+        };
+
+        eprintln!(
+            "observability: component=parser operation=decompose \
+             payload_len={} action_count={} steps={} trigger={}",
+            input.payload.len(),
+            action_count,
+            steps.len(),
+            trigger,
+        );
+
+        // Warn if long payload with multiple actions produced only 1 step
+        if steps.len() == 1 && input.payload.len() > 150 && action_count >= 2 {
+            eprintln!(
+                "observability: component=parser operation=decomposition_insufficient \
+                 payload_len={} action_count={} steps=1",
+                input.payload.len(),
+                action_count,
+            );
         }
 
         Ok(IntermediateRepresentation { steps })
@@ -311,5 +652,265 @@ mod tests {
             ir.steps,
             vec!["prepare database", "create API", "run integration tests"]
         );
+    }
+
+    // ── Decomposition tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn decomposition_short_task_stays_single() {
+        // Short free-form task without conjunctions → no decomposition
+        let input = RawInput {
+            payload: "Fix the typo in README.md".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 1);
+    }
+
+    #[test]
+    fn decomposition_multi_action_with_conjunctions() {
+        // Long free-form task with "and" conjunctions → should decompose
+        let input = RawInput {
+            payload: "Refactor the parser module to support new syntax and add comprehensive tests for all edge cases and update the documentation to reflect the changes and verify backward compatibility".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() > 1,
+            "Expected decomposition for multi-action task, got {} steps: {:?}",
+            ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn decomposition_deterministic() {
+        // Same payload → same result
+        let payload = "Refactor the parser module to support new syntax and add comprehensive tests for all edge cases and update the documentation to reflect the changes and verify backward compatibility";
+        let input1 = RawInput {
+            payload: payload.into(),
+        };
+        let input2 = RawInput {
+            payload: payload.into(),
+        };
+        let ir1 = Parser.run(input1, &ctx()).expect("test failure");
+        let ir2 = Parser.run(input2, &ctx()).expect("test failure");
+        assert_eq!(ir1.steps, ir2.steps);
+    }
+
+    #[test]
+    fn decomposition_russian_conjunctions() {
+        // Russian conjunctions: "и", "затем", "также"
+        let input = RawInput {
+            payload: "Рефактори модуль парсера чтобы он поддерживал новый синтаксис и добавь тесты для всех edge cases и обнови документацию и проверь backward compatibility".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() > 1,
+            "Expected decomposition for Russian multi-action, got {} steps",
+            ir.steps.len()
+        );
+    }
+
+    #[test]
+    fn decomposition_semicolon_split() {
+        // Semicolons are high-confidence split points
+        let input = RawInput {
+            payload: "Refactor the parser module; add comprehensive tests for all edge cases; update the documentation to reflect the changes; verify backward compatibility with existing tests".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() >= 3,
+            "Expected ≥3 steps from semicolons, got {}",
+            ir.steps.len()
+        );
+    }
+
+    #[test]
+    fn decomposition_empty_payload_errors() {
+        let input = RawInput {
+            payload: "   ".into(),
+        };
+        assert!(Parser.run(input, &ctx()).is_err());
+    }
+
+    #[test]
+    fn decomposition_single_word_stays_single() {
+        let input = RawInput {
+            payload: "debug".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 1);
+    }
+
+    #[test]
+    fn decomposition_abbreviation_not_split() {
+        // "e.g." and "3.14" should not create false split points
+        let input = RawInput {
+            payload: "Use e.g. regex patterns like 3.14 for validation".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 1);
+    }
+
+    #[test]
+    fn decomposition_no_over_split() {
+        // A coherent single action with "and" but no second verb group
+        // should NOT be split
+        let input = RawInput {
+            payload: "Fix the red and blue buttons in the header".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        // This is a single action, should stay as 1 step
+        assert_eq!(ir.steps.len(), 1);
+    }
+
+    #[test]
+    fn explicit_formats_unaffected() {
+        // Explicit formats should still work after decomposition is added
+        let input = RawInput {
+            payload: "1. First step\n2. Second step\n3. Third step".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 3);
+    }
+
+    #[test]
+    fn bullet_format_unaffected() {
+        let input = RawInput {
+            payload: "- Step one\n- Step two\n- Step three".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 3);
+    }
+
+    // ── Action-chunk detection tests ─────────────────────────────────────────
+
+    #[test]
+    fn action_chunk_refactor_add_update() {
+        let input = RawInput {
+            payload: "Refactor file_tools into smaller modules, add tests, and update docs".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() >= 2,
+            "Expected ≥2 steps from action-chunk, got {} steps: {:?}",
+            ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn action_chunk_analyze_propose() {
+        let input = RawInput {
+            payload: "Analyze the codebase and propose fixes for performance issues".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() >= 2,
+            "Expected ≥2 steps, got {} steps: {:?}",
+            ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn action_chunk_audit_classify_recommend() {
+        let input = RawInput {
+            payload: "Audit the auth module, classify vulnerabilities, and recommend patches for each critical finding".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() >= 2,
+            "Expected ≥2 steps, got {} steps: {:?}",
+            ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn action_chunk_read_find_patch() {
+        let input = RawInput {
+            payload: "Read src/tools/contract.rs, find the bug in error handling, and patch it with proper Result propagation".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() >= 2,
+            "Expected ≥2 steps, got {} steps: {:?}",
+            ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn action_chunk_russian_verbs() {
+        let input = RawInput {
+            payload: "Проанализируй модуль парсера, предложи оптимизации, и напиши тесты для новых кейсов".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert!(
+            ir.steps.len() >= 2,
+            "Expected ≥2 steps from Russian action-chunks, got {} steps: {:?}",
+            ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn decomposition_still_short_stays_single() {
+        let input = RawInput {
+            payload: "Fix typo in README".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 1);
+    }
+
+    #[test]
+    fn decomposition_explicit_numbered_unaffected() {
+        let input = RawInput {
+            payload: "1. First\n2. Second\n3. Third".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 3);
+    }
+
+    #[test]
+    fn decomposition_deterministic_action_chunk() {
+        let payload = "Refactor file_tools into smaller modules, add tests, and update docs";
+        let ir1 = Parser
+            .run(
+                RawInput {
+                    payload: payload.into(),
+                },
+                &ctx(),
+            )
+            .expect("test failure");
+        let ir2 = Parser
+            .run(
+                RawInput {
+                    payload: payload.into(),
+                },
+                &ctx(),
+            )
+            .expect("test failure");
+        assert_eq!(ir1.steps, ir2.steps);
+    }
+
+    #[test]
+    fn decomposition_no_split_single_action() {
+        // "Fix the red and blue buttons" is ONE action, should not split
+        let input = RawInput {
+            payload: "Fix the red and blue buttons in the header of the main page".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 1);
+    }
+
+    #[test]
+    fn action_chunk_too_few_verbs_stays_single() {
+        // "Refactor the parser module to support new syntax" — single action, no split
+        let input = RawInput {
+            payload: "Refactor the parser module to support new syntax".into(),
+        };
+        let ir = Parser.run(input, &ctx()).expect("test failure");
+        assert_eq!(ir.steps.len(), 1);
     }
 }

@@ -11,8 +11,14 @@ pub enum StepKind {
     ReadRepository,
     LocateBug,
     PatchCode,
+    /// Apply a kernel-validated PatchV1 through the authorized tool
+    /// boundary (P2). Kernel-only operation: no LLM invocation.
+    ApplyPatch,
     RunTests,
     ValidatePatch,
+    /// Produce a direct answer to an interrogative/analytical task.
+    /// P0 (H-2 fix): questions must not be forced through ExecuteChanges.
+    AnswerQuestion,
 }
 
 impl StepKind {
@@ -30,8 +36,10 @@ impl StepKind {
             StepKind::ReadRepository => PrimitiveKind::Read,
             StepKind::LocateBug => PrimitiveKind::Compute,
             StepKind::PatchCode => PrimitiveKind::Write,
+            StepKind::ApplyPatch => PrimitiveKind::Compute,
             StepKind::RunTests => PrimitiveKind::Compute,
             StepKind::ValidatePatch => PrimitiveKind::Route,
+            StepKind::AnswerQuestion => PrimitiveKind::Compute,
         }
     }
 }
@@ -56,16 +64,20 @@ impl Step {
             (StepKind::ReadRepository, Some(detail)) => format!("read repository: {}", detail),
             (StepKind::LocateBug, Some(detail)) => format!("locate bug: {}", detail),
             (StepKind::PatchCode, Some(detail)) => format!("patch code: {}", detail),
+            (StepKind::ApplyPatch, Some(detail)) => format!("apply patch: {}", detail),
             (StepKind::RunTests, Some(detail)) => format!("run tests: {}", detail),
             (StepKind::ValidatePatch, Some(detail)) => format!("validate patch: {}", detail),
+            (StepKind::AnswerQuestion, Some(detail)) => format!("answer question: {}", detail),
             (StepKind::AnalyzeTask, None) => "analyze task".into(),
             (StepKind::PlanExecution, None) => "plan execution".into(),
             (StepKind::ExecuteChanges, None) => "execute changes".into(),
             (StepKind::ReadRepository, None) => "read repository".into(),
             (StepKind::LocateBug, None) => "locate bug".into(),
             (StepKind::PatchCode, None) => "patch code".into(),
+            (StepKind::ApplyPatch, None) => "apply patch".into(),
             (StepKind::RunTests, None) => "run tests".into(),
             (StepKind::ValidatePatch, None) => "validate patch".into(),
+            (StepKind::AnswerQuestion, None) => "answer question".into(),
         }
     }
 }
@@ -75,6 +87,9 @@ pub enum TaskClass {
     Generic,
     PlannerHardening,
     CodeFix,
+    /// Interrogative/analytical task answered directly, no code-mutation
+    /// framing (P0, H-2 fix).
+    Question,
 }
 
 impl TaskClass {
@@ -148,8 +163,10 @@ pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
             StepKind::ReadRepository => "read_repository",
             StepKind::LocateBug => "locate_bug",
             StepKind::PatchCode => "patch_code",
+            StepKind::ApplyPatch => "apply_patch",
             StepKind::RunTests => "run_tests",
             StepKind::ValidatePatch => "validate_patch",
+            StepKind::AnswerQuestion => "answer_question",
         };
         let step_id = format!("{:02}_{}", i, slug);
 
@@ -169,62 +186,82 @@ pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
                 | StepKind::PatchCode
                 | StepKind::PlanExecution
                 | StepKind::LocateBug
+                | StepKind::ValidatePatch
+                | StepKind::AnswerQuestion
         );
         let is_analyze = step.kind == StepKind::AnalyzeTask;
+        // Canonical-flow kinds must never be reinterpreted as file/command
+        // primitives by the detail-text sniffer below (P0/P1, H-2/H-1 fix):
+        // a question is answered, a CodeFix step keeps its typed primitive
+        // mapping. Sniffing stays enabled only for generic/planner-hardening
+        // kinds, whose primitive identity is genuinely free-form.
+        let sniffable = !matches!(
+            step.kind,
+            StepKind::AnswerQuestion
+                | StepKind::ReadRepository
+                | StepKind::LocateBug
+                | StepKind::PatchCode
+                | StepKind::ApplyPatch
+                | StepKind::RunTests
+                | StepKind::ValidatePatch
+        );
 
         let raw_detail = step.detail.as_deref().unwrap_or("");
         let detail_lower = raw_detail.to_lowercase();
-        let (prim_kind, prim_payload) =
-            if detail_lower.contains("read file") || detail_lower.contains("read ") {
-                let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
-                (
-                    crate::execution_abi::primitives::PrimitiveKind::Read,
-                    serde_json::json!({
-                        "path": path,
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            } else if detail_lower.contains("write file")
+        let (prim_kind, prim_payload) = if sniffable
+            && (detail_lower.contains("read file") || detail_lower.contains("read "))
+        {
+            let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
+            (
+                crate::execution_abi::primitives::PrimitiveKind::Read,
+                serde_json::json!({
+                    "path": path,
+                    "detail": step.detail.clone(),
+                    "step_kind": format!("{:?}", step.kind)
+                }),
+            )
+        } else if sniffable
+            && (detail_lower.contains("write file")
                 || detail_lower.contains("write ")
-                || detail_lower.contains("create file")
-            {
-                let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
-                let content =
-                    extract_content(raw_detail).unwrap_or_else(|| "dummy content".to_string());
-                (
-                    crate::execution_abi::primitives::PrimitiveKind::Write,
-                    serde_json::json!({
-                        "path": path,
-                        "content": content,
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            } else if detail_lower.contains("run command")
+                || detail_lower.contains("create file"))
+        {
+            let path = extract_path(raw_detail).unwrap_or_else(|| "dummy.txt".to_string());
+            let content =
+                extract_content(raw_detail).unwrap_or_else(|| "dummy content".to_string());
+            (
+                crate::execution_abi::primitives::PrimitiveKind::Write,
+                serde_json::json!({
+                    "path": path,
+                    "content": content,
+                    "detail": step.detail.clone(),
+                    "step_kind": format!("{:?}", step.kind)
+                }),
+            )
+        } else if sniffable
+            && (detail_lower.contains("run command")
                 || detail_lower.contains("run ")
-                || detail_lower.contains("execute ")
-            {
-                let cmd = extract_command(raw_detail).unwrap_or_else(|| "echo 'hello'".to_string());
-                (
-                    crate::execution_abi::primitives::PrimitiveKind::Compute,
-                    serde_json::json!({
-                        "command": cmd,
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            } else {
-                (
-                    primitive_kind,
-                    serde_json::json!({
-                        "requires_llm": requires_llm,
-                        "operation": if is_analyze { "semantic_embedding" } else { "none" },
-                        "detail": step.detail.clone(),
-                        "step_kind": format!("{:?}", step.kind)
-                    }),
-                )
-            };
+                || detail_lower.contains("execute "))
+        {
+            let cmd = extract_command(raw_detail).unwrap_or_else(|| "echo 'hello'".to_string());
+            (
+                crate::execution_abi::primitives::PrimitiveKind::Compute,
+                serde_json::json!({
+                    "command": cmd,
+                    "detail": step.detail.clone(),
+                    "step_kind": format!("{:?}", step.kind)
+                }),
+            )
+        } else {
+            (
+                primitive_kind,
+                serde_json::json!({
+                    "requires_llm": requires_llm,
+                    "operation": if is_analyze { "semantic_embedding" } else { "none" },
+                    "detail": step.detail.clone(),
+                    "step_kind": format!("{:?}", step.kind)
+                }),
+            )
+        };
 
         let primitive = Some(crate::execution_abi::primitives::PrimitiveSpec {
             id: crate::execution_abi::primitives::PrimitiveId(step_id.clone()),
@@ -236,12 +273,25 @@ pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
             StepKind::AnalyzeTask => vec!["task_description".to_string()],
             StepKind::PlanExecution => vec!["analysis_seed".to_string()],
             StepKind::ExecuteChanges => vec!["execution_plan".to_string()],
+            StepKind::LocateBug => vec!["repository_content".to_string()],
+            StepKind::PatchCode => vec!["bug_location".to_string()],
+            StepKind::ApplyPatch => vec!["patch_v1".to_string()],
+            StepKind::RunTests => vec!["patch_diff".to_string()],
+            StepKind::ValidatePatch => vec!["test_results".to_string()],
+            StepKind::AnswerQuestion => vec!["task_description".to_string()],
             _ => vec![],
         };
         let outputs = match step.kind {
             StepKind::AnalyzeTask => vec!["analysis_seed".to_string()],
             StepKind::PlanExecution => vec!["execution_plan".to_string()],
             StepKind::ExecuteChanges => vec!["changes_committed".to_string()],
+            StepKind::ReadRepository => vec!["repository_content".to_string()],
+            StepKind::LocateBug => vec!["bug_location".to_string()],
+            StepKind::PatchCode => vec!["patch_diff".to_string()],
+            StepKind::ApplyPatch => vec!["patch_apply_evidence".to_string()],
+            StepKind::RunTests => vec!["test_results".to_string()],
+            StepKind::ValidatePatch => vec!["validation_verdict".to_string()],
+            StepKind::AnswerQuestion => vec!["answer".to_string()],
             _ => vec![],
         };
         let metadata = serde_json::json!({
@@ -273,8 +323,10 @@ pub fn steps_to_exec_spec(steps: &[Step]) -> crate::exec_spec::ExecSpec {
                 StepKind::ReadRepository => "read_repository",
                 StepKind::LocateBug => "locate_bug",
                 StepKind::PatchCode => "patch_code",
+                StepKind::ApplyPatch => "apply_patch",
                 StepKind::RunTests => "run_tests",
                 StepKind::ValidatePatch => "validate_patch",
+                StepKind::AnswerQuestion => "answer_question",
             };
             let prev_id = format!("{:02}_{}", i - 1, prev_slug);
             transitions.push(crate::exec_spec::TransitionRule {
@@ -338,7 +390,7 @@ pub fn contract_version() -> u32 {
 
 #[allow(dead_code)]
 pub fn task_class_names() -> &'static [&'static str] {
-    &["Generic", "PlannerHardening", "CodeFix"]
+    &["Generic", "PlannerHardening", "CodeFix", "Question"]
 }
 
 #[allow(dead_code)]
@@ -355,8 +407,10 @@ pub fn step_kind_names() -> &'static [&'static str] {
         "ReadRepository",
         "LocateBug",
         "PatchCode",
+        "ApplyPatch",
         "RunTests",
         "ValidatePatch",
+        "AnswerQuestion",
     ]
 }
 
@@ -402,15 +456,20 @@ const CODEFIX_FLOW: &[(StepKind, WorkerCapability)] = &[
     (StepKind::ReadRepository, WorkerCapability::Planner),
     (StepKind::LocateBug, WorkerCapability::Planner),
     (StepKind::PatchCode, WorkerCapability::Executor),
+    (StepKind::ApplyPatch, WorkerCapability::Executor),
     (StepKind::RunTests, WorkerCapability::Executor),
     (StepKind::ValidatePatch, WorkerCapability::Verifier),
 ];
+
+const QUESTION_FLOW: &[(StepKind, WorkerCapability)] =
+    &[(StepKind::AnswerQuestion, WorkerCapability::Planner)];
 
 fn flow_table(task_class: TaskClass) -> &'static [(StepKind, WorkerCapability)] {
     match task_class {
         TaskClass::Generic => GENERIC_FLOW,
         TaskClass::PlannerHardening => PLANNER_HARDENING_FLOW,
         TaskClass::CodeFix => CODEFIX_FLOW,
+        TaskClass::Question => QUESTION_FLOW,
     }
 }
 
@@ -419,6 +478,7 @@ pub fn required_capability_for_step(step_kind: &StepKind) -> WorkerCapability {
         .iter()
         .chain(PLANNER_HARDENING_FLOW.iter())
         .chain(CODEFIX_FLOW.iter())
+        .chain(QUESTION_FLOW.iter())
     {
         if kind == step_kind {
             return *capability;
@@ -452,8 +512,9 @@ pub fn step_specs_to_steps(step_specs: &[StepSpec], detail: Option<&str>) -> Vec
 mod tests {
     use super::{
         contract_version, event_type_names, outcome_names, required_capability_for_step,
-        step_kind_names, step_specs_to_steps, task_class_names, task_class_to_flow,
-        terminal_outcome, StepKind, StepOutcome, TaskClass, WorkerCapability,
+        step_kind_names, step_specs_to_steps, steps_to_exec_spec, task_class_names,
+        task_class_to_flow, terminal_outcome, Step, StepKind, StepOutcome, TaskClass,
+        WorkerCapability,
     };
 
     #[test]
@@ -505,9 +566,135 @@ mod tests {
                 StepKind::ReadRepository,
                 StepKind::LocateBug,
                 StepKind::PatchCode,
+                StepKind::ApplyPatch,
                 StepKind::RunTests,
                 StepKind::ValidatePatch,
             ]
+        );
+    }
+
+    #[test]
+    fn question_task_class_maps_to_answer_flow() {
+        let kinds: Vec<StepKind> = task_class_to_flow(TaskClass::Question)
+            .into_iter()
+            .map(|step| step.kind)
+            .collect();
+
+        assert_eq!(kinds, vec![StepKind::AnswerQuestion]);
+    }
+
+    #[test]
+    fn answer_question_requires_planner_capability() {
+        assert_eq!(
+            required_capability_for_step(&StepKind::AnswerQuestion),
+            WorkerCapability::Planner
+        );
+    }
+
+    #[test]
+    fn answer_question_maps_to_compute_primitive() {
+        assert_eq!(
+            StepKind::AnswerQuestion.to_primitive_kind(),
+            crate::execution_abi::primitives::PrimitiveKind::Compute
+        );
+    }
+
+    #[test]
+    fn apply_patch_maps_to_compute_and_executor_capability() {
+        // ApplyPatch is a kernel-only effect dispatch (no LLM), routed to
+        // the executor worker (P2).
+        assert_eq!(
+            StepKind::ApplyPatch.to_primitive_kind(),
+            crate::execution_abi::primitives::PrimitiveKind::Compute
+        );
+        assert_eq!(
+            required_capability_for_step(&StepKind::ApplyPatch),
+            WorkerCapability::Executor
+        );
+    }
+
+    #[test]
+    fn answer_question_step_is_never_sniffed_into_file_or_command_primitive() {
+        // Wording that would normally trigger the read/write/run sniffers
+        // must stay an LLM-answered Compute for question steps (H-2 fix).
+        let steps = vec![Step {
+            kind: StepKind::AnswerQuestion,
+            detail: Some(
+                "How do I run the tests and read file results? Answer without code.".to_string(),
+            ),
+        }];
+        let spec = steps_to_exec_spec(&steps);
+        let prim = spec.steps[0]
+            .primitive
+            .as_ref()
+            .expect("question step must carry a primitive");
+        assert_eq!(
+            prim.kind,
+            crate::execution_abi::primitives::PrimitiveKind::Compute
+        );
+        assert_eq!(prim.payload["requires_llm"], serde_json::json!(true));
+        assert_eq!(
+            prim.payload["step_kind"],
+            serde_json::json!("AnswerQuestion")
+        );
+        assert!(
+            prim.payload.get("command").is_none(),
+            "question step must not be turned into a command primitive"
+        );
+        assert!(
+            prim.payload.get("path").is_none(),
+            "question step must not be turned into a file primitive"
+        );
+    }
+
+    #[test]
+    fn codefix_steps_keep_typed_primitives_despite_sniffable_wording() {
+        // P1 (H-1 fix): "patch code, run tests" must stay a PatchCode Write
+        // primitive, not be hijacked into "run command 'tests'".
+        let steps = vec![
+            Step {
+                kind: StepKind::PatchCode,
+                detail: Some("patch code, run tests".to_string()),
+            },
+            Step {
+                kind: StepKind::RunTests,
+                detail: Some("run tests".to_string()),
+            },
+            Step {
+                kind: StepKind::ReadRepository,
+                detail: Some("read repository /tmp/fixture/calc.py".to_string()),
+            },
+        ];
+        let spec = steps_to_exec_spec(&steps);
+
+        let patch = spec.steps[0].primitive.as_ref().expect("patch primitive");
+        assert_eq!(
+            patch.kind,
+            crate::execution_abi::primitives::PrimitiveKind::Write
+        );
+        assert_eq!(patch.payload["step_kind"], serde_json::json!("PatchCode"));
+        assert_eq!(patch.payload["requires_llm"], serde_json::json!(true));
+        assert!(patch.payload.get("command").is_none());
+
+        let run = spec.steps[1].primitive.as_ref().expect("run primitive");
+        assert_eq!(
+            run.kind,
+            crate::execution_abi::primitives::PrimitiveKind::Compute
+        );
+        assert_eq!(run.payload["step_kind"], serde_json::json!("RunTests"));
+        assert!(
+            run.payload.get("command").is_none(),
+            "RunTests must not be turned into a command-extraction primitive"
+        );
+
+        let read = spec.steps[2].primitive.as_ref().expect("read primitive");
+        assert_eq!(
+            read.kind,
+            crate::execution_abi::primitives::PrimitiveKind::Read
+        );
+        assert_eq!(
+            read.payload["step_kind"],
+            serde_json::json!("ReadRepository")
         );
     }
 
@@ -592,14 +779,17 @@ mod tests {
             StepKind::ReadRepository,
             StepKind::LocateBug,
             StepKind::PatchCode,
+            StepKind::ApplyPatch,
             StepKind::RunTests,
             StepKind::ValidatePatch,
+            StepKind::AnswerQuestion,
         ];
 
         let flows = [
             task_class_to_flow(TaskClass::Generic),
             task_class_to_flow(TaskClass::PlannerHardening),
             task_class_to_flow(TaskClass::CodeFix),
+            task_class_to_flow(TaskClass::Question),
         ];
 
         let mut seen: Vec<StepKind> = Vec::new();
@@ -627,7 +817,7 @@ mod tests {
 
         assert_eq!(
             seen.len(),
-            13,
+            15,
             "unexpected extra step kinds in canonical flows"
         );
     }
@@ -637,7 +827,7 @@ mod tests {
         assert_eq!(contract_version(), 1);
         assert_eq!(
             task_class_names(),
-            &["Generic", "PlannerHardening", "CodeFix"]
+            &["Generic", "PlannerHardening", "CodeFix", "Question"]
         );
         assert_eq!(
             step_kind_names(),
@@ -653,8 +843,10 @@ mod tests {
                 "ReadRepository",
                 "LocateBug",
                 "PatchCode",
+                "ApplyPatch",
                 "RunTests",
                 "ValidatePatch",
+                "AnswerQuestion",
             ]
         );
         assert_eq!(

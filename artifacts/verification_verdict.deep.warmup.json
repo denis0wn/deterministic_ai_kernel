@@ -24,7 +24,7 @@
     "system": "Darwin",
     "release": "27.0.0",
     "machine": "arm64",
-    "cwd": "/Users/denissmoliakov/deterministic_ai_kernel"
+    "cwd": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean"
   },
   "nodes": [
     {

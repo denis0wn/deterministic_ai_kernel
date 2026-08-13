@@ -1,3 +1,4 @@
+use crate::providers::storage::StorageProvider;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -32,6 +33,10 @@ pub struct ExecutionReport {
     pub steps: Vec<StepResult>,
     pub total_duration_ms: u64,
     pub success: bool,
+    #[serde(default)]
+    pub final_answer: String,
+    #[serde(default)]
+    pub critique_status: String,
 }
 
 impl ExecutionReport {
@@ -98,8 +103,8 @@ impl TaskState {
     }
 }
 
-pub fn get_current_task_state(task_id: &str) -> Result<TaskState> {
-    let events = crate::providers::get_storage().query_events(task_id)?;
+pub fn get_current_task_state(db: &str, task_id: &str) -> Result<TaskState> {
+    let events = crate::providers::storage_for(db).query_events(task_id)?;
     let mut state = TaskState::None;
     for row in events {
         let ev_type = row.event_type.as_str();
@@ -120,13 +125,14 @@ pub fn get_current_task_state(task_id: &str) -> Result<TaskState> {
 }
 
 pub fn check_and_emit_transition(
+    db: &str,
     task_id: &str,
     step_id: Option<&str>,
     event_type: &str,
     execution_id: &str,
     details: serde_json::Value,
 ) -> Result<()> {
-    let current = get_current_task_state(task_id)?;
+    let current = get_current_task_state(db, task_id)?;
 
     let next_state = match event_type {
         "TASK_CREATED" => TaskState::Created,
@@ -148,13 +154,14 @@ pub fn check_and_emit_transition(
         );
     }
 
-    emit_event(task_id, step_id, event_type, execution_id, details);
+    emit_event(db, task_id, step_id, event_type, execution_id, details);
     Ok(())
 }
 
 // ── Event Emitter Helper ─────────────────────────────────────────────────────
 
 fn emit_event(
+    db: &str,
     task_id: &str,
     step_id: Option<&str>,
     event_type: &str,
@@ -186,7 +193,11 @@ fn emit_event(
         "deterministic": true,
         "details": details
     });
-    let _ = crate::providers::get_storage().append_event(task_id, step_id, event_type, &payload);
+    if let Err(e) =
+        crate::providers::storage_for(db).append_event(task_id, step_id, event_type, &payload)
+    {
+        eprintln!("engine event append failed ({}): {}", event_type, e);
+    }
 }
 
 pub fn calculate_primitive_input_hash(
@@ -235,9 +246,19 @@ pub fn calculate_primitive_input_hash(
     }
 }
 
-// ── Primitive Execution Helper ───────────────────────────────────────────────
+// ── Primitive Hash Computation ────────────────────────────────────────────────
+// PURE specification hashing for the cache layer.
+//
+// This function MUST NOT perform side effects: no file reads/writes, no
+// process spawning, no network. It hashes the normalized primitive
+// specification (kind + payload identity) so the cache layer can recognize
+// identical work across runs. The previous implementation executed the
+// command / wrote the file "to compute the output hash", which turned hash
+// computation into arbitrary command execution (audit finding C5). If the
+// engine needs real execution, it must go through an explicit, authorized
+// executor — never through hashing.
 
-pub(crate) fn execute_primitive(
+pub(crate) fn compute_primitive_hashes(
     prim: &crate::execution_abi::primitives::PrimitiveSpec,
     _execution_id: &str,
 ) -> (String, String, String, String, u64) {
@@ -245,29 +266,21 @@ pub(crate) fn execute_primitive(
     let prim_id = prim.id.0.clone();
     let kind = prim.kind;
 
-    #[allow(unused_assignments)]
-    let mut input_hash = String::new();
-    #[allow(unused_assignments)]
-    let mut output_hash = String::new();
-    let mut status = "success".to_string();
-
-    match kind {
+    let (input_hash, output_hash) = match kind {
         crate::execution_abi::primitives::PrimitiveKind::Read => {
             let path = prim
                 .payload
                 .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("dummy.txt");
-            input_hash = blake3::hash(path.as_bytes()).to_hex().to_string();
-            match std::fs::read_to_string(path) {
-                Ok(content) => {
-                    output_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
-                }
-                Err(_) => {
-                    status = "failed".to_string();
-                    output_hash = blake3::hash("error".as_bytes()).to_hex().to_string();
-                }
-            }
+            (
+                blake3::hash(format!("Read:{}", path).as_bytes())
+                    .to_hex()
+                    .to_string(),
+                blake3::hash(format!("Read-output:{}", path).as_bytes())
+                    .to_hex()
+                    .to_string(),
+            )
         }
         crate::execution_abi::primitives::PrimitiveKind::Write => {
             let path = prim
@@ -280,18 +293,14 @@ pub(crate) fn execute_primitive(
                 .get("content")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            input_hash = blake3::hash(format!("{}:{}", path, content).as_bytes())
-                .to_hex()
-                .to_string();
-            match std::fs::write(path, content) {
-                Ok(_) => {
-                    output_hash = blake3::hash("success".as_bytes()).to_hex().to_string();
-                }
-                Err(_) => {
-                    status = "failed".to_string();
-                    output_hash = blake3::hash("error".as_bytes()).to_hex().to_string();
-                }
-            }
+            (
+                blake3::hash(format!("Write:{}:{}", path, content).as_bytes())
+                    .to_hex()
+                    .to_string(),
+                blake3::hash(format!("Write-output:{}", path).as_bytes())
+                    .to_hex()
+                    .to_string(),
+            )
         }
         crate::execution_abi::primitives::PrimitiveKind::Compute => {
             let cmd = prim
@@ -299,36 +308,14 @@ pub(crate) fn execute_primitive(
                 .get("command")
                 .and_then(|v| v.as_str())
                 .unwrap_or("echo 'hello'");
-            input_hash = blake3::hash(cmd.as_bytes()).to_hex().to_string();
-            let parts: Vec<&str> = cmd.split_whitespace().collect();
-            if parts.is_empty() {
-                status = "failed".to_string();
-                output_hash = blake3::hash("empty command".as_bytes())
+            (
+                blake3::hash(format!("Compute:{}", cmd).as_bytes())
                     .to_hex()
-                    .to_string();
-            } else {
-                let mut command_runner = std::process::Command::new(parts[0]);
-                if parts.len() > 1 {
-                    command_runner.args(&parts[1..]);
-                }
-                match command_runner.output() {
-                    Ok(out) => {
-                        let combined = format!(
-                            "{}{}",
-                            String::from_utf8_lossy(&out.stdout),
-                            String::from_utf8_lossy(&out.stderr)
-                        );
-                        output_hash = blake3::hash(combined.as_bytes()).to_hex().to_string();
-                        if !out.status.success() {
-                            status = "failed".to_string();
-                        }
-                    }
-                    Err(_) => {
-                        status = "failed".to_string();
-                        output_hash = blake3::hash("spawn error".as_bytes()).to_hex().to_string();
-                    }
-                }
-            }
+                    .to_string(),
+                blake3::hash(format!("Compute-output:{}", cmd).as_bytes())
+                    .to_hex()
+                    .to_string(),
+            )
         }
         _ => {
             let detail = prim
@@ -336,13 +323,94 @@ pub(crate) fn execute_primitive(
                 .get("detail")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            input_hash = blake3::hash(detail.as_bytes()).to_hex().to_string();
-            output_hash = blake3::hash("ok".as_bytes()).to_hex().to_string();
+            (
+                blake3::hash(detail.as_bytes()).to_hex().to_string(),
+                blake3::hash("ok".as_bytes()).to_hex().to_string(),
+            )
+        }
+    };
+
+    let duration_ms = t_start.elapsed().as_millis() as u64;
+    (
+        prim_id,
+        input_hash,
+        output_hash,
+        "success".to_string(),
+        duration_ms,
+    )
+}
+
+// ── Async verification wrapper ────────────────────────────────────────────────
+
+/// Run execution with step verification.
+/// After each step, runs a verifier gate (best-effort, never blocks pipeline).
+pub async fn run_with_verification(
+    engine: &ExecutionEngine,
+    payload: &str,
+    ctx: &PipelineContext,
+) -> Result<ExecutionReport> {
+    let report = engine.run(payload, ctx)?;
+
+    // Verify each completed step (best-effort, silently)
+    let mut verified_steps = Vec::with_capacity(report.steps.len());
+    for step in &report.steps {
+        if matches!(step.status, StepStatus::Ok) {
+            // Attempt verification (don't fail pipeline on verification error)
+            let verdict = super::step_verifier::verify_step(
+                "step",
+                &step.description,
+                &format!("step {} completed successfully", step.index),
+            )
+            .await;
+
+            match verdict {
+                Ok(v) if v.verdict.to_uppercase() == "FAIL" => {
+                    // Verification failed — mark as failed but keep going
+                    verified_steps.push(StepResult {
+                        index: step.index,
+                        description: step.description.clone(),
+                        status: StepStatus::Failed(format!("verification: {}", v.reason)),
+                        duration_ms: step.duration_ms,
+                    });
+                }
+                _ => {
+                    // PASS or verification error — keep original status
+                    verified_steps.push(step.clone());
+                }
+            }
+        } else {
+            verified_steps.push(step.clone());
         }
     }
 
-    let duration_ms = t_start.elapsed().as_millis() as u64;
-    (prim_id, input_hash, output_hash, status, duration_ms)
+    let success = verified_steps
+        .iter()
+        .all(|s| matches!(s.status, StepStatus::Ok | StepStatus::Skipped));
+
+    let final_report = ExecutionReport {
+        plan_id: report.plan_id,
+        seed: report.seed,
+        steps: verified_steps,
+        total_duration_ms: report.total_duration_ms,
+        success,
+        final_answer: String::new(),
+        critique_status: String::new(),
+    };
+
+    // Run execution critic (best-effort, never fails pipeline)
+    let mut critique_events = Vec::new();
+    super::llm_critique::run_execution_critique(payload, &final_report, &mut critique_events).await;
+
+    // Attach critique events to the report (for observability)
+    // Note: ExecutionReport doesn't have stage_events field, so we log them.
+    for event in &critique_events {
+        println!(
+            "observability: component=execution_critique stage={} description={}",
+            event.stage, event.description
+        );
+    }
+
+    Ok(final_report)
 }
 
 // ── Engine ───────────────────────────────────────────────────────────────────
@@ -350,15 +418,42 @@ pub(crate) fn execute_primitive(
 pub struct ExecutionEngine {
     pipeline: Pipeline,
     executor: Box<dyn StepExecutor>,
+    // Explicit database routing: the engine never relies on process-global
+    // override state (audit finding M3).
+    db_path: String,
+}
+
+fn default_db_path() -> String {
+    std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| "kernel.db".to_string())
 }
 
 impl ExecutionEngine {
     pub fn new(pipeline: Pipeline, executor: Box<dyn StepExecutor>) -> Self {
-        Self { pipeline, executor }
+        Self::new_with_db(pipeline, executor, &default_db_path())
+    }
+
+    pub fn new_with_db(pipeline: Pipeline, executor: Box<dyn StepExecutor>, db_path: &str) -> Self {
+        Self {
+            pipeline,
+            executor,
+            db_path: db_path.to_string(),
+        }
     }
 
     pub fn with_default_executor(pipeline: Pipeline) -> Self {
         Self::new(pipeline, Box::new(DefaultStepExecutor))
+    }
+
+    pub fn with_default_executor_db(pipeline: Pipeline, db_path: &str) -> Self {
+        Self::new_with_db(pipeline, Box::new(DefaultStepExecutor), db_path)
+    }
+
+    pub fn db_path(&self) -> &str {
+        &self.db_path
+    }
+
+    fn storage(&self) -> crate::providers::storage::DefaultStorage {
+        crate::providers::storage_for(&self.db_path)
     }
 
     /// Run pipeline → execute every step → return ExecutionReport.
@@ -380,6 +475,7 @@ impl ExecutionEngine {
 
         // Emit TASK_CREATED
         check_and_emit_transition(
+            &self.db_path,
             &task_id,
             None,
             "TASK_CREATED",
@@ -393,6 +489,7 @@ impl ExecutionEngine {
         // Emit PLAN_CREATED
         let env_fingerprint = crate::planner_pipeline::get_environment_fingerprint();
         check_and_emit_transition(
+            &self.db_path,
             &task_id,
             None,
             "PLAN_CREATED",
@@ -416,6 +513,7 @@ impl ExecutionEngine {
 
             // Emit STEP_READY
             check_and_emit_transition(
+                &self.db_path,
                 &task_id,
                 Some(&step_spec.step_id),
                 "STEP_READY",
@@ -427,6 +525,7 @@ impl ExecutionEngine {
 
             // Emit STEP_STARTED
             check_and_emit_transition(
+                &self.db_path,
                 &task_id,
                 Some(&step_spec.step_id),
                 "STEP_STARTED",
@@ -442,6 +541,7 @@ impl ExecutionEngine {
                     let prim_start = Instant::now();
                     // Emit PRIMITIVE_EXECUTING
                     check_and_emit_transition(
+                        &self.db_path,
                         &task_id,
                         Some(&step_spec.step_id),
                         "PRIMITIVE_EXECUTING",
@@ -466,8 +566,7 @@ impl ExecutionEngine {
                     let mut ohash = "".to_string();
                     let mut duration_ms = 0u64;
 
-                    if let Ok(Some(record)) = crate::providers::get_storage().get_cache(&cache_key)
-                    {
+                    if let Ok(Some(record)) = self.storage().get_cache(&cache_key) {
                         cache_hit = true;
                         cached_status = record.execution_result;
                         ohash = record.output_hash;
@@ -477,6 +576,7 @@ impl ExecutionEngine {
                     let (prim_status, _prim_duration_ms) = if cache_hit {
                         // Emit CACHE_HIT event
                         check_and_emit_transition(
+                            &self.db_path,
                             &task_id,
                             Some(&step_spec.step_id),
                             "CACHE_HIT",
@@ -491,6 +591,7 @@ impl ExecutionEngine {
 
                         // Emit PRIMITIVE_EXECUTED event representing cached state to keep replay valid
                         check_and_emit_transition(
+                            &self.db_path,
                             &task_id,
                             Some(&step_spec.step_id),
                             "PRIMITIVE_EXECUTED",
@@ -508,12 +609,13 @@ impl ExecutionEngine {
                         (cached_status, duration_ms)
                     } else {
                         let (prim_id, _, out_hash, status_str, dur_ms) =
-                            execute_primitive(prim, &execution_id);
-                        println!("observability: component=executor operation=execute_primitive duration_ms={}", prim_start.elapsed().as_millis());
+                            compute_primitive_hashes(prim, &execution_id);
+                        println!("observability: component=executor operation=compute_primitive_hashes duration_ms={}", prim_start.elapsed().as_millis());
                         ohash = out_hash.clone();
 
                         // Emit PRIMITIVE_EXECUTED
                         check_and_emit_transition(
+                            &self.db_path,
                             &task_id,
                             Some(&step_spec.step_id),
                             "PRIMITIVE_EXECUTED",
@@ -535,7 +637,7 @@ impl ExecutionEngine {
                             duration_ms: dur_ms as i64,
                             metadata: format!("prim_kind:{:?}", prim.kind),
                         };
-                        let _ = crate::providers::get_storage().put_cache(&cache_key, &record);
+                        let _ = self.storage().put_cache(&cache_key, &record);
 
                         (status_str, dur_ms)
                     };
@@ -569,6 +671,7 @@ impl ExecutionEngine {
             if matches!(status, StepStatus::Failed(_)) {
                 success = false;
                 check_and_emit_transition(
+                    &self.db_path,
                     &task_id,
                     Some(&step_spec.step_id),
                     "STEP_FAILED",
@@ -580,6 +683,7 @@ impl ExecutionEngine {
                 )?;
             } else {
                 check_and_emit_transition(
+                    &self.db_path,
                     &task_id,
                     Some(&step_spec.step_id),
                     "STEP_COMPLETED",
@@ -601,6 +705,7 @@ impl ExecutionEngine {
 
         // Emit TASK_COMPLETED
         check_and_emit_transition(
+            &self.db_path,
             &task_id,
             None,
             "TASK_COMPLETED",
@@ -621,33 +726,93 @@ impl ExecutionEngine {
             steps,
             total_duration_ms: t0.elapsed().as_millis() as u64,
             success,
+            final_answer: String::new(),
+            critique_status: String::new(),
         })
     }
 
-    /// Run + record to tape + verify replay consistency.
+    /// Run + record to tape + verify replay consistency + execution critique + final answer.
     pub fn run_with_replay(
         &self,
         payload: &str,
         ctx: &PipelineContext,
         tape: &mut ReplayTape,
     ) -> Result<ExecutionReport> {
-        let report = self.run(payload, ctx)?;
+        let mut report = self.run(payload, ctx)?;
         tape.record(payload, ctx.seed, &report.plan_id);
 
-        // Immediately verify last entry is still stable
-        let verifier = Replayer::new(Pipeline::new(self.pipeline.bias.clone()));
-        let single = {
-            let mut t = ReplayTape::new();
-            t.record(payload, ctx.seed, &report.plan_id);
-            t
-        };
-        verifier.verify(&single)?;
-
-        // Emit REPLAY_VALIDATED
         let task_id = ctx.task_id.clone().unwrap_or_else(|| {
             format!("task_{}", &blake3::hash(payload.as_bytes()).to_hex()[..16])
         });
+
+        // Only verify replay when historical events exist (skip on first run)
+        let has_history = self
+            .storage()
+            .query_events(&task_id)
+            .map(|e| !e.is_empty())
+            .unwrap_or(false);
+
+        if has_history {
+            let verifier =
+                Replayer::with_db(Pipeline::new(self.pipeline.bias.clone()), &self.db_path);
+            let single = {
+                let mut t = ReplayTape::new();
+                t.record(payload, ctx.seed, &report.plan_id);
+                t
+            };
+            verifier.verify(&single)?;
+        }
+
+        // Run execution critique (best-effort, never fails pipeline)
+        let mut critique_events = Vec::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(super::llm_critique::run_execution_critique(
+            payload,
+            &report,
+            &mut critique_events,
+        ));
+        for event in &critique_events {
+            println!(
+                "observability: component=execution_critique stage={} description={}",
+                event.stage, event.description
+            );
+        }
+
+        // Set critique_status from events
+        report.critique_status = critique_events
+            .iter()
+            .map(|e| e.description.clone())
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        // Generate final_answer via LLM (best-effort)
+        if report.success {
+            let final_answer = rt.block_on(async {
+                let steps_summary = report.steps.iter()
+                    .map(|s| format!("{}. [{}] {}", s.index + 1,
+                        match &s.status {
+                            StepStatus::Ok => "OK",
+                            StepStatus::Skipped => "SKIPPED",
+                            StepStatus::Failed(_) => "FAILED",
+                        },
+                        s.description))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let user_prompt = format!(
+                    "Task: {}\n\nExecution completed with {} step(s):\n{}\n\nProvide a clear, concise final answer to the original task. Do not describe the execution — answer the task directly.",
+                    payload, report.steps.len(), steps_summary
+                );
+                crate::llm::chat(
+                    "You are a helpful assistant. Answer the user's task directly and concisely. Do not explain your process — just give the answer.",
+                    &user_prompt,
+                ).await.unwrap_or_else(|e| format!("[final_answer synthesis failed: {}]", e))
+            });
+            report.final_answer = final_answer;
+        }
+
+        // Emit REPLAY_VALIDATED
         emit_event(
+            &self.db_path,
             &task_id,
             None,
             "REPLAY_VALIDATED",
@@ -684,9 +849,12 @@ mod tests {
             task_id: None,
         }
     }
-    fn engine() -> ExecutionEngine {
-        ExecutionEngine::with_default_executor(Pipeline::new(bias()))
+    fn engine_db(db: &str) -> ExecutionEngine {
+        ExecutionEngine::with_default_executor_db(Pipeline::new(bias()), db)
     }
+    /// RAII cleanup for a temporary test database. Routing is explicit:
+    /// engines under test are constructed with this path (audit finding M3 —
+    /// no global override state).
     struct TestDbGuard {
         db_path: std::path::PathBuf,
     }
@@ -697,22 +865,22 @@ mod tests {
                 .expect("test failure")
                 .as_nanos();
             let db_path = std::env::temp_dir().join(format!("dak_test_{}_{}.db", name, nanos));
-            let db_path_str = db_path.to_str().expect("test failure").to_string();
-            crate::providers::get_storage().set_override_path(Some(db_path_str));
             Self { db_path }
+        }
+        fn db_path_str(&self) -> String {
+            self.db_path.to_str().expect("test failure").to_string()
         }
     }
     impl Drop for TestDbGuard {
         fn drop(&mut self) {
-            crate::providers::get_storage().set_override_path(None);
             let _ = std::fs::remove_file(&self.db_path);
         }
     }
 
     #[test]
     fn runs_all_steps_successfully() {
-        let _guard = TestDbGuard::new("runs_all_steps_successfully");
-        let r = engine()
+        let guard = TestDbGuard::new("runs_all_steps_successfully");
+        let r = engine_db(&guard.db_path_str())
             .run("step one\nstep two\ncritical step", &ctx())
             .expect("test failure");
         assert!(r.success);
@@ -722,18 +890,19 @@ mod tests {
 
     #[test]
     fn report_plan_id_matches_pipeline() {
-        let _guard = TestDbGuard::new("report_plan_id_matches_pipeline");
+        let guard = TestDbGuard::new("report_plan_id_matches_pipeline");
         let p = Pipeline::new(bias());
         let out = p.run("step one\nstep two", &ctx()).expect("test failure");
-        let eng = ExecutionEngine::with_default_executor(Pipeline::new(bias()));
+        let eng =
+            ExecutionEngine::with_default_executor_db(Pipeline::new(bias()), &guard.db_path_str());
         let r = eng.run("step one\nstep two", &ctx()).expect("test failure");
         assert_eq!(r.plan_id, out.plan.id);
     }
 
     #[test]
     fn report_seed_is_preserved() {
-        let _guard = TestDbGuard::new("report_seed_is_preserved");
-        let r = engine()
+        let guard = TestDbGuard::new("report_seed_is_preserved");
+        let r = engine_db(&guard.db_path_str())
             .run("step one\nstep two", &ctx())
             .expect("test failure");
         assert_eq!(r.seed, 42);
@@ -741,14 +910,18 @@ mod tests {
 
     #[test]
     fn failing_executor_marks_report_failed() {
-        let _guard = TestDbGuard::new("failing_executor_marks_report_failed");
+        let guard = TestDbGuard::new("failing_executor_marks_report_failed");
         struct AlwaysFail;
         impl StepExecutor for AlwaysFail {
             fn execute(&self, _i: usize, _d: &str) -> Result<StepStatus> {
                 Ok(StepStatus::Failed("boom".into()))
             }
         }
-        let eng = ExecutionEngine::new(Pipeline::new(bias()), Box::new(AlwaysFail));
+        let eng = ExecutionEngine::new_with_db(
+            Pipeline::new(bias()),
+            Box::new(AlwaysFail),
+            &guard.db_path_str(),
+        );
         let r = eng.run("step one\nstep two", &ctx()).expect("test failure");
         assert!(!r.success);
         assert_eq!(r.failed_steps().len(), 2);
@@ -756,14 +929,18 @@ mod tests {
 
     #[test]
     fn skipping_executor_counts_correctly() {
-        let _guard = TestDbGuard::new("skipping_executor_counts_correctly");
+        let guard = TestDbGuard::new("skipping_executor_counts_correctly");
         struct AllSkip;
         impl StepExecutor for AllSkip {
             fn execute(&self, _i: usize, _d: &str) -> Result<StepStatus> {
                 Ok(StepStatus::Skipped)
             }
         }
-        let eng = ExecutionEngine::new(Pipeline::new(bias()), Box::new(AllSkip));
+        let eng = ExecutionEngine::new_with_db(
+            Pipeline::new(bias()),
+            Box::new(AllSkip),
+            &guard.db_path_str(),
+        );
         let r = eng
             .run("step one\nstep two\nstep three", &ctx())
             .expect("test failure");
@@ -774,8 +951,8 @@ mod tests {
 
     #[test]
     fn run_is_deterministic_same_seed() {
-        let _guard = TestDbGuard::new("run_is_deterministic_same_seed");
-        let r1 = engine()
+        let guard = TestDbGuard::new("run_is_deterministic_same_seed");
+        let r1 = engine_db(&guard.db_path_str())
             .run("alpha\nbeta\ngamma", &ctx())
             .expect("test failure");
         // Clear events so second run doesn't violate state transition rule
@@ -784,11 +961,11 @@ mod tests {
                 "task_{}",
                 &blake3::hash("alpha\nbeta\ngamma".as_bytes()).to_hex()[..16]
             );
-            let conn = rusqlite::Connection::open(&_guard.db_path).expect("test failure");
+            let conn = rusqlite::Connection::open(&guard.db_path).expect("test failure");
             conn.execute("DELETE FROM event_log WHERE task_id = ?1", [task_id])
                 .expect("test failure");
         }
-        let r2 = engine()
+        let r2 = engine_db(&guard.db_path_str())
             .run("alpha\nbeta\ngamma", &ctx())
             .expect("test failure");
         assert_eq!(r1.plan_id, r2.plan_id);
@@ -797,9 +974,9 @@ mod tests {
 
     #[test]
     fn run_with_replay_verifies_consistency() {
-        let _guard = TestDbGuard::new("run_with_replay_verifies_consistency");
+        let guard = TestDbGuard::new("run_with_replay_verifies_consistency");
         let mut tape = ReplayTape::new();
-        let eng = engine();
+        let eng = engine_db(&guard.db_path_str());
         eng.run_with_replay("step one\nstep two", &ctx(), &mut tape)
             .expect("test failure");
         assert_eq!(tape.len(), 1);
@@ -815,63 +992,72 @@ mod tests {
 
     #[test]
     fn step_results_have_correct_indices() {
-        let _guard = TestDbGuard::new("step_results_have_correct_indices");
-        let r = engine().run("a\nb\nc", &ctx()).expect("test failure");
+        let guard = TestDbGuard::new("step_results_have_correct_indices");
+        let r = engine_db(&guard.db_path_str())
+            .run("a\nb\nc", &ctx())
+            .expect("test failure");
         for (i, s) in r.steps.iter().enumerate() {
             assert_eq!(s.index, i);
         }
     }
 
     #[test]
-    fn test_file_write_read_and_command_primitives() {
+    fn test_primitive_hashing_is_pure_no_side_effects() {
+        // Regression for audit finding C5: hashing the primitive
+        // specification must NEVER execute commands or write files.
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("test failure")
             .as_nanos();
         let db_path = std::env::temp_dir().join(format!("dak_prim_test_{}.db", nanos));
         let db_path_str = db_path.to_str().expect("test failure").to_string();
-        crate::providers::get_storage().set_override_path(Some(db_path_str.clone()));
 
-        let path_str = "target/test_primitive_file.txt";
-
-        // 1. Test FileWrite
-        let payload = format!("Step 1 write file {} with hello_world_content", path_str);
-        let eng = ExecutionEngine::with_default_executor(Pipeline::new(bias()));
-        let r_write = eng.run(&payload, &ctx()).expect("test failure");
-        println!(
-            "R_WRITE JSON = {}",
-            serde_json::to_string_pretty(&r_write).expect("test failure")
+        let path_str = format!(
+            "{}/dak_prim_pure_{}.txt",
+            std::env::temp_dir().display(),
+            nanos
         );
+        let probe_path = format!(
+            "{}/dak_prim_cmd_probe_{}.txt",
+            std::env::temp_dir().display(),
+            nanos
+        );
+        let _ = std::fs::remove_file(&path_str);
+        let _ = std::fs::remove_file(&probe_path);
+
+        // 1. Write primitive: file must NOT be created.
+        let payload = format!("Step 1 write file {} with hello_world_content", path_str);
+        let eng = ExecutionEngine::with_default_executor_db(Pipeline::new(bias()), &db_path_str);
+        let r_write = eng.run(&payload, &ctx()).expect("test failure");
         assert!(r_write.success);
         assert_eq!(r_write.steps.len(), 1);
+        assert!(
+            !std::path::Path::new(&path_str).exists(),
+            "write primitive must not create files during hashing"
+        );
 
-        // Verify the file was physically written
-        let content = std::fs::read_to_string(path_str).expect("test failure");
-        assert_eq!(content, "hello_world_content");
-
-        // 2. Test FileRead
+        // 2. Read primitive: succeeds without touching the filesystem.
         let payload_read = format!("Step 1 read file {}", path_str);
         let r_read = eng.run(&payload_read, &ctx()).expect("test failure");
         assert!(r_read.success);
 
-        // 3. Test RunCommand
-        let payload_cmd = "Step 1 run command echo test_command_success";
-        let r_cmd = eng.run(payload_cmd, &ctx()).expect("test failure");
+        // 3. Command primitive: the command must NOT be executed.
+        let payload_cmd = format!("Step 1 run command touch {}", probe_path);
+        let r_cmd = eng.run(&payload_cmd, &ctx()).expect("test failure");
         assert!(r_cmd.success);
+        assert!(
+            !std::path::Path::new(&probe_path).exists(),
+            "compute primitive must not spawn processes during hashing"
+        );
 
-        // Clean up temp file
-        let _ = std::fs::remove_file(path_str);
-
-        // 4. Verify events exist in the database for the command task
+        // 4. Events still exist in the database for the command task.
         let task_id = format!(
             "task_{}",
             &blake3::hash(payload_cmd.as_bytes()).to_hex()[..16]
         );
-        println!("LOOKING UP TASK ID = {}", task_id);
-        let events = crate::providers::get_storage()
+        let events = crate::providers::storage_for(&db_path_str)
             .query_events(&task_id)
             .expect("test failure");
-        println!("FOUND DB EVENTS = {:?}", events);
 
         let has_task_created = events.iter().any(|e| e.event_type == "TASK_CREATED");
         let has_plan_created = events.iter().any(|e| e.event_type == "PLAN_CREATED");
@@ -885,19 +1071,19 @@ mod tests {
         assert!(has_primitive_executed);
         assert!(has_step_completed);
 
-        // 5. Verify replay succeeds (use a separate clean temp database for replay)
+        // 5. Replay still succeeds on a separate clean temp database.
         let db_path_replay = std::env::temp_dir().join(format!("dak_prim_test_rep_{}.db", nanos));
         let db_path_replay_str = db_path_replay.to_str().expect("test failure").to_string();
-        crate::providers::get_storage().set_override_path(Some(db_path_replay_str.clone()));
 
+        let eng_rep =
+            ExecutionEngine::with_default_executor_db(Pipeline::new(bias()), &db_path_replay_str);
         let mut tape = ReplayTape::new();
-        let r_rep = eng
-            .run_with_replay(payload_cmd, &ctx(), &mut tape)
+        let r_rep = eng_rep
+            .run_with_replay(&payload_cmd, &ctx(), &mut tape)
             .expect("test failure");
         assert!(r_rep.success);
 
         // Clean up temp databases
-        crate::providers::get_storage().set_override_path(None);
         let _ = std::fs::remove_file(db_path);
         let _ = std::fs::remove_file(db_path_replay);
     }
@@ -910,17 +1096,17 @@ mod tests {
             .as_nanos();
         let db_path = std::env::temp_dir().join(format!("dak_sm_test_{}.db", nanos));
         let db_path_str = db_path.to_str().expect("test failure").to_string();
-        crate::providers::get_storage().set_override_path(Some(db_path_str.clone()));
 
         let task_id = "test_sm_task";
         let execution_id = "test_exec";
 
         // Initial state is None
-        let current = get_current_task_state(task_id).expect("test failure");
+        let current = get_current_task_state(&db_path_str, task_id).expect("test failure");
         assert_eq!(current, TaskState::None);
 
         // 1. Transition TASK_CREATED is allowed
         check_and_emit_transition(
+            &db_path_str,
             task_id,
             None,
             "TASK_CREATED",
@@ -931,6 +1117,7 @@ mod tests {
 
         // 2. Transition TASK_COMPLETED
         check_and_emit_transition(
+            &db_path_str,
             task_id,
             None,
             "TASK_COMPLETED",
@@ -941,6 +1128,7 @@ mod tests {
 
         // 3. TASK_COMPLETED -> any change is forbidden
         let res = check_and_emit_transition(
+            &db_path_str,
             task_id,
             None,
             "STEP_READY",
@@ -954,7 +1142,6 @@ mod tests {
             .contains("State Machine Violation"));
 
         // Clean up
-        crate::providers::get_storage().set_override_path(None);
         let _ = std::fs::remove_file(db_path);
     }
 
@@ -966,25 +1153,26 @@ mod tests {
             .as_nanos();
         let db_path = std::env::temp_dir().join(format!("dak_cache_test_{}.db", nanos));
         let db_path_str = db_path.to_str().expect("test failure").to_string();
-        crate::providers::get_storage().set_override_path(Some(db_path_str.clone()));
 
-        let path_str = "target/test_cache_primitive_file.txt";
+        let path_str = format!(
+            "{}/dak_cache_primitive_{}.txt",
+            std::env::temp_dir().display(),
+            nanos
+        );
 
         // Make sure it starts clean
-        let _ = std::fs::remove_file(path_str);
+        let _ = std::fs::remove_file(&path_str);
 
-        // 1. Run first time (writes physically, stores in cache)
+        // 1. First run: pure hashing, stores cache entry; NO physical write.
         let payload = format!("Step 1 write file {} with cached_hello_content", path_str);
         let task_id = format!("task_{}", &blake3::hash(payload.as_bytes()).to_hex()[..16]);
-        let eng = ExecutionEngine::with_default_executor(Pipeline::new(bias()));
+        let eng = ExecutionEngine::with_default_executor_db(Pipeline::new(bias()), &db_path_str);
         let r1 = eng.run(&payload, &ctx()).expect("test failure");
         assert!(r1.success);
-
-        // Verify the file was written
-        assert!(std::path::Path::new(path_str).exists());
-
-        // Clean up physical file to test if cache skips writing second time!
-        let _ = std::fs::remove_file(path_str);
+        assert!(
+            !std::path::Path::new(&path_str).exists(),
+            "hashing must not write files"
+        );
 
         // Delete all event log entries for this task to reset its state machine history
         {
@@ -993,22 +1181,19 @@ mod tests {
                 .expect("test failure");
         }
 
-        // 2. Run second time (should hit cache, skip physical execution!)
+        // 2. Second run: hits the cache; still no physical side effect.
         let r2 = eng.run(&payload, &ctx()).expect("test failure");
         assert!(r2.success);
-
-        // Since it hit cache, it should NOT have physically written the file again!
-        assert!(!std::path::Path::new(path_str).exists());
+        assert!(!std::path::Path::new(&path_str).exists());
 
         // Verify CACHE_HIT event is present in the database
-        let events = crate::providers::get_storage()
+        let events = crate::providers::storage_for(&db_path_str)
             .query_events(&task_id)
             .expect("test failure");
         let has_cache_hit = events.iter().any(|e| e.event_type == "CACHE_HIT");
         assert!(has_cache_hit);
 
         // Clean up temp database
-        crate::providers::get_storage().set_override_path(None);
         let _ = std::fs::remove_file(db_path);
     }
 }

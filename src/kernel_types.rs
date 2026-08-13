@@ -4,6 +4,36 @@ use std::collections::BTreeMap;
 
 pub use crate::execution_abi::{TrustContext, TrustLevel};
 
+/// Task-level terminal state, derived from the canonical event fold.
+///
+/// The kernel has no independent task state machine: task state is always
+/// computed from step states produced by the fold (see
+/// providers::storage::fold_task_events), so it can never diverge from the
+/// event history.
+///
+/// - `Pending`   : task has no steps scheduled yet.
+/// - `Running`   : work remains (pending/ready/dispatched/started steps).
+/// - `Completed` : every step committed.
+/// - `Failed`    : at least one step terminally rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskState {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+}
+
+impl TaskState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskState::Pending => "pending",
+            TaskState::Running => "running",
+            TaskState::Completed => "completed",
+            TaskState::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionEvent {
     pub id: String,

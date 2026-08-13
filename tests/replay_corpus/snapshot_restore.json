@@ -1,9 +1,14 @@
 {
   "name": "snapshot_restore",
   "commands": [
-    ["snapshot", "empty-task"],
-    ["restore", "empty-task"]
+    ["submit-task", "task_snap_full"],
+    ["schedule", "task_snap_full"],
+    ["claim-worker", "task_snap_full", "worker-planner"],
+    ["start-step", "task_snap_full", "worker-planner", "00_analyze_task"],
+    ["complete-step", "task_snap_full", "worker-planner", "00_analyze_task"],
+    ["snapshot", "task_snap_full"],
+    ["restore", "task_snap_full"]
   ],
-  "expect_substrings": ["RESTORE OK"],
+  "expect_substrings": ["SNAPSHOT OK", "RESTORE OK", "RESTORED_STEPS"],
   "expected_artifact_refs": []
 }

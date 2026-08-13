@@ -10,6 +10,8 @@ pub enum StageName {
     SemanticMapper,
     StableId,
     Critic,
+    LlmCritique,
+    ExecutionCritique,
 }
 
 impl std::fmt::Display for StageName {
@@ -20,6 +22,8 @@ impl std::fmt::Display for StageName {
             StageName::SemanticMapper => "semantic_mapper",
             StageName::StableId => "stable_id",
             StageName::Critic => "critic",
+            StageName::LlmCritique => "llm_critique",
+            StageName::ExecutionCritique => "execution_critique",
         };
         write!(f, "{s}")
     }

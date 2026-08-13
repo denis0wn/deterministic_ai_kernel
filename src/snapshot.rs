@@ -1,10 +1,15 @@
 use crate::providers;
+use crate::providers::storage::StorageProvider;
 use anyhow::Result;
 
-pub fn rebuild_snapshot(_db: &str, task_id: &str, quiet: bool) -> Result<()> {
-    providers::get_storage().rebuild_snapshot(task_id, quiet)
+// Snapshot operations honor their database argument (the previous
+// implementation ignored `_db` and relied on leaked global routing state —
+// audit findings M3/H1).
+
+pub fn rebuild_snapshot(db: &str, task_id: &str, quiet: bool) -> Result<()> {
+    providers::storage_for(db).rebuild_snapshot(task_id, quiet)
 }
 
-pub fn restore_snapshot(_db: &str, task_id: &str, quiet: bool) -> Result<()> {
-    providers::get_storage().restore_snapshot(task_id, quiet)
+pub fn restore_snapshot(db: &str, task_id: &str, quiet: bool) -> Result<()> {
+    providers::storage_for(db).restore_snapshot(task_id, quiet)
 }

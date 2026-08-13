@@ -1,10 +1,19 @@
 {
   "name": "partial_lease_corruption_observed_via_replay",
   "commands": [
-    ["replay", "task_reclaim"],
-    ["replay", "task_reclaim"]
+    ["submit-task", "task_reclaim2"],
+    ["schedule", "task_reclaim2"],
+    ["claim-worker", "task_reclaim2", "worker-planner"],
+    ["start-step", "task_reclaim2", "worker-planner", "00_analyze_task"],
+    ["expire-leases", "task_reclaim2"],
+    ["schedule", "task_reclaim2"],
+    ["claim-worker", "task_reclaim2", "worker-planner"],
+    ["start-step", "task_reclaim2", "worker-planner", "00_analyze_task"],
+    ["complete-step", "task_reclaim2", "worker-planner", "00_analyze_task"],
+    ["replay", "task_reclaim2"],
+    ["replay", "task_reclaim2"]
   ],
-  "expect_substrings": ["REPLAY OK", "true"],
+  "expect_substrings": ["EXPIRED_LEASES: 1", "REPLAY OK", "true"],
   "expected_artifact_refs": [],
   "expect_failure": false,
   "expect_failure_substrings": []

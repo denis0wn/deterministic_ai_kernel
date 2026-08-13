@@ -1,5 +1,6 @@
 use crate::event_bus::EventBus;
 use crate::kernel_types::ReplayCapsule;
+use crate::providers::storage::StorageProvider;
 use crate::workflow::contract::WorkerCapability;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -53,15 +54,15 @@ pub fn reconstruct_state(db: &str, task_id: &str) -> bool {
     }
 
     if !std::path::Path::new(db).exists() {
+        // No database: nothing to reconstruct. Return current validation status.
         return ok;
     }
 
-    crate::providers::get_storage().set_override_path(Some(db.to_string()));
+    let storage = crate::providers::storage_for(db);
 
-    let spec = match crate::providers::get_storage().load_exec_spec(task_id) {
+    let spec = match storage.load_exec_spec(task_id) {
         Ok(s) => s,
         Err(_) => {
-            crate::providers::get_storage().set_override_path(None);
             return ok;
         }
     };
@@ -75,10 +76,9 @@ pub fn reconstruct_state(db: &str, task_id: &str) -> bool {
         ok = false;
     }
 
-    let rows = match crate::providers::get_storage().list_event_log(task_id) {
+    let rows = match storage.list_event_log(task_id) {
         Ok(r) => r,
         Err(_) => {
-            crate::providers::get_storage().set_override_path(None);
             return false;
         }
     };
@@ -160,7 +160,6 @@ pub fn reconstruct_state(db: &str, task_id: &str) -> bool {
         }
     }
 
-    crate::providers::get_storage().set_override_path(None);
     ok
 }
 
@@ -169,4 +168,69 @@ pub fn build_reconstruction_capsule(
     task_id: &str,
 ) -> Result<ReconstructionCapsule> {
     crate::replay::capsule::build_replay_capsule(bus, task_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capability_for_worker_id_planner() {
+        assert_eq!(
+            capability_for_worker_id("worker-planner").unwrap(),
+            WorkerCapability::Planner
+        );
+        assert_eq!(
+            capability_for_worker_id("my-planner-1").unwrap(),
+            WorkerCapability::Planner
+        );
+    }
+
+    #[test]
+    fn capability_for_worker_id_executor() {
+        assert_eq!(
+            capability_for_worker_id("worker-executor").unwrap(),
+            WorkerCapability::Executor
+        );
+    }
+
+    #[test]
+    fn capability_for_worker_id_verifier() {
+        assert_eq!(
+            capability_for_worker_id("worker-verifier").unwrap(),
+            WorkerCapability::Verifier
+        );
+    }
+
+    #[test]
+    fn capability_for_worker_id_legacy_generic() {
+        assert_eq!(
+            capability_for_worker_id("worker-ai").unwrap(),
+            WorkerCapability::LegacyGeneric
+        );
+        assert_eq!(
+            capability_for_worker_id("ai").unwrap(),
+            WorkerCapability::LegacyGeneric
+        );
+        assert_eq!(
+            capability_for_worker_id("worker-anything").unwrap(),
+            WorkerCapability::LegacyGeneric
+        );
+    }
+
+    #[test]
+    fn capability_for_worker_id_rejects_unknown() {
+        assert!(capability_for_worker_id("unknown").is_err());
+    }
+
+    #[test]
+    fn is_ai_worker_matches_patterns() {
+        assert!(is_ai_worker("ai"));
+        assert!(is_ai_worker("worker-ai"));
+        assert!(is_ai_worker("ai-worker"));
+        assert!(is_ai_worker("ai-assistant"));
+        assert!(is_ai_worker("ai_helper"));
+        assert!(!is_ai_worker("worker-planner"));
+        assert!(!is_ai_worker("worker-executor"));
+    }
 }
