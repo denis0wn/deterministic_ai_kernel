@@ -3,7 +3,6 @@ pub mod contract;
 pub mod file_tools;
 pub mod patch_tool;
 pub mod registry;
-pub mod shell_tools;
 pub mod test_runner;
 pub mod web_tools;
 

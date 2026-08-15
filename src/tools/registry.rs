@@ -97,18 +97,13 @@ impl ToolRegistry {
             confirmation_required: true,
         });
 
-        // Shell tools. There is exactly one shell tool and it ALWAYS
-        // requires confirmation. The former `shell_execute_readonly` alias
-        // dispatched to the same `sh -c` implementation without
-        // confirmation (audit findings H4/S3) and was removed: "readonly"
-        // must be an enforced policy, not a bypassable name decoration.
-        self.register(ToolDef {
-            name: "shell_execute",
-            description: "Execute a shell command",
-            category: ToolCategory::Shell,
-            safety: ToolSafety::ExternalMutating,
-            confirmation_required: true,
-        });
+        // Shell tools. The interactive `shell_execute` tool (arbitrary
+        // LLM-proposed `sh -c` text, even confirmation-gated) was removed
+        // to close the security debt: in this kernel the LLM never drives
+        // shell execution — every mutating effect is a structured,
+        // kernel-owned primitive (apply_patch_v1 with context-checked
+        // hunks, run_tests_v1 with an allowlisted argv). Operators who
+        // need a shell use their own terminal, outside the LLM boundary.
 
         // Web tools
         self.register(ToolDef {
@@ -192,7 +187,6 @@ pub async fn execute_tool(
         "get_file_info" => super::file_tools::get_file_info(args, workspace).await,
         "apply_patch_v1" => super::patch_tool::apply_patch(args, workspace).await,
         "run_tests_v1" => super::test_runner::run_tests_tool(args, workspace).await,
-        "shell_execute" => super::shell_tools::shell_execute(args, workspace).await,
         "fetch_url" => super::web_tools::fetch_url(args).await,
         "open_url" => super::web_tools::open_url(args).await,
         _ => Err(format!("Unknown tool: {}", name)),

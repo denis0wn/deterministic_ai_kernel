@@ -19,10 +19,11 @@ fn registry_has_all_tools() {
     assert!(reg.get("grep_files").is_some());
     assert!(reg.get("get_file_info").is_some());
 
-    // Shell tool: exactly one, always confirmation-gated. The former
-    // `shell_execute_readonly` alias bypassed confirmation and must not
-    // exist (audit findings H4/S3).
-    assert!(reg.get("shell_execute").is_some());
+    // Shell surface: the LLM never drives shell execution (security debt
+    // closure). `shell_execute` (arbitrary `sh -c`) and its former readonly
+    // alias must both be absent; the only Shell-category tool is the
+    // kernel-owned, allowlisted `run_tests_v1`.
+    assert!(reg.get("shell_execute").is_none());
     assert!(reg.get("shell_execute_readonly").is_none());
 
     // Web tools
@@ -44,7 +45,6 @@ fn tool_safety_classification() {
     // Mutating tools should require confirmation
     assert!(reg.requires_confirmation("write_file"));
     assert!(reg.requires_confirmation("edit_file"));
-    assert!(reg.requires_confirmation("shell_execute"));
     assert!(reg.requires_confirmation("open_url"));
 
     // Unknown tools fail closed.
@@ -58,11 +58,12 @@ fn tool_categories() {
     let file_tools = reg.by_category(ToolCategory::File);
     assert!(file_tools.len() >= 7);
 
-    // Shell category: the interactive `shell_execute` tool plus the
-    // kernel-owned `run_tests_v1` execution tool (P3). No unconfirmed
-    // readonly alias exists for either.
+    // Shell category: only the kernel-owned `run_tests_v1` execution tool
+    // (P3) remains. The interactive `shell_execute` was removed (security
+    // debt closure): LLM-proposed shell text must never be executed.
     let shell_tools = reg.by_category(ToolCategory::Shell);
-    assert_eq!(shell_tools.len(), 2);
+    assert_eq!(shell_tools.len(), 1);
+    assert_eq!(shell_tools[0].name, "run_tests_v1");
 
     let web_tools = reg.by_category(ToolCategory::Web);
     assert!(web_tools.len() >= 2);
@@ -72,15 +73,15 @@ fn tool_categories() {
 async fn mutating_tools_require_confirmation() {
     // Without confirmation the gate rejects mutating tools before any
     // execution happens.
-    let shell = execute_tool(
-        "shell_execute",
-        &serde_json::json!({"command": "echo should-not-run"}),
-        ".",
+    let edit = execute_tool(
+        "edit_file",
+        &serde_json::json!({"path": "/tmp/dak_gate_edit.txt", "old": "a", "new": "b"}),
+        "/tmp",
         false,
     )
     .await;
-    assert!(!shell.success);
-    assert!(shell.error.unwrap().contains("authorization required"));
+    assert!(!edit.success);
+    assert!(edit.error.unwrap().contains("authorization required"));
 
     let write = execute_tool(
         "write_file",
@@ -195,7 +196,10 @@ async fn edit_file_tool() {
 }
 
 #[tokio::test]
-async fn shell_execute_confirmed() {
+async fn shell_execute_is_gone_fail_closed() {
+    // Security debt closure: `shell_execute` no longer exists, even with
+    // confirmation. Unknown tools fail closed, so an LLM that still tries
+    // to invoke it gets a hard rejection — no shell is ever spawned.
     let result = execute_tool(
         "shell_execute",
         &serde_json::json!({
@@ -205,30 +209,10 @@ async fn shell_execute_confirmed() {
         true,
     )
     .await;
-    assert!(result.success);
-    let stdout = result
-        .output
-        .get("stdout")
-        .and_then(|v| v.as_str())
-        .unwrap();
-    assert!(stdout.contains("hello"));
-}
-
-#[tokio::test]
-async fn shell_execute_timeout_is_enforced() {
-    let start = std::time::Instant::now();
-    let result = execute_tool(
-        "shell_execute",
-        &serde_json::json!({"command": "sleep 5", "timeout_secs": 1}),
-        ".",
-        true,
-    )
-    .await;
-    assert!(!result.success, "sleep 5 with 1s timeout must fail");
-    assert!(result.error.unwrap().contains("timed out"));
+    assert!(!result.success);
     assert!(
-        start.elapsed() < std::time::Duration::from_secs(4),
-        "timeout must kill the command early"
+        result.error.unwrap().contains("unknown tool"),
+        "shell_execute must be an unknown tool, not a live one"
     );
 }
 

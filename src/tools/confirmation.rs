@@ -34,10 +34,6 @@ fn format_description(tool_name: &str, args: &serde_json::Value) -> String {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
             format!("Edit file {}", path)
         }
-        "shell_execute" => {
-            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
-            format!("Execute: {}", cmd)
-        }
         "open_url" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("?");
             format!("Open URL: {}", url)

@@ -916,7 +916,8 @@ impl App {
                             let _ = std::fs::write("/tmp/replay_os_edit_test.txt", "hello world");
                             serde_json::json!({"path": "/tmp/replay_os_edit_test.txt", "old_string": "world", "new_string": "ReplayOS"})
                         }
-                        "shell_execute" => serde_json::json!({"command": "echo 'shell test ok'"}),
+                        // NOTE: shell_execute was removed from the registry
+                        // (security debt closure) — no test args for it.
                         "open_url" => serde_json::json!({"url": "https://example.com"}),
                         _ => serde_json::json!({"path": "."}),
                     };
