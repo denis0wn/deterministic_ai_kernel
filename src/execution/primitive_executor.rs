@@ -533,11 +533,91 @@ impl PrimitiveExecutor {
                             // real file content, not only the task wording.
                             prompt.push_str(&grounded_file_section(task_payload));
                         }
+
+                        // R8: deterministic RAG for AnswerQuestion. Enabled
+                        // only when DAK_RAG_DIR points at a non-empty KB
+                        // dir; otherwise behavior is byte-identical to
+                        // pre-R8. Retrieved documents enter the prompt as
+                        // marked untrusted DATA (prompt-injection defense),
+                        // and the grounding gate below checks claims
+                        // against payload + retrieved text (provenance).
+                        let rag = if step_kind == "AnswerQuestion" {
+                            crate::rag::active_context(task_payload)
+                        } else {
+                            None
+                        };
+                        if let Some(rag_ctx) = &rag {
+                            prompt.push_str(&rag_ctx.section);
+                        }
+
                         let llm_res = providers::get_llm().execute_llm(&prompt, None)?;
+
+                        // HD-2 hardening: kernel-owned grounding gate for
+                        // AnswerQuestion. Identifier/measurement claims
+                        // (serial IDs, RPM values) must appear LITERALLY in
+                        // the task context, otherwise the answer must carry
+                        // an explicit refusal. A fabricated fact is a
+                        // TERMINAL failure — the kernel never records an
+                        // ungrounded claim as a completed answer. Pattern
+                        // matching only; the model is never re-consulted.
+                        // R8: the grounding context is payload + retrieved
+                        // documents (provenance grounding).
+                        let (grounding_claims, grounding_refusal) = if step_kind == "AnswerQuestion"
+                        {
+                            let grounding_context = match &rag {
+                                Some(r) if !r.retrieved_text.is_empty() => {
+                                    format!("{}\n{}", task_payload, r.retrieved_text)
+                                }
+                                _ => task_payload.to_string(),
+                            };
+                            let claims = crate::grounding::find_unverified_claims(
+                                &grounding_context,
+                                &llm_res.text,
+                            );
+                            let refusal = crate::grounding::has_refusal_marker(&llm_res.text);
+                            if !claims.is_empty() && !refusal {
+                                let list = claims
+                                    .iter()
+                                    .map(|c| format!("{}:{}", c.kind, c.literal))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                return Err(anyhow!(
+                                    "fatal: grounding violation (unverified_claim): \
+                                         answer asserts facts absent from task context: \
+                                         [{list}]; expected an explicit refusal"
+                                ));
+                            }
+                            (claims, refusal)
+                        } else {
+                            (Vec::new(), false)
+                        };
+
                         json!({
                             "result": llm_res.text,
                             "model_name": llm_res.model_name,
-                            "model_version": llm_res.model_version
+                            "model_version": llm_res.model_version,
+                            "rag": {
+                                "enabled": rag.is_some(),
+                                "index_hash": rag.as_ref().map(|r| r.index_hash.clone()),
+                                "retrieved": rag
+                                    .as_ref()
+                                    .map(|r| r.hits.iter().map(|h| h.doc_id.clone()).collect::<Vec<_>>())
+                                    .unwrap_or_default(),
+                                "policy": rag.as_ref().map(|r| r.policy).unwrap_or("disabled")
+                            },
+                            "grounding": {
+                                "checked": step_kind == "AnswerQuestion",
+                                "unverified_claims": serde_json::to_value(&grounding_claims)
+                                    .unwrap_or(serde_json::json!([])),
+                                "refusal_marker": grounding_refusal,
+                                "verdict": if step_kind != "AnswerQuestion" {
+                                    "not_applicable"
+                                } else if !grounding_claims.is_empty() {
+                                    "refusal_with_claims"
+                                } else {
+                                    "grounded"
+                                }
+                            }
                         })
                     } else {
                         json!({
