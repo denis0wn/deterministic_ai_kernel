@@ -99,6 +99,7 @@ const ACTION_VERBS_RU: &[&str] = &[
     "напиши",
     "создай",
     "реализуй",
+    "рефактори",
     "настрой",
     "мигрируй",
     "валидируй",
@@ -136,8 +137,16 @@ impl Parser {
     /// Check if a text starts with an action verb (after trimming).
     fn starts_with_action_verb(chunk: &str) -> bool {
         let lower = chunk.trim().to_lowercase();
-        ACTION_VERBS_EN.iter().any(|v| lower.starts_with(v))
-            || ACTION_VERBS_RU.iter().any(|v| lower.starts_with(v))
+        // Match the first WHOLE word, not a prefix. Prefix matching caused
+        // false positives where a noun sharing a verb stem (e.g. Russian
+        // "настройки" ~ verb "настрой") made ordinary prose look actionable
+        // and it was wrongly decomposed (R2 forensic finding).
+        let first_word: String = lower.chars().take_while(|c| c.is_alphanumeric()).collect();
+        if first_word.is_empty() {
+            return false;
+        }
+        ACTION_VERBS_EN.iter().any(|v| first_word == *v)
+            || ACTION_VERBS_RU.iter().any(|v| first_word == *v)
     }
 
     /// Split text by comma+conjunction boundaries, producing raw chunks.
@@ -210,11 +219,27 @@ impl Parser {
             return Some(parts);
         }
 
-        // Level 2: split by coordination conjunctions (need conjunctions present)
+        // Level 2: split by coordination conjunctions (need conjunctions present).
+        // R2: the split is only accepted when the parts look like actions —
+        // prose descriptions ("a price is increased by 18% and then
+        // discounted...") must NOT be decomposed into separate pipeline steps.
+        // HD-1: EVERY part must start with an action verb, not just half.
+        // The half threshold decomposed analytical questions whose trailing
+        // clause is not an action ("Сравни два алгоритма: сортировку слиянием
+        // и быструю сортировку..." → the "быструю сортировку..." fragment
+        // became a bogus execute_changes step). Genuine action sequences
+        // ("Fix X and add tests and update the changelog") start every part
+        // with a verb, so they are unaffected.
         if Self::has_conjunctions(trimmed) {
             let conj_parts = Self::split_by_conjunctions(trimmed);
             if conj_parts.len() > 1 {
-                return Some(conj_parts);
+                let verb_count = conj_parts
+                    .iter()
+                    .filter(|c| Self::starts_with_action_verb(c))
+                    .count();
+                if verb_count == conj_parts.len() {
+                    return Some(conj_parts);
+                }
             }
         }
 
@@ -233,7 +258,7 @@ impl Parser {
                 .iter()
                 .filter(|c| Self::starts_with_action_verb(c))
                 .count();
-            if verb_count >= (valid_chunks.len() + 1) / 2 {
+            if verb_count >= valid_chunks.len().div_ceil(2) {
                 return Some(valid_chunks);
             }
         }
@@ -268,29 +293,63 @@ impl Parser {
     }
 
     /// Split text by coordination conjunctions ("and", "then", "also", "и", "затем", "также").
-    /// Only splits when each resulting part is a meaningful action (>10 chars).
+    /// Only splits on WHOLE-WORD conjunction occurrences at word boundaries,
+    /// and only keeps parts that are meaningful (>10 chars).
+    ///
+    /// R2 fix: the previous implementation split per-character using
+    /// `text.find(c)`, which turned every occurrence of the conjunction's
+    /// first letter into a split point (English payloads were shredded at
+    /// every 't', Russian at every 'и'), corrupting multi-sentence tasks.
     fn split_by_conjunctions(text: &str) -> Vec<String> {
         let lower = text.to_lowercase();
         let mut best_parts: Vec<String> = Vec::new();
 
-        // Try each conjunction pattern, pick the one that produces the most meaningful parts
         for conj in CONJUNCTIONS {
-            if !lower.contains(conj) {
+            let conj_word = conj.trim();
+            if conj_word.is_empty() || !lower.contains(conj_word) {
                 continue;
             }
-            // Find the actual position of the conjunction in the original text
-            let conj_lower = conj.trim();
-            let parts: Vec<String> = text
-                .split(|c: char| {
-                    let _cl = c.to_lowercase().next().unwrap_or(c);
-                    // Check if this char starts a conjunction match
-                    let remaining = &text[text.find(c).unwrap_or(0)..];
-                    remaining.to_lowercase().starts_with(conj_lower)
-                })
-                .map(|s| s.trim().to_string())
+            let mut parts: Vec<String> = Vec::new();
+            let mut last = 0usize;
+            let mut search = 0usize;
+            while let Some(rel) = lower[search..].find(conj_word) {
+                let abs = search + rel;
+                let end = abs + conj_word.len();
+                // Word-boundary check: the conjunction must not be a
+                // substring of a larger word on either side.
+                let before_ok = abs == 0
+                    || lower[..abs]
+                        .chars()
+                        .next_back()
+                        .map(|c| !c.is_alphanumeric())
+                        .unwrap_or(true);
+                let after_ok = end >= lower.len()
+                    || lower[end..]
+                        .chars()
+                        .next()
+                        .map(|c| !c.is_alphanumeric())
+                        .unwrap_or(true);
+                if before_ok && after_ok {
+                    let part = text[last..abs]
+                        .trim()
+                        .trim_end_matches('.')
+                        .trim()
+                        .to_string();
+                    if !part.is_empty() {
+                        parts.push(part);
+                    }
+                    last = end;
+                }
+                search = end;
+            }
+            let tail = text[last..].trim().trim_end_matches('.').trim().to_string();
+            if !tail.is_empty() {
+                parts.push(tail);
+            }
+            let parts: Vec<String> = parts
+                .into_iter()
                 .filter(|s| !s.is_empty() && s.len() > 10)
                 .collect();
-
             if parts.len() > best_parts.len() {
                 best_parts = parts;
             }
@@ -677,6 +736,111 @@ mod tests {
             ir.steps.len() > 1,
             "Expected decomposition for multi-action task, got {} steps: {:?}",
             ir.steps.len(),
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn decomposition_does_not_shred_analytical_prose_r2() {
+        // R2 regression: multi-sentence analytical prose must stay ONE step
+        // with the text intact. Before the fix, split_by_conjunctions cut at
+        // every 't' (EN) / 'и' (RU), producing corrupted fragments like
+        // "he original price? give".
+        let a4 = "A price is increased by 18% and then discounted by 18%. Is the final price equal to the original price? Give the exact calculation and a yes/no answer.";
+        let ir = Parser
+            .run(RawInput { payload: a4.into() }, &ctx())
+            .expect("test failure");
+        assert_eq!(
+            ir.steps.len(),
+            1,
+            "prose must not be shredded: {:?}",
+            ir.steps
+        );
+        let step = &ir.steps[0];
+        assert!(
+            step.contains("the original price?"),
+            "text must stay intact, got: {step}"
+        );
+        assert!(
+            !step.contains("he original price? give"),
+            "corrupted fragment present: {step}"
+        );
+
+        let i1 = "Есть 120 деталей. 25% отправили на склад A. Из оставшихся 40% отправили на склад B. Сколько деталей осталось? Покажи промежуточные вычисления, финальный ответ и объяснение.";
+        let ir = Parser
+            .run(RawInput { payload: i1.into() }, &ctx())
+            .expect("test failure");
+        assert_eq!(
+            ir.steps.len(),
+            1,
+            "RU prose must not be shredded: {:?}",
+            ir.steps
+        );
+        assert!(
+            ir.steps[0]
+                .to_lowercase()
+                .contains("сколько деталей осталось?"),
+            "RU text must stay intact: {}",
+            ir.steps[0]
+        );
+    }
+
+    #[test]
+    fn decomposition_hd1_analytical_question_with_nonaction_tail_stays_single() {
+        // HD-1 regression: an analytical question whose second conjunct is
+        // NOT an action must not be decomposed — the non-action fragment
+        // used to become a bogus execute_changes step (acceptance D2/D8/D9).
+        let d2 = "Сравни два алгоритма: сортировку слиянием и быструю сортировку. Скажи, какой быстрее в среднем.";
+        let ir = Parser
+            .run(RawInput { payload: d2.into() }, &ctx())
+            .expect("test failure");
+        assert_eq!(
+            ir.steps.len(),
+            1,
+            "D2 shape wrongly decomposed: {:?}",
+            ir.steps
+        );
+        assert!(ir.steps[0].to_lowercase().starts_with("сравни"));
+
+        let d8 = "Проверь файл и скажи, что в нём неправильно.";
+        let ir = Parser
+            .run(RawInput { payload: d8.into() }, &ctx())
+            .expect("test failure");
+        assert_eq!(
+            ir.steps.len(),
+            1,
+            "D8 shape wrongly decomposed: {:?}",
+            ir.steps
+        );
+
+        let d9 = "Прочитай README и объясни архитектуру.";
+        let ir = Parser
+            .run(RawInput { payload: d9.into() }, &ctx())
+            .expect("test failure");
+        assert_eq!(
+            ir.steps.len(),
+            1,
+            "D9 shape wrongly decomposed: {:?}",
+            ir.steps
+        );
+    }
+
+    #[test]
+    fn decomposition_hd1_all_verb_action_sequences_still_split() {
+        // The ALL-verb conjunction threshold must keep genuine sequences.
+        let en = "Fix the parser bug and add regression tests and update the changelog";
+        let ir = Parser
+            .run(RawInput { payload: en.into() }, &ctx())
+            .expect("test failure");
+        assert_eq!(ir.steps.len(), 3, "EN action sequence lost: {:?}", ir.steps);
+
+        let ru = "Рефактори модуль парсера чтобы он поддерживал новый синтаксис и добавь тесты для всех edge cases и обнови документацию и проверь backward compatibility";
+        let ir = Parser
+            .run(RawInput { payload: ru.into() }, &ctx())
+            .expect("test failure");
+        assert!(
+            ir.steps.len() > 1,
+            "RU action sequence lost: {:?}",
             ir.steps
         );
     }

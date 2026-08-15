@@ -276,6 +276,37 @@ mod tests {
         let plan = Plan::new_with_stable_id(17, vec!["Refactor the scheduler module".to_string()]);
         assert_eq!(plan.spec.steps[0].step_id, "00_execute_changes");
     }
+
+    #[test]
+    fn domain_task_mentioning_test_is_not_routed_to_hardening_stub_r1() {
+        // R1 regression: the B2 acceptance payload mentions "test" several
+        // times but is a domain logic puzzle. Before the fix it became a
+        // single add_planner_test_coverage step (a computed stub that never
+        // asks the model). It must now reach the model via ExecuteChanges.
+        let b2 = "Five machines produce parts. Exactly one machine produces defective parts. \
+                  You have one test that identifies whether a batch contains a defect. \
+                  Design the minimum-test strategy if the machines can be grouped.";
+        let plan = Plan::new_with_stable_id(42, vec![b2.to_string()]);
+        assert_eq!(plan.spec.steps.len(), 1);
+        let kind = plan.spec.steps[0]
+            .primitive
+            .as_ref()
+            .and_then(|p| p.payload.get("step_kind"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
+        assert_ne!(
+            kind, "AddPlannerTestCoverage",
+            "domain payload must not be routed to the hardening stub"
+        );
+        assert_eq!(kind, "ExecuteChanges");
+        let requires_llm = plan.spec.steps[0]
+            .primitive
+            .as_ref()
+            .and_then(|p| p.payload.get("requires_llm"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        assert!(requires_llm, "the model must actually be asked");
+    }
 }
 pub mod execution_engine;
 pub mod persistence;
