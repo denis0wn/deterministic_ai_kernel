@@ -6,6 +6,17 @@ const QUESTION_STARTERS_EN: &[&str] = &[
     "does", "do", "did", "can", "could", "will", "would", "should",
 ];
 
+/// English analytical-imperative openers (R2): tasks that demand an
+/// analytical answer, not code changes.
+const ANALYTICAL_OPENERS_EN: &[&str] = &[
+    "determine",
+    "evaluate",
+    "explain",
+    "compare",
+    "analyze",
+    "describe",
+];
+
 /// Russian interrogative openers that mark a direct question.
 const QUESTION_STARTERS_RU: &[&str] = &[
     "сколько",
@@ -23,6 +34,73 @@ const QUESTION_STARTERS_RU: &[&str] = &[
     "как",
 ];
 
+/// Russian analytical-imperative openers (R2): tasks that demand an
+/// analytical answer, not code changes. "столько" covers the common
+/// colloquial misspelling of "сколько" ("Столько будет 9 умножить на 7?").
+/// HD-1: read/analyze/verify intent verbs added — they demand an answer,
+/// not file mutations ("проверь файл", "опиши содержимое лога",
+/// "назови инвентарный номер", "прочитай README и объясни архитектуру").
+const ANALYTICAL_OPENERS_RU: &[&str] = &[
+    "есть",
+    "можно",
+    "объясни",
+    "укажи",
+    "столько",
+    "сравни",
+    "определи",
+    "проанализируй",
+    "проверь",
+    "опиши",
+    "назови",
+    "скажи",
+    "прочитай",
+    "расскажи",
+];
+
+/// Explicit no-change constraints (HD-1). A payload that FORBIDS mutations
+/// is by definition an analysis/question: it must reach the model through
+/// AnswerQuestion, never the execute_changes frame. Checked after CodeFix
+/// keyword pairs, so explicit step flows ("apply patch", "run tests") are
+/// never hijacked. R3: extended with "не запускай"/"не меняй"/"без запуска"
+/// and EN "do not run"/"without executing"/"without running" per spec.
+const NEGATIVE_CONSTRAINT_MARKERS_RU: &[&str] = &[
+    "не выполняй никаких изменений",
+    "не выполняй изменений",
+    "без выполнения каких-либо команд",
+    "без выполнения команд",
+    "без изменений",
+    "без запуска",
+    "не изменяй",
+    "не меняй",
+    "не меняя",
+    "не исправляй",
+    "не применяй",
+    "не запускай",
+    "не вноси изменения",
+];
+const NEGATIVE_CONSTRAINT_MARKERS_EN: &[&str] = &[
+    "do not modify",
+    "do not change",
+    "do not apply",
+    "do not run",
+    "without modifying",
+    "without making changes",
+    "without applying",
+    "without executing",
+    "without running",
+    "don't modify",
+    "don't change",
+    "don't apply",
+    "don't run",
+    "no file changes",
+];
+
+/// Analytical claim-check phrases that can appear MID-text (HD-1). The
+/// opener rules cannot see them when a declarative sentence comes first
+/// ("Товар стоит 100 рублей... Проверь утверждение.").
+const ANALYTICAL_PHRASES_RU: &[&str] = &["проверь утверждение", "верно ли", "правда ли"];
+const ANALYTICAL_PHRASES_EN: &[&str] = &["check the claim", "check whether", "is the claim"];
+
 /// Imperative compute openers (EN+RU): tasks that demand a concrete value,
 /// not code changes.
 const COMPUTE_OPENERS_EN: &[&str] = &["calculate", "compute"];
@@ -39,23 +117,39 @@ fn strip_token_punctuation(token: &str) -> &str {
     token.trim_matches(|c: char| !c.is_alphanumeric())
 }
 
-/// Deterministic question detection (P0, H-2 fix).
+/// Deterministic question detection (P0, H-2 fix; R2 extension; HD-1).
 ///
-/// A step text is a question when it opens with an interrogative (EN+RU),
-/// opens with a compute imperative, ends with '?', or asks "сколько".
+/// A step text is a question/analytical task when it opens with an
+/// interrogative (EN+RU), opens with a compute/analytical imperative,
+/// contains a '?' anywhere, asks "сколько", explicitly forbids file
+/// changes (negative constraints), or contains an analytical claim-check
+/// phrase mid-text. A '?' anywhere (not just at the end) counts because
+/// multi-sentence analytical tasks often embed the question mid-text and
+/// end with formatting instructions.
 /// This runs AFTER CodeFix keyword pairs (so "can you find the bug?" stays
-/// a CodeFix step) and BEFORE PlannerHardening keywords (so "what is a unit
-/// test?" is a question, not planner hardening).
+/// a CodeFix step and "run tests but do not modify" stays RunTests) and
+/// BEFORE PlannerHardening keywords (so "what is a unit test?" is a
+/// question, not planner hardening).
 fn is_question(lower: &str, tokens: &[&str]) -> bool {
     let first = tokens.first().copied().unwrap_or("");
     QUESTION_STARTERS_EN.contains(&first)
+        || ANALYTICAL_OPENERS_EN.contains(&first)
         || QUESTION_STARTERS_RU.contains(&first)
+        || ANALYTICAL_OPENERS_RU.contains(&first)
         || COMPUTE_OPENERS_EN.contains(&first)
         || COMPUTE_OPENERS_RU.contains(&first)
-        || lower.ends_with('?')
+        || lower.contains('?')
         || tokens
             .iter()
             .any(|t| strip_token_punctuation(t) == "сколько")
+        || NEGATIVE_CONSTRAINT_MARKERS_RU
+            .iter()
+            .any(|m| lower.contains(m))
+        || NEGATIVE_CONSTRAINT_MARKERS_EN
+            .iter()
+            .any(|m| lower.contains(m))
+        || ANALYTICAL_PHRASES_RU.iter().any(|m| lower.contains(m))
+        || ANALYTICAL_PHRASES_EN.iter().any(|m| lower.contains(m))
 }
 
 pub fn normalize_step(raw: &str) -> Option<StepKind> {
@@ -90,21 +184,8 @@ pub fn normalize_step(raw: &str) -> Option<StepKind> {
     let has = |needle: &str| tokens.contains(&needle);
     let contains_pair = |a: &str, b: &str| has(a) && has(b);
 
-    if has("deploy")
-        || has("research")
-        || has("ux")
-        || has("readme")
-        || has("documentation")
-        || contains_pair("user", "interface")
-    {
-        return None;
-    }
-
-    if contains_pair("parse", "cli") || contains_pair("parse", "arguments") {
-        return None;
-    }
-
-    // CodeFix step kinds (must precede PlannerHardening patterns to avoid
+    // CodeFix step kinds (must precede question detection — "can you find
+    // the bug?" stays LocateBug — and PlannerHardening patterns to avoid
     // "test"/"validate" keyword collisions).
     if contains_pair("read", "repository") || contains_pair("read", "repo") {
         return Some(StepKind::ReadRepository);
@@ -134,28 +215,59 @@ pub fn normalize_step(raw: &str) -> Option<StepKind> {
     }
 
     // Interrogative/analytical questions route to the answer flow instead of
-    // falling through to the ExecuteChanges default (P0, H-2 fix).
+    // falling through to the ExecuteChanges default (P0, H-2 fix). HD-1:
+    // this now also runs BEFORE the docs/deploy reject list, so analytical
+    // payloads that merely mention "readme"/"documentation" ("прочитай
+    // README и объясни архитектуру") reach the model as questions instead
+    // of falling into the execute_changes frame via the reject-to-default
+    // path.
     if is_question(&lower, &tokens) {
         return Some(StepKind::AnswerQuestion);
     }
 
-    if has("fallback") || has("error") {
+    if has("deploy")
+        || has("research")
+        || has("ux")
+        || has("readme")
+        || has("documentation")
+        || contains_pair("user", "interface")
+    {
+        return None;
+    }
+
+    if contains_pair("parse", "cli") || contains_pair("parse", "arguments") {
+        return None;
+    }
+
+    // Planner-hardening meta steps are computed stubs (the model is never
+    // asked), so ALL their keywords and keyword pairs fire ONLY when the
+    // text actually references planner/pipeline/kernel/LLM infrastructure.
+    // Without this gate, domain tasks merely mentioning "test"/"error"/
+    // "normalize"/"filter"/"test coverage"/"validate output" were silently
+    // routed to stub steps and the model was bypassed entirely (defect R1;
+    // R2 forensic verification proved the ungated pairs were still a hole:
+    // "describe the test coverage of the module" → AddPlannerTestCoverage).
+    let planner_context = has("planner") || has("pipeline") || has("kernel") || has("llm");
+    if planner_context && (has("fallback") || has("error")) {
         return Some(StepKind::AddLlmFallbackHandling);
     }
 
-    if has("test") || contains_pair("test", "coverage") || contains_pair("write", "tests") {
+    if planner_context
+        && (contains_pair("test", "coverage") || contains_pair("write", "tests") || has("test"))
+    {
         return Some(StepKind::AddPlannerTestCoverage);
     }
 
-    if contains_pair("validate", "output") || contains_pair("sample", "tasks") {
+    if planner_context && (contains_pair("validate", "output") || contains_pair("sample", "tasks"))
+    {
         return Some(StepKind::ValidatePlannerOutput);
     }
 
-    if contains_pair("prompt", "shape") || contains_pair("planner", "prompt") {
+    if planner_context && (contains_pair("prompt", "shape") || contains_pair("planner", "prompt")) {
         return Some(StepKind::TightenPlannerPrompt);
     }
 
-    if has("normalize") || has("filtering") || has("filter") {
+    if planner_context && (has("normalize") || has("filtering") || has("filter")) {
         return Some(StepKind::NormalizePlannerOutput);
     }
 
@@ -748,6 +860,188 @@ mod tests {
         assert_eq!(
             normalize_step("Validate Patch"),
             Some(StepKind::ValidatePatch)
+        );
+    }
+
+    #[test]
+    fn normalize_step_does_not_misroute_domain_keyword_mentions_r1() {
+        // R1 regression: domain tasks that merely mention "test"/"error"/
+        // "normalize"/"filter" must NOT be routed to planner-hardening stub
+        // steps (which never ask the model). Without planner context they
+        // fall through to normal planning (None -> ExecuteChanges).
+        let b2 = "Five machines produce parts. Exactly one machine produces defective parts. \
+                  You have one test that identifies whether a batch contains a defect. \
+                  Design the minimum-test strategy if the machines can be grouped.";
+        assert_eq!(normalize_step(b2), None);
+        assert_eq!(
+            normalize_step("handle the error case in the calculation"),
+            None
+        );
+        assert_eq!(normalize_step("normalize the readings from sensor 4"), None);
+        assert_eq!(normalize_step("filter the results by date"), None);
+        // Explicit hardening phrasings still route (context-rich pairs).
+        assert_eq!(
+            normalize_step("write tests for planner output"),
+            Some(StepKind::AddPlannerTestCoverage)
+        );
+        assert_eq!(
+            normalize_step("add test coverage for the planner"),
+            Some(StepKind::AddPlannerTestCoverage)
+        );
+        // Single-word keywords route only with planner context.
+        assert_eq!(
+            normalize_step("add fallback for llm errors"),
+            Some(StepKind::AddLlmFallbackHandling)
+        );
+        assert_eq!(
+            normalize_step("normalize the planner output"),
+            Some(StepKind::NormalizePlannerOutput)
+        );
+    }
+
+    #[test]
+    fn normalize_step_routes_analytical_imperatives_to_answers_r2() {
+        // R2 regression: analytical tasks in imperative/declarative form
+        // must reach the model through AnswerQuestion, not the code-executor
+        // frame. '?' anywhere in the text counts (A4 ends with formatting
+        // instructions, not '?').
+        let a4 = "A price is increased by 18% and then discounted by 18%. Is the final price \
+                  equal to the original price? Give the exact calculation and a yes/no answer.";
+        assert_eq!(normalize_step(a4), Some(StepKind::AnswerQuestion));
+        // "сколько" mid-text (I1).
+        let i1 = "Есть 120 деталей. 25% отправили на склад A. Сколько деталей осталось?";
+        assert_eq!(normalize_step(i1), Some(StepKind::AnswerQuestion));
+        // Analytical openers (J1 "есть", D2 "можно", D3 "объясни", conc_B "столько").
+        let j1 = "Есть 4 задачи с длительностями 3, 5, 2 и 7 часов и две одинаковые машины. \
+                  Укажи распределение и итоговый makespan.";
+        assert_eq!(normalize_step(j1), Some(StepKind::AnswerQuestion));
+        assert_eq!(
+            normalize_step("Можно ли выполнить все три операции за 8 часов?"),
+            Some(StepKind::AnswerQuestion)
+        );
+        assert_eq!(
+            normalize_step("Объясни на русском, чем отличается retryable failure от terminal."),
+            Some(StepKind::AnswerQuestion)
+        );
+        assert_eq!(
+            normalize_step("Столько будет 9 умножить на 7? Ответь числом."),
+            Some(StepKind::AnswerQuestion)
+        );
+        assert_eq!(
+            normalize_step("Determine the total driving time for the route."),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_routes_hd1_acceptance_payloads_to_answers() {
+        // HD-1 regression: the 2026-08-14 acceptance misrouted these 12
+        // analytical payloads to execute_changes. Every one must route to
+        // AnswerQuestion: read/analyze/verify intent verbs (A), explicit
+        // no-change constraints (B), and mid-text claim-check phrases (C).
+        // ── A: analytical intent verbs ──
+        let cases = [
+            "Проанализируй, почему конвейер может простаивать.",
+            "Проверь файл и скажи, что в нём неправильно.",
+            "Скажи, какой алгоритм быстрее в среднем.",
+            "Прочитай README и объясни архитектуру.",
+            "Опиши, как работает конвейер CI/CD.",
+            "Опиши содержимое лога последней смены.",
+            "Назови инвентарный номер машины 3.",
+            "Analyze why the pipeline may be idle.",
+            "Describe the contents of the last shift log.",
+        ];
+        for p in cases {
+            assert_eq!(
+                normalize_step(p),
+                Some(StepKind::AnswerQuestion),
+                "HD-1 misroute: {p}"
+            );
+        }
+        // ── B: explicit no-change constraints ──
+        let constraints = [
+            "Найди причину ошибки в коде, но не исправляй файл.",
+            "Найди файл конфигурации, но не изменяй его.",
+            "Подготовь patch для исправления, но не применяй его.",
+            "Не выполняй никаких изменений, только проанализируй код.",
+            "Опиши архитектуру без выполнения каких-либо команд.",
+            "Review the config file, but do not modify it.",
+        ];
+        for p in constraints {
+            assert_eq!(
+                normalize_step(p),
+                Some(StepKind::AnswerQuestion),
+                "HD-1 negative constraint ignored: {p}"
+            );
+        }
+        // ── C: mid-text claim-check phrases ──
+        let a11 = "Товар стоит 100 рублей. После скидки 20% он стоит 90 рублей. \
+                   Проверь утверждение.";
+        assert_eq!(normalize_step(a11), Some(StepKind::AnswerQuestion));
+    }
+
+    #[test]
+    fn normalize_step_hd1_does_not_hijack_codefix_or_imperatives() {
+        // HD-1 must not pull explicit CodeFix steps into the answer flow,
+        // even when they co-occur with negative-constraint wording, and
+        // plain mutation imperatives stay on the execute path.
+        assert_eq!(
+            normalize_step("run tests but do not modify anything"),
+            Some(StepKind::RunTests)
+        );
+        assert_eq!(
+            normalize_step("apply patch and validate patch"),
+            Some(StepKind::ApplyPatch)
+        );
+        assert_eq!(
+            normalize_step("Can you find the bug in the parser?"),
+            Some(StepKind::LocateBug)
+        );
+        assert_eq!(normalize_step("Refactor the scheduler module"), None);
+        assert_eq!(normalize_step("Deploy planner changes"), None);
+        assert_eq!(
+            normalize_step("Describe the test coverage of the module"),
+            Some(StepKind::AnswerQuestion)
+        );
+    }
+
+    #[test]
+    fn normalize_step_r3_adversarial_negative_constraints_ru_en() {
+        // R3 step 5: NEW adversarial negative-constructive cases (RU+EN)
+        // beyond the 12 acceptance payloads. Every one carries an explicit
+        // no-run/no-change constraint and MUST route to AnswerQuestion even
+        // when action verbs ("найди", "проверь", "review", "analyze")
+        // co-occur in the same sentence.
+        let cases = [
+            // RU: "не запускай" family
+            "Объясни причину сбоя конвейера, но не запускай никаких команд.",
+            "Проверь конфигурацию и найди расхождение, не запуская сервис.",
+            // RU: "не меняй"/"не меняя" family
+            "Проверь логи и найди ошибку, не меняя файлы.",
+            "Найди узкое место в расписании, не меняя сам план.",
+            // RU: "без запуска"
+            "Расскажи про архитектуру ядра без запуска каких-либо процессов.",
+            // EN: "do not run" family
+            "Describe the deployment procedure, but do not run anything.",
+            "Analyze the stack trace and do not run the service.",
+            // EN: "without executing"/"without running"
+            "Analyze the memory usage without executing any commands.",
+            "Review the scheduler code without running the service.",
+        ];
+        for p in cases {
+            assert_eq!(
+                normalize_step(p),
+                Some(StepKind::AnswerQuestion),
+                "R3 adversarial negative constraint ignored: {p}"
+            );
+        }
+        // Constructive control: the SAME verbs without any constraint stay
+        // on the execute path — negative markers must not leak into plain
+        // imperative routing.
+        assert_eq!(normalize_step("Найди узкое место и перестрой план"), None);
+        assert_eq!(
+            normalize_step("Review the scheduler code and refactor it"),
+            None
         );
     }
 
