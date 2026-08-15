@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::model_registry::{resolve_model, ModelPurpose};
 
@@ -10,19 +10,229 @@ use crate::model_registry::{resolve_model, ModelPurpose};
 // Only one LLM request may be in-flight at a time to prevent GPU OOM from
 // concurrent Metal command buffer submissions.
 
-/// Semaphore: max 1 concurrent LLM call.
+/// Semaphore: max concurrent LLM calls (R7: configurable). Default 1 keeps
+/// the historical strictly-sequential behavior; operators may raise it
+/// (DAK_LLM_MAX_CONCURRENT) because mlx_lm.server demonstrably serves
+/// concurrent requests while actively generating (R7 EXP A).
 static LLM_SEMAPHORE: LazyLock<tokio::sync::Semaphore> =
-    LazyLock::new(|| tokio::sync::Semaphore::new(1));
+    LazyLock::new(|| tokio::sync::Semaphore::new(llm_max_concurrent()));
 
 /// Shared reqwest client with connection pooling (reuse across calls).
+///
+/// R4 (HD-3): the request timeout is configurable via
+/// `DAK_LLM_REQUEST_TIMEOUT_SECS` (default 120s). A request that consumes
+/// the FULL timeout means the endpoint accepted the connection but produced
+/// no response — an MLX model/server hang. That condition is now reported
+/// with an explicit "TIMED OUT after Ns" message instead of the opaque
+/// reqwest "error sending request" wording (see chat_with_purpose).
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .pool_max_idle_per_host(2)
         .pool_idle_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(llm_request_timeout_secs()))
         .build()
         .expect("failed to build HTTP client")
 });
+
+/// Effective per-request timeout in seconds (R4). Overridable for tests and
+/// operations; clamped to a sane range. R6: with streaming enabled this
+/// value is the HARD CAP on total request duration (a truly infinite
+/// generation is still bounded); the idle timeout is separate, see
+/// llm_idle_timeout_secs(). Default raised 120→300 for the cap role: legit
+/// long-but-alive generations must not be killed by the upper bound.
+pub fn llm_request_timeout_secs() -> u64 {
+    std::env::var("DAK_LLM_REQUEST_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300)
+        .clamp(1, 3600)
+}
+
+/// R6: idle timeout for STREAMING responses. The request fails only when NO
+/// bytes (content chunks, reasoning deltas, server keepalives) arrive for
+/// this many seconds. A slow but ALIVE generation — the NEW-1 pattern of
+/// long reasoning chains buffered invisibly in non-stream mode — is waited
+/// out instead of being misclassified as a hang. Default 45s.
+pub fn llm_idle_timeout_secs() -> u64 {
+    std::env::var("DAK_LLM_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(45)
+        .clamp(1, 3600)
+}
+
+/// R6: streaming is the default transport to the MLX endpoint. Set
+/// DAK_LLM_STREAMING=off (or 0) to fall back to the legacy non-streaming
+/// request (full-response buffering + single total timeout).
+pub fn llm_streaming_enabled() -> bool {
+    !matches!(
+        std::env::var("DAK_LLM_STREAMING").as_deref(),
+        Ok("off") | Ok("0")
+    )
+}
+
+/// R7: max concurrent LLM requests (semaphore capacity, read once at first
+/// use). Default 1 = historical sequential behavior; 2-3 validated against
+/// mlx_lm.server 0.31.3 (concurrent serving proven, R7 EXP A). Clamped 1..8.
+pub fn llm_max_concurrent() -> usize {
+    std::env::var("DAK_LLM_MAX_CONCURRENT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1)
+        .clamp(1, 8)
+}
+
+/// R7: how many times an IDLE stall (no chunks for the whole idle window)
+/// may be retried on a FRESH connection. Kernel-owned decision, deterministic:
+/// a client disconnect frees mlx_lm.server (R7 EXP B), so one abort+retry
+/// converts a wedge into recovery. HARD_TIMEOUT_EXCEEDED (chunks alive past
+/// the cap) is never retried — an unbounded generation would repeat.
+/// Default 1; set DAK_LLM_STALL_RETRIES=0 for strict no-retry semantics.
+pub fn llm_stall_retries() -> u64 {
+    std::env::var("DAK_LLM_STALL_RETRIES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1)
+        .min(3)
+}
+
+/// Signature of an idle-stall error (see consume_sse_response) — the only
+/// failure class eligible for R7 stall-retry on a fresh connection.
+fn is_idle_stall_error(msg: &str) -> bool {
+    msg.contains("TIMED OUT after") && msg.contains("waiting for next chunk")
+}
+
+// ── R6: OpenAI-compatible SSE streaming ─────────────────────────────────
+//
+// Security note (session law): the LLM stays untrusted input. The stream
+// reader below only ACCUMULATES delta text — nothing from chunk content is
+// ever executed, interpreted as commands, or trusted before the existing
+// kernel-side validation gates (patch contract, grounding, test gates).
+
+#[derive(Deserialize)]
+struct StreamChunk {
+    #[serde(default)]
+    choices: Vec<StreamChoice>,
+}
+
+#[derive(Deserialize)]
+struct StreamChoice {
+    #[serde(default)]
+    delta: Option<StreamDelta>,
+}
+
+#[derive(Deserialize)]
+struct StreamDelta {
+    #[serde(default)]
+    content: Option<String>,
+    // Reasoning models may deliver the whole answer in `reasoning` (the
+    // non-streaming path mirrors this via content.or(reasoning)); live
+    // probe B6 showed an empty content stream with the answer only in
+    // reasoning deltas. Accumulated separately and used when content is
+    // empty — the streaming contract stays identical to non-streaming.
+    #[serde(default)]
+    reasoning: Option<String>,
+}
+
+/// Consume an SSE chat-completions stream. Every received byte chunk resets
+/// the idle timer; the accumulated deltas become the answer text under the
+/// SAME contract as the non-streaming path: `content`, or `reasoning` when
+/// content is empty (reasoning models may emit the answer only in
+/// reasoning deltas).
+///
+/// Errors:
+/// - no chunks for `idle_secs` → "... TIMED OUT after {idle}s ..." (idle
+///   stall; storage maps this signature to STALL_DETECTED);
+/// - total duration exceeds `hard_cap_secs` despite active chunks →
+///   "... HARD_TIMEOUT_EXCEEDED after {cap}s ..." (truly unbounded
+///   generation; storage maps this signature to HARD_TIMEOUT_EXCEEDED).
+async fn consume_sse_response(
+    mut response: reqwest::Response,
+    idle_secs: u64,
+    hard_cap_secs: u64,
+) -> Result<String> {
+    let idle = Duration::from_secs(idle_secs);
+    let hard_cap = Duration::from_secs(hard_cap_secs);
+    let start = Instant::now();
+
+    let mut line_buf: Vec<u8> = Vec::new();
+    let mut content = String::new();
+    let mut reasoning = String::new();
+
+    loop {
+        if start.elapsed() > hard_cap {
+            return Err(anyhow!(
+                "mlx request HARD_TIMEOUT_EXCEEDED after {}s despite active chunks \
+                 (generation never terminated)",
+                hard_cap_secs
+            ));
+        }
+        let next = tokio::time::timeout(idle, response.chunk()).await;
+        match next {
+            Err(_) => {
+                return Err(anyhow!(
+                    "mlx stream TIMED OUT after {}s waiting for next chunk \
+                     (no tokens or keepalive received; generation stalled)",
+                    idle_secs
+                ));
+            }
+            Ok(Err(e)) => {
+                let msg = if e.is_timeout() {
+                    format!(
+                        "mlx stream TIMED OUT after {}s waiting for next chunk \
+                         (no tokens or keepalive received; generation stalled)",
+                        idle_secs
+                    )
+                } else if e.is_connect() {
+                    format!("mlx connection failed (endpoint down or unreachable): {e}")
+                } else {
+                    format!("mlx stream transport error: {e}")
+                };
+                return Err(anyhow!("{msg}"));
+            }
+            Ok(Ok(None)) => break, // stream finished
+            Ok(Ok(Some(bytes))) => {
+                line_buf.extend_from_slice(&bytes);
+                // Drain complete lines; keep the partial tail.
+                while let Some(pos) = line_buf.iter().position(|b| *b == b'\n') {
+                    let line: Vec<u8> = line_buf.drain(..=pos).collect();
+                    let line = String::from_utf8_lossy(&line);
+                    let line = line.trim();
+                    let Some(payload) = line.strip_prefix("data:") else {
+                        continue;
+                    };
+                    let payload = payload.trim();
+                    if payload == "[DONE]" {
+                        continue;
+                    }
+                    if let Ok(chunk) = serde_json::from_str::<StreamChunk>(payload) {
+                        for choice in &chunk.choices {
+                            if let Some(delta) = &choice.delta {
+                                if let Some(piece) = &delta.content {
+                                    content.push_str(piece);
+                                }
+                                if let Some(piece) = &delta.reasoning {
+                                    reasoning.push_str(piece);
+                                }
+                            }
+                        }
+                    }
+                    // Non-JSON or keepalive payloads: the bytes still
+                    // arrived, so the idle timer was already reset — nothing
+                    // else to do with them.
+                }
+            }
+        }
+    }
+    // Contract parity with the non-streaming path: content.or(reasoning).
+    // Reasoning models may emit the whole answer in reasoning deltas and
+    // leave content empty (live probe B6).
+    Ok(if content.is_empty() {
+        reasoning
+    } else {
+        content
+    })
+}
 
 /// Global counter for in-flight LLM requests (observability).
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
@@ -294,33 +504,145 @@ pub async fn chat_with_model_override(
         .await
         .map_err(|e| anyhow!("semaphore closed: {e}"))?;
 
-    for attempt in 0..=MAX_RETRIES {
-        let _in_flight_guard = {
-            IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
-            InFlightGuard
-        };
-        let result = HTTP_CLIENT
-            .post(&url)
-            .bearer_auth(&config.api_key)
-            .json(&req)
-            .send()
-            .await;
-        drop(_in_flight_guard);
+    // R6: streaming by default — the idle timer (not a total-duration
+    // timer) decides stalls, so long-but-alive reasoning generations are
+    // no longer misclassified as hangs (NEW-1 root cause).
+    let streaming = llm_streaming_enabled();
+    let mut req_json = serde_json::to_value(&req)?;
+    req_json["stream"] = serde_json::Value::Bool(streaming);
 
-        match result {
-            Ok(response) => {
-                let status = response.status();
-                let body = response.text().await?;
+    // R7: outer stall-retry loop. An IDLE stall aborts the connection and
+    // retries on a FRESH connection (budget: DAK_LLM_STALL_RETRIES, default
+    // 1 — a client disconnect frees mlx_lm.server, EXP B). Transport-level
+    // retries keep their own budget on every pass; the kernel owns the
+    // decision, determinism is preserved (same payload/seed/temperature).
+    let stall_budget = llm_stall_retries();
+    let mut stall_used = 0u64;
+    'request: loop {
+        last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            let _in_flight_guard = {
+                IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
+                InFlightGuard
+            };
+            let result = HTTP_CLIENT
+                .post(&url)
+                .bearer_auth(&config.api_key)
+                .json(&req_json)
+                .send()
+                .await;
+            drop(_in_flight_guard);
 
-                if !status.is_success() {
-                    let err = anyhow!(
-                        "mlx request failed for model {:?} with status {}: {}",
-                        config.model,
-                        status,
-                        body
-                    );
-                    let kind = classify_error(&err);
-                    if is_retryable(kind) && attempt < MAX_RETRIES {
+            match result {
+                Ok(response) => {
+                    let status = response.status();
+
+                    if !status.is_success() {
+                        let body = response.text().await.unwrap_or_default();
+                        let err = anyhow!(
+                            "mlx request failed for model {:?} with status {}: {}",
+                            config.model,
+                            status,
+                            body
+                        );
+                        let kind = classify_error(&err);
+                        if is_retryable(kind) && attempt < MAX_RETRIES {
+                            let backoff = backoff_duration(attempt, kind);
+                            eprintln!(
+                                "[llm] retry {}/{} after {:?} (backoff {:?})",
+                                attempt + 1,
+                                MAX_RETRIES + 1,
+                                kind,
+                                backoff
+                            );
+                            tokio::time::sleep(backoff).await;
+                            last_err = Some(err);
+                            continue;
+                        }
+                        return Err(err);
+                    }
+
+                    let text = if streaming {
+                        // R6: SSE consumption with idle timeout + hard cap.
+                        // R7: an IDLE stall (no chunks at all for the whole
+                        // window) aborts this connection and — if budget remains
+                        // — retries on a FRESH connection. HARD_TIMEOUT_EXCEEDED
+                        // (chunks alive past the cap) is NOT retried: an
+                        // unbounded generation would simply repeat.
+                        match consume_sse_response(
+                            response,
+                            llm_idle_timeout_secs(),
+                            llm_request_timeout_secs(),
+                        )
+                        .await
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                let msg = e.to_string();
+                                if is_idle_stall_error(&msg) && stall_used < stall_budget {
+                                    stall_used += 1;
+                                    eprintln!(
+                                    "[llm] stall-retry {}/{}: idle stall detected, aborting connection and retrying fresh",
+                                    stall_used, stall_budget
+                                );
+                                    continue 'request;
+                                }
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        let body = response.text().await?;
+                        let parsed: ChatResponse = serde_json::from_str(&body)?;
+                        parsed
+                            .choices
+                            .first()
+                            .map(|c| {
+                                c.message
+                                    .content
+                                    .clone()
+                                    .or(c.message.reasoning.clone())
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default()
+                    };
+
+                    // P0 MLX lifecycle: idle timeout counts from the last
+                    // COMPLETED inference.
+                    crate::mlx_lifecycle::record_activity();
+                    return Ok(text);
+                }
+                Err(e) => {
+                    // R4 (HD-3): precise transport-error attribution. A full
+                    // client timeout means the endpoint took the connection and
+                    // then produced NOTHING for the whole window (model/server
+                    // hang). The old opaque "error sending request" message made
+                    // these stalls undiagnosable in logs and event evidence.
+                    let (err_msg, kind) = if e.is_timeout() {
+                        (
+                            format!(
+                                "mlx request TIMED OUT after {}s waiting for model response \
+                             (endpoint accepted the connection but produced no tokens; \
+                             model/server hang suspected)",
+                                llm_request_timeout_secs()
+                            ),
+                            LlmErrorKind::Timeout,
+                        )
+                    } else if e.is_connect() {
+                        (
+                            format!("mlx connection failed (endpoint down or unreachable): {e}"),
+                            LlmErrorKind::ServerOffline,
+                        )
+                    } else {
+                        let msg = format!("mlx request failed: error sending request: {e}");
+                        let kind = classify_error(&anyhow::anyhow!("{msg}"));
+                        (msg, kind)
+                    };
+                    // R4 (HD-3): a server that hung for the FULL request timeout
+                    // will hang again — retrying only multiplies the silence
+                    // (3x 120s). Fast-fail with the diagnostic; transient kinds
+                    // (refused/reset/OOM) keep their retry budget.
+                    if kind != LlmErrorKind::Timeout && is_retryable(kind) && attempt < MAX_RETRIES
+                    {
                         let backoff = backoff_duration(attempt, kind);
                         eprintln!(
                             "[llm] retry {}/{} after {:?} (backoff {:?})",
@@ -330,52 +652,18 @@ pub async fn chat_with_model_override(
                             backoff
                         );
                         tokio::time::sleep(backoff).await;
-                        last_err = Some(err);
+                        last_err = Some(anyhow!("{err_msg}"));
                         continue;
                     }
-                    return Err(err);
+                    return Err(anyhow!("{err_msg}"));
                 }
-
-                let parsed: ChatResponse = serde_json::from_str(&body)?;
-                let text = parsed
-                    .choices
-                    .first()
-                    .map(|c| {
-                        c.message
-                            .content
-                            .clone()
-                            .or(c.message.reasoning.clone())
-                            .unwrap_or_default()
-                    })
-                    .unwrap_or_default();
-
-                // P0 MLX lifecycle: idle timeout counts from the last
-                // COMPLETED inference.
-                crate::mlx_lifecycle::record_activity();
-                return Ok(text);
-            }
-            Err(e) => {
-                let err_msg = format!("{e}");
-                let kind = classify_error(&anyhow::anyhow!("{}", err_msg));
-                if is_retryable(kind) && attempt < MAX_RETRIES {
-                    let backoff = backoff_duration(attempt, kind);
-                    eprintln!(
-                        "[llm] retry {}/{} after {:?} (backoff {:?})",
-                        attempt + 1,
-                        MAX_RETRIES + 1,
-                        kind,
-                        backoff
-                    );
-                    tokio::time::sleep(backoff).await;
-                    last_err = Some(anyhow!("mlx request failed: {err_msg}"));
-                    continue;
-                }
-                return Err(anyhow!("mlx request failed: {err_msg}"));
             }
         }
-    }
 
-    Err(last_err.unwrap_or_else(|| anyhow!("LLM call failed after retries")))
+        // Transport retries exhausted on this pass (any stall-retry budget was
+        // already spent via `continue 'request`).
+        return Err(last_err.unwrap_or_else(|| anyhow!("LLM call failed after retries")));
+    }
 }
 
 /// Structured chat: returns parsed JSON with automatic repair on parse failure.
@@ -618,5 +906,25 @@ mod tests {
     #[test]
     fn in_flight_counter_starts_zero() {
         assert_eq!(IN_FLIGHT.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn r7_idle_stall_signature_is_precise() {
+        // Eligible: the streaming idle stall.
+        assert!(is_idle_stall_error(
+            "mlx stream TIMED OUT after 45s waiting for next chunk (no tokens or keepalive received; generation stalled)"
+        ));
+        // NOT eligible: the hard cap (chunks were alive — retry would repeat).
+        assert!(!is_idle_stall_error(
+            "mlx request HARD_TIMEOUT_EXCEEDED after 300s despite active chunks"
+        ));
+        // NOT eligible: the legacy non-stream total timeout.
+        assert!(!is_idle_stall_error(
+            "mlx request TIMED OUT after 120s waiting for model response"
+        ));
+        // NOT eligible: ordinary transport failures.
+        assert!(!is_idle_stall_error(
+            "mlx connection failed (endpoint down or unreachable)"
+        ));
     }
 }

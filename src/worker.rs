@@ -85,4 +85,49 @@ mod tests {
         );
         assert_eq!(outcome_to_event_type(StepOutcome::Blocked), "STEP_FAILED");
     }
+
+    // ── R4 (HD-3): stall signature detection ────────────────────────────
+    use crate::providers::storage::stall_elapsed_secs_from_reason;
+
+    #[test]
+    fn stall_signature_detected_with_elapsed_secs() {
+        let reason = "primitive_execution_error: mlx request TIMED OUT after 120s \
+                      waiting for model response (endpoint accepted the connection \
+                      but produced no tokens; model/server hang suspected)";
+        assert_eq!(stall_elapsed_secs_from_reason(reason), Some(120));
+        let short = "mlx request TIMED OUT after 2s waiting for model response";
+        assert_eq!(stall_elapsed_secs_from_reason(short), Some(2));
+    }
+
+    #[test]
+    fn stall_signature_absent_for_ordinary_failures() {
+        for reason in [
+            "primitive_execution_error: mlx connection failed (endpoint down)",
+            "fatal: real tests failed with exit code 1",
+            "retry: network blip",
+            // marker present but no number+unit — must NOT fire
+            "mlx request TIMED OUT after sometime",
+        ] {
+            assert_eq!(
+                stall_elapsed_secs_from_reason(reason),
+                None,
+                "false stall detection: {reason}"
+            );
+        }
+    }
+
+    // ── R6: hard-cap signature detection ────────────────────────────────
+    use crate::providers::storage::hard_timeout_secs_from_reason;
+
+    #[test]
+    fn hard_timeout_signature_detected() {
+        let reason = "primitive_execution_error: mlx request HARD_TIMEOUT_EXCEEDED \
+                      after 300s despite active chunks (generation never terminated)";
+        assert_eq!(hard_timeout_secs_from_reason(reason), Some(300));
+        // idle signature must NOT trigger the hard-cap detector
+        assert_eq!(
+            hard_timeout_secs_from_reason("mlx stream TIMED OUT after 45s waiting for next chunk"),
+            None
+        );
+    }
 }

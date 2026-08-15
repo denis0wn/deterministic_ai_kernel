@@ -2,6 +2,7 @@ use deterministic_ai_kernel::cli_json::emit_json;
 use deterministic_ai_kernel::effects::execute_effects;
 use deterministic_ai_kernel::execution::runtime::Runtime;
 use deterministic_ai_kernel::leases::{expire_leases, seed_demo_leases};
+use deterministic_ai_kernel::providers::storage::StorageProvider;
 use deterministic_ai_kernel::replay::capsule::build_replay_capsule;
 use deterministic_ai_kernel::replay::engine::replay_validate;
 use deterministic_ai_kernel::scheduler::{
@@ -9,7 +10,6 @@ use deterministic_ai_kernel::scheduler::{
 };
 use deterministic_ai_kernel::snapshot::{rebuild_snapshot, restore_snapshot};
 use deterministic_ai_kernel::workflow::compiler::Workflow;
-use rusqlite::Connection;
 use std::fs;
 
 /// Unwrap a kernel operation at the CLI boundary without panicking: any
@@ -1150,6 +1150,12 @@ async fn main() {
                 std::process::exit(1);
             }
             if let Err(e) = execute_effects(db, &task_id) {
+                // R4 (HD-3): a failed task must surface a terminal STATE line
+                // on stdout — previously the process exited with only an
+                // eprintln, so harnesses saw an empty TASK_STATE and read it
+                // as a silent stall.
+                println!("TASK_STATE: failed");
+                println!("TASK_FAILED_REASON: {e}");
                 eprintln!("execute-effects failed: {e}");
                 std::process::exit(1);
             }
@@ -1296,7 +1302,33 @@ async fn main() {
         }
         Some("replay") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
+            // OPS-1: the library validator is silent; the CLI owns its own
+            // output — a clean verdict plus any violations on stderr. The
+            // effect counts stay part of the CLI contract (golden corpus).
+            let storage = deterministic_ai_kernel::providers::storage_for(db);
+            for v in storage.replay_violations(task_id).unwrap_or_default() {
+                eprintln!("{v}");
+            }
             let ok = replay_validate(db, task_id);
+            if let Ok(conn) = rusqlite::Connection::open(db) {
+                let committed: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'committed'",
+                        [task_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(0);
+                let rejected: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'rejected'",
+                        [task_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(0);
+                println!("COMMITTED_EFFECTS: {committed}");
+                println!("REJECTED_EFFECTS: {rejected}");
+            }
+            println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
             println!("REPLAY OK: {}", ok);
             return;
         }

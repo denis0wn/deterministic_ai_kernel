@@ -829,6 +829,49 @@ pub fn outcome_to_event_type(outcome: StepOutcome) -> &'static str {
     }
 }
 
+/// R4 (HD-3): detect an LLM stall signature in a failure reason and return
+/// the elapsed seconds the request hung. R6 semantics: with the streaming
+/// client this signature means IDLE timeout — no chunks (content, reasoning
+/// deltas, keepalives) arrived for the whole window. The llm layer formats
+/// idle stalls as "... TIMED OUT after <N>s ...".
+/// Returns None for ordinary (non-stall) failures. Pure and deterministic —
+/// no clock, no LLM interpretation.
+pub fn stall_elapsed_secs_from_reason(reason: &str) -> Option<u64> {
+    let marker = "TIMED OUT after ";
+    let start = reason.find(marker)? + marker.len();
+    let digits: String = reason[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    let secs = digits.parse::<u64>().ok()?;
+    // Guard against the marker appearing in unrelated prose: require the
+    // unit suffix immediately after the number.
+    if reason[start + digits.len()..].starts_with('s') {
+        Some(secs)
+    } else {
+        None
+    }
+}
+
+/// R6: detect the HARD-CAP signature — the streaming client was receiving
+/// chunks (generation alive) but the total duration exceeded the upper
+/// bound. Rare: a truly unbounded generation. llm formats it as
+/// "... HARD_TIMEOUT_EXCEEDED after <N>s ...".
+pub fn hard_timeout_secs_from_reason(reason: &str) -> Option<u64> {
+    let marker = "HARD_TIMEOUT_EXCEEDED after ";
+    let start = reason.find(marker)? + marker.len();
+    let digits: String = reason[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    let secs = digits.parse::<u64>().ok()?;
+    if reason[start + digits.len()..].starts_with('s') {
+        Some(secs)
+    } else {
+        None
+    }
+}
+
 fn is_ai_worker(worker_id: &str) -> bool {
     let lower = worker_id.to_ascii_lowercase();
     lower == "ai"
@@ -2176,6 +2219,73 @@ impl StorageProvider for DefaultStorage {
             ],
         )?;
 
+        // R4 (HD-3): an LLM request that consumed the full timeout is a
+        // STALL, and it must not be silent. Emit a dedicated, queryable
+        // STALL_DETECTED event in the SAME causal unit (sequence 1) so the
+        // event log — and anything replaying it (TUI, replay_validate) —
+        // can distinguish "model/server hung for Ns" from ordinary
+        // retryable failures. llm_calls=0 is a kernel fact here: no
+        // successful completion was recorded for this step.
+        let stall_elapsed = stall_elapsed_secs_from_reason(reason);
+        if let Some(elapsed_secs) = stall_elapsed {
+            let stall_payload = json!({
+                "lease_id": lease_id,
+                "worker_id": worker_id,
+                "task_id": task_id,
+                "step_id": step_id,
+                "elapsed_secs": elapsed_secs,
+                "llm_calls": 0,
+                "last_known_state": "pending",
+                "reason": reason
+            });
+            tx.execute(
+                "INSERT INTO event_log
+                 (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    next_generation,
+                    next_generation,
+                    task_id,
+                    step_id,
+                    "STALL_DETECTED",
+                    canonical_json(&stall_payload)?,
+                    next_generation
+                ],
+            )?;
+        }
+
+        // R6: distinct event for the HARD-CAP case — chunks were flowing
+        // (generation alive) but the total duration exceeded the upper
+        // bound. STALL_DETECTED now means "idle timeout: no chunks at all";
+        // HARD_TIMEOUT_EXCEEDED means "alive but unbounded generation".
+        let hard_elapsed = hard_timeout_secs_from_reason(reason);
+        if let Some(elapsed_secs) = hard_elapsed {
+            let hard_payload = json!({
+                "lease_id": lease_id,
+                "worker_id": worker_id,
+                "task_id": task_id,
+                "step_id": step_id,
+                "elapsed_secs": elapsed_secs,
+                "llm_calls": 0,
+                "last_known_state": "pending",
+                "reason": reason
+            });
+            tx.execute(
+                "INSERT INTO event_log
+                 (system_generation, causal_unit_id, sequence_in_unit, task_id, step_id, event_type, payload, logical_generation)
+                 VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    next_generation,
+                    next_generation,
+                    task_id,
+                    step_id,
+                    "HARD_TIMEOUT_EXCEEDED",
+                    canonical_json(&hard_payload)?,
+                    next_generation
+                ],
+            )?;
+        }
+
         let new_status = match outcome {
             StepOutcome::RetryableFailure | StepOutcome::Blocked => "pending",
             _ => "rejected",
@@ -2196,6 +2306,24 @@ impl StorageProvider for DefaultStorage {
         println!("WORKER: {}", worker_id);
         println!("STEP_FAILED_BY_WORKER: {}", step_id);
         println!("REASON: {}", reason);
+        // R4 (HD-3): make stalls visible on the CLI surface too, not only
+        // in the event log (the acceptance eval harness only greps stdout).
+        if let Some(elapsed_secs) = stall_elapsed {
+            println!(
+                "STALL_DETECTED: task={} step={} elapsed_secs={} llm_calls=0 last_state=pending",
+                task_id, step_id, elapsed_secs
+            );
+            // R6: with the streaming client this means IDLE timeout — no
+            // chunks arrived for the whole window.
+            println!("STALL_KIND: mlx_stream_idle_timeout (no chunks received)");
+        }
+        if let Some(elapsed_secs) = hard_elapsed {
+            println!(
+                "HARD_TIMEOUT_EXCEEDED: task={} step={} elapsed_secs={} llm_calls=0 last_state=pending",
+                task_id, step_id, elapsed_secs
+            );
+            println!("HARD_KIND: mlx_generation_unbounded (chunks flowing past the cap)");
+        }
         Ok(())
     }
 
@@ -2308,6 +2436,11 @@ impl StorageProvider for DefaultStorage {
     }
 
     fn replay_validate(&self, task_id: &str) -> bool {
+        // OPS-1: this validator is a LIBRARY function — it must be silent.
+        // The TUI Replay screen calls it on every refresh; stdout output
+        // here polluted the ratatui frame. Callers that want the verdict
+        // printed (CLI `replay` verb) do their own printing. Violations
+        // are queryable via replay_violations().
         let conn = match self.conn() {
             Ok(c) => c,
             Err(_) => return false,
@@ -2322,11 +2455,7 @@ impl StorageProvider for DefaultStorage {
             Err(_) => return false,
         };
 
-        let mut ok = true;
-        for violation in &fold.violations {
-            eprintln!("{}", violation);
-            ok = false;
-        }
+        let mut ok = fold.violations.is_empty();
 
         let reserved: i64 = conn
             .query_row(
@@ -2336,33 +2465,10 @@ impl StorageProvider for DefaultStorage {
             )
             .unwrap_or(0);
 
-        let committed: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'committed'",
-                [task_id],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-
-        let rejected: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'rejected'",
-                [task_id],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-
         if reserved != 0 {
-            eprintln!(
-                "INVALID task {}: {} reserved effects remain",
-                task_id, reserved
-            );
             ok = false;
         }
 
-        println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
-        println!("COMMITTED_EFFECTS: {}", committed);
-        println!("REJECTED_EFFECTS: {}", rejected);
         ok
     }
 
