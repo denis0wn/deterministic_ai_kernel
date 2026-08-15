@@ -295,6 +295,86 @@ fn failing_real_tests_block_completion() {
 }
 
 #[test]
+fn failing_pytest_style_tests_block_completion() {
+    // CD-1 regression (acceptance F3): a pytest-style test file whose
+    // assertions fail after the patch MUST block completion. Bare
+    // `python3 <file>` used to exit 0 here because nothing invoked the
+    // def test_* functions, producing test_report_v1 passed=true and a
+    // false validation PASS for objectively failing tests.
+    let ws = fresh_dir("p3_ptf_bad");
+    python_project(
+        &ws,
+        "from calc import multiply\n\n\ndef test_multiply():\n    assert multiply(2, 3) == 999\n",
+    );
+    let calc = ws.join("calc.py");
+
+    let task_id = unique("p3-ptf-bad");
+    let spec = full_chain_spec(ws.to_str().unwrap());
+    let db = create_task(&task_id, &spec.to_string(), "fix multiply");
+    seed_patch(&db, &task_id, calc.to_str().unwrap());
+
+    let err = execute_effects(&db, &task_id).expect_err("failing pytest-style tests must block");
+    assert!(err.to_string().contains("real tests failed"), "{err}");
+
+    // Task must NOT be completed.
+    let conn = deterministic_ai_kernel::providers::storage::open_initialized(&db).unwrap();
+    let completed_steps: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM step_status WHERE task_id = ?1 AND status = 'committed'",
+            rusqlite::params![task_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        completed_steps < 3,
+        "no completion when pytest-style tests fail"
+    );
+
+    cleanup_task_files(&task_id, &db);
+    let _ = std::fs::remove_dir_all(&ws);
+}
+
+#[test]
+fn pytest_style_full_chain_completes_with_real_evidence() {
+    // Positive counterpart: pytest-style tests that genuinely pass after
+    // the patch still complete the chain with kernel-owned evidence.
+    let ws = fresh_dir("p3_ptf_ok");
+    python_project(
+        &ws,
+        "from calc import multiply\n\n\ndef test_multiply():\n    assert multiply(2, 3) == 6\n",
+    );
+    let calc = ws.join("calc.py");
+
+    let task_id = unique("p3-ptf-ok");
+    let spec = full_chain_spec(ws.to_str().unwrap());
+    let db = create_task(&task_id, &spec.to_string(), "fix multiply");
+    seed_patch(&db, &task_id, calc.to_str().unwrap());
+
+    execute_effects(&db, &task_id).expect("pytest-style passing chain must complete");
+
+    assert_eq!(
+        std::fs::read_to_string(&calc).unwrap(),
+        "def multiply(a, b):\n    return a * b\n"
+    );
+
+    let bus = EventBus::new(&db).unwrap();
+    let artifacts = bus.list_semantic_artifacts(&task_id, None).unwrap();
+    let has_report = artifacts.iter().any(|row| {
+        serde_json::from_str::<serde_json::Value>(&row.payload)
+            .ok()
+            .and_then(|p| p.get("test_report_v1").cloned())
+            .map(|r| {
+                r["passed"] == true && r["exit_code"] == 0 && r["command_id"] == "python_test_file"
+            })
+            .unwrap_or(false)
+    });
+    assert!(has_report, "passing pytest-style report must be persisted");
+
+    cleanup_task_files(&task_id, &db);
+    let _ = std::fs::remove_dir_all(&ws);
+}
+
+#[test]
 fn concurrent_codefix_workloads_do_not_cross_contaminate() {
     // Matrix O: two independent CodeFix chains in parallel threads, each
     // with its own workspace/db — evidence must not leak between them.

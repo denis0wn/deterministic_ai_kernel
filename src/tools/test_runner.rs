@@ -13,13 +13,14 @@
 //! - execution is a direct argv spawn (`Command::new(prog).args(argv)`) —
 //!   no `sh -c`, no shell parsing, no user/LLM command strings;
 //! - cwd is the canonicalized workspace; the allowlist only produces
-//!   standard test runners (cargo test / python3 -m pytest / python3 file);
+//!   standard test runners (cargo test / python3 -m pytest / python3
+//!   executing a test file through the kernel-owned harness below);
 //! - timeout is enforced with kill-on-deadline;
 //! - authorization is enforced by `tools::registry::execute_tool` before
 //!   this handler is reached (confirmation-gated like other mutating tools).
 
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -27,6 +28,62 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub const TEST_REPORT_VERSION: &str = "test_report_v1";
 pub const DEFAULT_TEST_TIMEOUT_SECS: u64 = 120;
 const OUTPUT_TAIL_CHARS: usize = 2000;
+
+/// Kernel-owned harness for `python_test_file` (CD-1 fix). Fed to python3
+/// via stdin (`python3 - <file>`) — a compile-time constant, never LLM
+/// output. It executes the test file as `__main__` (preserving
+/// script-is-test semantics: top-level asserts, `if __name__` guards,
+/// sys.exit) and THEN invokes every module-level `test_*` function, so
+/// pytest-style files can no longer pass vacuously just because nothing
+/// calls their test functions. Any uncaught exception => non-zero exit =>
+/// `tests_failed`. Fixture/parametrize-style tests require a real pytest
+/// configuration marker (pytest.ini/pyproject.toml/...) and route to
+/// `python_pytest` instead.
+const PYTHON_TEST_FILE_HARNESS: &str = r#"
+import inspect
+import runpy
+import sys
+import traceback
+
+
+def _kernel_test_harness():
+    if len(sys.argv) < 2:
+        print("kernel test harness: missing test file argument", file=sys.stderr)
+        return 2
+    path = sys.argv[1]
+    try:
+        module_globals = runpy.run_path(path, run_name="__main__")
+    except SystemExit as exc:
+        code = exc.code
+        if code is None or code == 0:
+            return 0
+        return code if isinstance(code, int) else 1
+    except BaseException:
+        traceback.print_exc()
+        return 1
+
+    failures = []
+    for name in sorted(module_globals):
+        fn = module_globals[name]
+        if not name.startswith("test_") or not inspect.isfunction(fn):
+            continue
+        try:
+            fn()
+        except BaseException:
+            failures.append(name)
+            traceback.print_exc()
+    if failures:
+        print(
+            "kernel test harness: FAILED " + ", ".join(failures),
+            file=sys.stderr,
+        )
+        return 1
+    print("kernel test harness: OK")
+    return 0
+
+
+sys.exit(_kernel_test_harness())
+"#;
 
 /// P4-B kernel-owned outcome taxonomy. Classification is computed by the
 /// kernel from argv/spawn result/exit status/timeout/runner semantics —
@@ -48,8 +105,10 @@ pub mod outcome {
 ///   failure) — "exit != 0" is NOT assumed to mean test failure.
 /// - python_pytest: exit 1 => tests_failed; exit 2/3/4/5 (interrupt,
 ///   internal, usage, nothing collected) => infrastructure_error.
-/// - python_test_file: the script IS the test; any non-zero exit is a test
-///   failure (stderr captured as evidence).
+/// - python_test_file: the file is executed as `__main__` (script-is-test
+///   semantics) AND every module-level test_* function is invoked by the
+///   kernel-owned harness; any non-zero exit is a test failure (stderr
+///   captured as evidence).
 pub fn classify_outcome(
     command_id: &str,
     spawn_error_kind: Option<std::io::ErrorKind>,
@@ -110,12 +169,14 @@ pub struct TestReportV1 {
 }
 
 /// Allowlisted test command derived from KERNEL inspection of the workspace.
-/// LLM output is never consulted here.
+/// LLM output is never consulted here. `stdin_program`, when present, is a
+/// kernel-owned constant fed to the child's stdin (never LLM output).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DerivedTestCommand {
     pub command_id: String,
     pub program: String,
     pub argv: Vec<String>,
+    pub stdin_program: Option<&'static str>,
 }
 
 /// Inspect the workspace and pick the test runner from a fixed allowlist.
@@ -139,6 +200,7 @@ pub fn derive_test_command(workspace: &Path) -> Result<DerivedTestCommand, Strin
                 "--color".to_string(),
                 "never".to_string(),
             ],
+            stdin_program: None,
         });
     }
 
@@ -149,11 +211,18 @@ pub fn derive_test_command(workspace: &Path) -> Result<DerivedTestCommand, Strin
                 command_id: "python_pytest".to_string(),
                 program: "python3".to_string(),
                 argv: vec!["-m".to_string(), "pytest".to_string(), "-q".to_string()],
+                stdin_program: None,
             });
         }
     }
 
-    // Plain python test files: run the first one alphabetically.
+    // Plain python test files: run the first one alphabetically through the
+    // kernel-owned harness (`python3 - <file>`, harness on stdin). The
+    // harness executes the file as `__main__` and then invokes every
+    // module-level test_* function, so pytest-style files cannot pass
+    // vacuously just because nothing calls their test functions (CD-1:
+    // bare `python3 <file>` exited 0 on def test_* files and produced a
+    // false tests_passed).
     let mut candidates: Vec<PathBuf> = std::fs::read_dir(workspace)
         .map_err(|e| format!("cannot read workspace: {e}"))?
         .flatten()
@@ -177,7 +246,8 @@ pub fn derive_test_command(workspace: &Path) -> Result<DerivedTestCommand, Strin
         return Ok(DerivedTestCommand {
             command_id: "python_test_file".to_string(),
             program: "python3".to_string(),
-            argv: vec![rel],
+            argv: vec!["-".to_string(), rel],
+            stdin_program: Some(PYTHON_TEST_FILE_HARNESS),
         });
     }
 
@@ -217,9 +287,15 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
     let timeout_secs = timeout_secs.clamp(1, 600);
 
     let started = Instant::now();
+    let needs_stdin = derived.stdin_program.is_some();
     let spawn_result = Command::new(&derived.program)
         .args(&derived.argv)
         .current_dir(&ws)
+        .stdin(if needs_stdin {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -263,6 +339,15 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
             ));
         }
     };
+
+    // Feed the kernel-owned harness to the child before polling. The write
+    // fits in the pipe buffer; a write error only occurs if the child has
+    // already exited, in which case its exit status classifies the outcome.
+    if let Some(program) = derived.stdin_program {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(program.as_bytes());
+        }
+    }
 
     // Drain pipes on helper threads so the child cannot deadlock on full
     // pipe buffers while we poll for completion.
@@ -382,7 +467,9 @@ mod tests {
         std::fs::write(ws.join("calc.py"), "x = 1\n").unwrap();
         let d = derive_test_command(&ws).unwrap();
         assert_eq!(d.command_id, "python_test_file");
-        assert_eq!(d.argv, vec!["test_a.py"]);
+        // `python3 - <file>`: kernel-owned harness arrives on stdin.
+        assert_eq!(d.argv, vec!["-", "test_a.py"]);
+        assert!(d.stdin_program.is_some(), "harness must ride stdin");
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -447,6 +534,95 @@ mod tests {
             "stderr_tail: {}",
             report.stderr_tail
         );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    // ── CD-1 regression: pytest-style files must not pass vacuously ────
+    //
+    // Acceptance F3 proved the defect: a file containing only `def test_*`
+    // functions ran as bare `python3 <file>`, which merely defined the
+    // functions and exited 0 => false tests_passed => false validation PASS
+    // for a change whose tests objectively fail.
+
+    #[test]
+    fn pytest_style_failing_tests_cannot_pass_vacuously() {
+        let ws = unique_dir("ptf_style_fail");
+        std::fs::write(
+            ws.join("calc.py"),
+            "def multiply(a, b):\n    return a * b\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ws.join("test_calc.py"),
+            "from calc import multiply\n\n\ndef test_multiply():\n    assert multiply(2, 3) == 999\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).expect("run");
+        assert!(!report.passed, "vacuous pass is the CD-1 defect");
+        assert_ne!(report.exit_code, 0);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        assert!(
+            report.stderr_tail.contains("AssertionError"),
+            "stderr_tail: {}",
+            report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn pytest_style_passing_tests_pass() {
+        let ws = unique_dir("ptf_style_pass");
+        std::fs::write(
+            ws.join("calc.py"),
+            "def multiply(a, b):\n    return a * b\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ws.join("test_calc.py"),
+            "from calc import multiply\n\n\ndef test_multiply():\n    assert multiply(2, 3) == 6\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).expect("run");
+        assert!(report.passed);
+        assert_eq!(report.exit_code, 0);
+        assert_eq!(report.classification, outcome::TESTS_PASSED);
+        assert!(
+            report.stdout_tail.contains("kernel test harness: OK"),
+            "stdout_tail: {}",
+            report.stdout_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn module_level_statements_do_not_mask_uninvoked_failing_tests() {
+        // Top-level statements alone used to make bare `python3 <file>`
+        // exit 0; the harness must still invoke the failing test function.
+        let ws = unique_dir("ptf_const");
+        std::fs::write(
+            ws.join("test_x.py"),
+            "CONST = 1\n\n\ndef test_bad():\n    assert False\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).expect("run");
+        assert!(!report.passed);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn main_guarded_script_semantics_preserved() {
+        // Script-is-test semantics survive the harness: an `if __name__`
+        // guarded assertion still executes (run_name="__main__").
+        let ws = unique_dir("ptf_guard");
+        std::fs::write(
+            ws.join("test_guard.py"),
+            "if __name__ == \"__main__\":\n    assert 1 == 2\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).expect("run");
+        assert!(!report.passed);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
         let _ = std::fs::remove_dir_all(&ws);
     }
 
