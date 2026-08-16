@@ -34,3 +34,9 @@ pub mod planner_pipeline;
 pub mod registry;
 pub mod semantic_bias;
 pub mod tools;
+
+// ANALYZER layer (ROLES.md): read-only detector built ON TOP of the frozen
+// kernel. This `pub mod analyzer;` declaration is the ONLY extension point
+// into the kernel crate — all analyzer logic lives in src/analyzer/* and
+// performs no effects (patches/tests go through the executor separately).
+pub mod analyzer;
