@@ -818,4 +818,98 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&ws);
     }
+
+    // ── 4H §5 audit: python-mode matrix ────────────────────────────────
+
+    #[test]
+    fn audit_main_guarded_failing_test_fails() {
+        let ws = unique_dir("audit_guard_fail");
+        std::fs::write(
+            ws.join("test_guard.py"),
+            "def test_bad():\n    assert 1 == 2\n\nif __name__ == \"__main__\":\n    test_bad()\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed, "main-guarded failing test must fail");
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn audit_main_guarded_passing_test_passes() {
+        let ws = unique_dir("audit_guard_pass");
+        std::fs::write(
+            ws.join("test_guard.py"),
+            "def test_ok():\n    assert 1 == 1\n\nif __name__ == \"__main__\":\n    test_ok()\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(report.passed);
+        assert_eq!(report.exit_code, 0);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn audit_non_assert_exception_in_test_fails() {
+        let ws = unique_dir("audit_exc");
+        std::fs::write(
+            ws.join("test_exc.py"),
+            "def test_boom():\n    raise ValueError('kaboom')\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        assert!(
+            report.stderr_tail.contains("ValueError"),
+            "stderr_tail: {}",
+            report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn audit_sys_exit_nonzero_fails_with_code() {
+        let ws = unique_dir("audit_exit");
+        std::fs::write(ws.join("test_exit.py"), "import sys\nsys.exit(3)\n").unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.exit_code, 3);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn audit_import_failure_fails() {
+        let ws = unique_dir("audit_import");
+        std::fs::write(
+            ws.join("test_badimport.py"),
+            "from nonexistent_module_xyz import thing\n\ndef test_x():\n    assert True\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        assert!(
+            report.stderr_tail.contains("ModuleNotFoundError"),
+            "stderr_tail: {}",
+            report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn audit_empty_test_file_documents_current_semantics() {
+        // An empty test file executes nothing and exits 0. Current
+        // semantics: PASSED (the "script is the test" contract — nothing
+        // failed). Registered as OBSERVATION in 4H_DEFECT_REGISTER: a
+        // no-test file masquerading as tests is spiritually vacuous, but
+        // failing it would break legitimate import-time-assert scripts.
+        let ws = unique_dir("audit_empty");
+        std::fs::write(ws.join("test_empty.py"), "").unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(report.passed, "documented current semantics");
+        assert_eq!(report.exit_code, 0);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
 }
