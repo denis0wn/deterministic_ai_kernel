@@ -125,6 +125,28 @@ tamper-evident artifacts (no executor invocation anywhere):
 - `PILOT_OPS_RUNBOOK.md` — the operator workflow end to end.
 - Analyzer version 0.4.0; TaskContract v0 unchanged.
 
+### Model-quality experiments (next phase; gated — added after the 2026-08-16 real negative run)
+The first real-model attempt series (3 attempts) ended in an accepted
+negative outcome: fail-safe behavior confirmed, remediation success not
+achieved (model patch semantically wrong; real tests failed; no fake
+success). Before ANY further remediation attempts:
+- Pre-registered experiment design: fixed attempt budget declared before
+  the first attempt; seed list fixed in advance; no seed-hunting, no
+  retries-until-green (see PILOT_OPS_RUNBOOK.md attempt discipline).
+- Failure taxonomy for model patches: structural rejection vs semantic
+  test failure vs partial fix; per-finding analysis of why the patch was
+  wrong (e.g. invented API signatures, wrong rounding mode).
+- Metrics via docs/PILOT_METRICS_V1.md only; attempt lists complete and
+  published, success rate over ALL attempts.
+- Candidate quality levers to evaluate (each separately, with the same
+  evidence requirements): richer contract context (test expectations
+  embedded in the work order), patch-shape constraints/examples, and
+  per-runner test semantics notes. No change may weaken a kernel gate;
+  executor code stays frozen pending its own review.
+- Acceptance for this phase: a pre-declared metrics target over the
+  whole attempt series, OR an accepted negative result — both are valid
+  outcomes; only fake success is not.
+
 ### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
 Only after a SEPARATE security review. Until then the hand-off stays
 manual (work order → operator → executor pipeline-run in an isolated

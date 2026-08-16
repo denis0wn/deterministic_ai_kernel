@@ -100,3 +100,54 @@ Possible overall statuses and how to handle them:
 Retrospective with the client: findings register delta, evidence chain,
 what the executor rejected and why. No production deployment of
 anything produced during the pilot.
+
+## Real Negative Remediation Flow
+
+A negative outcome is a NORMAL acceptance result when the system behaves
+fail-safe. This is the canonical scenario, demonstrated for real on
+2026-08-16 (see /tmp/dek_ai_matrix/NEGATIVE_REMEDIATION_ACCEPTANCE_RECORD.md):
+
+1. Human review approves ONE controlled isolated attempt only — approval
+   never generalizes to other findings, workspaces, or retries.
+2. Operator creates a pristine executor workspace (fresh copy of the
+   target; the original is never touched).
+3. Operator saves pre-run hashes (the package manifest already anchors
+   them; additionally keep an untouched pre-copy for the chain).
+4. The executor receives the work order's contract and runs ONLY inside
+   the authorized isolated workspace (`DAK_CODEFIX_WORKSPACE` or the
+   payload workspace — nothing else is mutable).
+5. An unauthorized or malformed patch path fails closed: no workspace
+   authorized, hallucinated context, or invalid patch shape → rejection
+   BEFORE any mutation.
+6. A validly-shaped but semantically wrong patch is applied, and the REAL
+   tests fail (non-zero exit, `tests_failed`). The validation gate
+   refuses to record success («no fabricated success»).
+7. Operator preserves ALL evidence of the failed attempt: event log,
+   patch evidence (pre/context/replacement/post hashes), and the failed
+   test status. Failed-attempt evidence is first-class; it is never
+   discarded.
+8. The chain verifier recomputes every hash from bytes over the preserved
+   evidence.
+9. The final status is NOT success: `chain_incomplete` (no passing test
+   report exists) or `chain_inconsistent` (evidence disagrees), strictly
+   per facts. `chain_incomplete` is never relabeled.
+10. Operator runs the retrospective: boundary behavior, model patch
+    quality, test outcome, and evidence-chain result are reported as
+    separate items — never blended into one «attempt failed» line.
+11. No repeat attempts without a separate, pre-registered model-quality
+    experiment (see ANALYZER_ROADMAP.md).
+
+### Attempt discipline rules
+
+- Do NOT repeat seeds hunting for a green answer. Retries require a
+  separately approved model-quality experiment with a pre-registered
+  attempt budget.
+- EVERY attempt is preserved (logs, artifacts, evidence chain input),
+  including configuration mistakes and terminal failures.
+- Publishing only successful attempts is prohibited; attempt lists are
+  always complete.
+- Repeated attempts must have a pre-declared limit before the first
+  attempt of the series.
+- Success rate is computed over ALL attempts, never over the best seed.
+- A negative outcome with fail-safe behavior is a valid acceptance
+  result; a green outcome with any skipped gate is not.
