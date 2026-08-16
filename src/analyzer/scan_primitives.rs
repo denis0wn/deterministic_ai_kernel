@@ -38,9 +38,16 @@ pub fn ruleset_ids() -> Vec<String> {
     ids
 }
 
+/// Candidate provenance values: `static` | `model` | `external`
+/// (external SAST reports since v0.3; model passes remain future work).
+pub const DETECTOR_STATIC: &str = "static";
+pub const DETECTOR_MODEL: &str = "model";
+pub const DETECTOR_EXTERNAL: &str = "external";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
-    /// Stable rule identifier, e.g. `money-truncation`.
+    /// Stable rule identifier, e.g. `money-truncation` (static) or
+    /// `semgrep:<check_id>` / `bandit:<test_id>` (external, v0.3).
     pub rule_id: String,
     /// Workspace-relative file.
     pub file: String,
@@ -51,6 +58,11 @@ pub struct Candidate {
     pub suspicion: String,
     /// The offending source line (trimmed, capped).
     pub snippet: String,
+    /// Provenance: `static` | `model` | `external`.
+    pub detector: String,
+    /// Tool-reported severity for external candidates (e.g. `ERROR`,
+    /// `HIGH`); `None` for static candidates.
+    pub external_severity: Option<String>,
 }
 
 struct Rule {
@@ -232,6 +244,14 @@ const RULES: &[Rule] = &[
 /// Known analysis limitations per rule (honest FP/FN disclosure carried
 /// into every finding; see docs/ANALYZER_RULES_CATALOG.md).
 pub fn rule_limitations(rule_id: &str) -> Vec<String> {
+    if rule_id.starts_with("semgrep:") || rule_id.starts_with("bandit:") {
+        return vec![
+            "external SAST finding: untrusted third-party tool output, not reproduced by this analyzer"
+                .to_string(),
+            "severity/confidence are tool-reported and conservatively capped; external sources never reach Critical here"
+                .to_string(),
+        ];
+    }
     match rule_id {
         "money-truncation" => vec![
             "false positives: int(x * 100) used for non-monetary scaling (percent formatting, basis points display)".to_string(),
@@ -291,6 +311,8 @@ pub fn run_static_scan(inv: &WorkspaceInventory, root: &Path) -> Vec<Candidate> 
                         line_end: idx + 1,
                         suspicion: suspicion.to_string(),
                         snippet: line.trim().chars().take(160).collect(),
+                        detector: DETECTOR_STATIC.to_string(),
+                        external_severity: None,
                     });
                 }
             }
@@ -489,6 +511,8 @@ mod tests {
             line_end: line,
             suspicion: "s".to_string(),
             snippet: snippet.to_string(),
+            detector: DETECTOR_STATIC.to_string(),
+            external_severity: None,
         }
     }
 

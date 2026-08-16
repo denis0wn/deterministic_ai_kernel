@@ -1,0 +1,14 @@
+{
+  "version": "test_report_v1",
+  "command_id": "python_test_file",
+  "argv": ["python3", "-", "test_ledger.py"],
+  "exit_code": 0,
+  "passed": true,
+  "timed_out": false,
+  "classification": "tests_passed",
+  "stdout_tail": "kernel test harness: OK",
+  "stderr_tail": "",
+  "duration_ms": 42,
+  "workspace": "/isolated/pilot_fintech_copy",
+  "captured_unix": 1786850000
+}

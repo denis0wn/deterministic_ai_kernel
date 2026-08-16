@@ -2,7 +2,12 @@
 //!
 //! Usage:
 //!   cargo run --bin analyzer_pilot_report -- \
-//!     --workspace <path> --output <dir> [--repro FINDING_ID=PATH ...]
+//!     --workspace <path> --output <dir> [--repro FINDING_ID=PATH ...] \
+//!     [--external-sast <report.json> ...]
+//!
+//! --external-sast ingests pre-produced Semgrep/Bandit JSON reports as a
+//! read-only, untrusted candidate source (v0.3). The analyzer never runs
+//! the tools itself.
 //!
 //! Runs the read-only pipeline (ingestion → scan → triage → emitter with
 //! readiness) and writes into --output:
@@ -54,13 +59,21 @@ fn arg_value(args: &[String], flag: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Repeatable flag: collect every value following `flag`.
+fn arg_values(args: &[String], flag: &str) -> Vec<PathBuf> {
+    args.windows(2)
+        .filter(|w| w[0] == flag)
+        .map(|w| PathBuf::from(&w[1]))
+        .collect()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let workspace = match arg_value(&args, "--workspace") {
         Some(w) => w,
         None => {
             eprintln!(
-                "usage: analyzer_pilot_report --workspace <path> --output <dir> [--repro FINDING_ID=PATH ...]"
+                "usage: analyzer_pilot_report --workspace <path> --output <dir> [--repro FINDING_ID=PATH ...] [--external-sast <report.json> ...]"
             );
             std::process::exit(2);
         }
@@ -79,6 +92,7 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let external_reports = arg_values(&args, "--external-sast");
 
     let started = Instant::now();
     let ws_canonical = match workspace.canonicalize() {
@@ -113,7 +127,7 @@ fn main() {
     }
 
     // 1-4) read-only pipeline → deterministic artifact bundle.
-    let bundle = match build_bundle(&ws_canonical, &repro) {
+    let bundle = match build_bundle(&ws_canonical, &repro, &external_reports) {
         Ok(b) => b,
         Err(e) => {
             eprintln!("pilot bundle build failed: {e}");
@@ -121,12 +135,19 @@ fn main() {
         }
     };
     println!(
-        "[pilot] workspace={} snapshot={} files={} findings={}",
+        "[pilot] workspace={} snapshot={} files={} findings={} external_sources={}",
         bundle.manifest.workspace,
         bundle.manifest.workspace_snapshot_blake3,
         bundle.manifest.inventory.file_count,
-        bundle.findings.len()
+        bundle.findings.len(),
+        bundle.manifest.external_sources.len()
     );
+    for s in &bundle.manifest.external_sources {
+        println!(
+            "  [external] {} report={} candidates={} rejected_paths={}",
+            s.tool, s.report_blake3, s.candidates, s.rejected_paths
+        );
+    }
     for f in &bundle.findings {
         println!(
             "  {:?} {} — {} ({})",

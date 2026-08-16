@@ -73,16 +73,62 @@ Completed when ALL of the following hold (see
 - Full regression green: cargo test / fmt / clippy (0 warnings in new
   files) / check / release.
 
-### v0.3 (future) — external SAST ingestion
-Semgrep/Bandit etc. ONLY as a read-only candidate source: no effects,
-deterministic normalization into the Candidate shape, provenance
-`detector: external`, same triage/emitter path, executor still does not
-trust findings.
+### v0.3 External SAST ingestion — DONE (2026-08-16)
+Semgrep/Bandit ONLY as a read-only candidate source (the analyzer never
+runs the tools). Completed evidence:
+- `src/analyzer/external_sast.rs`: JSON ingestion with format
+  auto-detection (semgrep/bandit), fail-closed on unknown formats,
+  deterministic normalization into `Candidate` (rule_id
+  `semgrep:<check_id>` / `bandit:<test_id>`, `detector: external`,
+  tool severity carried through), workspace path-traversal rejection
+  with counted `rejected_paths`, report timestamps ignored.
+- Triage: conservative external classification (ERROR/HIGH→High 0.55,
+  WARNING/MEDIUM→Medium 0.45, else Low 0.35; never Critical), and a
+  deterministic tie-breaker static < external < model at equal severity.
+- `evidence_manifest_v1.external_sources`: tool + report BLAKE3 +
+  candidate/rejection counts — external input is part of the audit
+  trail and changes the run id.
+- CLI: `analyzer_pilot_report --external-sast <report.json>`
+  (repeatable); argument order does not affect artifacts.
+- Fixtures: `analyzer_examples/external_reports/` (hand-authored
+  deterministic sample reports incl. traversal probe) — no third-party
+  tool installed or executed in tests.
+- Tests: normalization/determinism/traversal/fail-closed unit tests,
+  merge byte-stability + CLI double-run integration tests; full
+  regression green (count in the v0.3 record).
 
-### v0.4 (future) — executor integration via stable API
-Only after a separate security review. Until then the hand-off stays
-manual (TaskContract JSON → executor pipeline-run); the analyzer never
-invokes the executor automatically.
+### v0.4-pilot-ops — Review Gate + Work Order + Evidence Chain — DONE (2026-08-16)
+The human boundary and the independent verification, formalized as
+tamper-evident artifacts (no executor invocation anywhere):
+- `review_gate.rs` + `analyzer_review` CLI — schema `review_decision_v1`:
+  byte-stable decision core + content-hash id; timestamps only in the
+  operational envelope. Fail-closed: package integrity (evidence hashes
+  vs manifest), approve only for `remediation_ready` unless an explicit
+  recorded `--override-candidate-only`, repro paths must exist in the
+  snapshot, reviewer/rationale mandatory.
+- `work_order.rs` + `analyzer_work_order` CLI — schema `work_order_v1`:
+  passive byte-stable handoff document (contract embedded with BLAKE3,
+  target snapshot hashes, operator checklist); generated only for
+  approved decisions and only if the package has not drifted since the
+  decision. Executes nothing.
+- `evidence_chain.rs` + `analyzer_chain_verify` CLI — schema
+  `evidence_chain_v1`: five links (contract integrity, pre-state vs
+  snapshot, post-state presence/change, structural `test_report_v1`
+  validation against the executor's real TestReportV1 schema, optional
+  event log); four overall statuses (`chain_consistent_remediation_
+  evidenced`, `chain_consistent_no_change`, `chain_inconsistent`,
+  `chain_incomplete`). All hashes recomputed from bytes; executor
+  statuses never believed; the verifier speaks only about chain
+  consistency, never about fix correctness.
+- `analyzer_examples/simulated_executor_evidence/` — explicitly labeled
+  SIMULATED executor evidence for verifier tests (no real executor run).
+- `PILOT_OPS_RUNBOOK.md` — the operator workflow end to end.
+- Analyzer version 0.4.0; TaskContract v0 unchanged.
+
+### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
+Only after a SEPARATE security review. Until then the hand-off stays
+manual (work order → operator → executor pipeline-run in an isolated
+copy); the analyzer never invokes the executor automatically.
 
 ### Языковой scope
 JVM/Go/JS remain explicitly BACKLOG — no support is claimed or implied

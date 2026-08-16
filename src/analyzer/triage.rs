@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use super::ingestion::WorkspaceInventory;
-use super::scan_primitives::{rule_limitations, Candidate};
+use super::scan_primitives::{rule_limitations, Candidate, DETECTOR_MODEL};
 use super::ANALYZER_VERSION;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -36,10 +36,10 @@ impl Severity {
     }
 }
 
-/// Allowed detector provenance values: `static` | `model` | `external`.
-pub const DETECTOR_STATIC: &str = "static";
-pub const DETECTOR_MODEL: &str = "model";
-pub const DETECTOR_EXTERNAL: &str = "external";
+/// Allowed detector provenance values: `static` | `model` | `external`
+/// (canonical constants live in `scan_primitives`, re-exported here for
+/// API stability).
+pub use super::scan_primitives::{DETECTOR_EXTERNAL, DETECTOR_STATIC};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Provenance {
@@ -103,8 +103,22 @@ fn is_money_path(file: &str) -> bool {
         .any(|k| lower.contains(k))
 }
 
+/// Conservative mapping for external (tool-reported) severities: an
+/// external tool alone never justifies Critical, and its confidence is
+/// capped below the deterministic static rules.
+fn classify_external(external_severity: Option<&str>) -> (Severity, f64) {
+    match external_severity.map(|s| s.to_uppercase()) {
+        Some(s) if s == "ERROR" || s == "HIGH" => (Severity::High, 0.55),
+        Some(s) if s == "WARNING" || s == "MEDIUM" => (Severity::Medium, 0.45),
+        _ => (Severity::Low, 0.35),
+    }
+}
+
 /// Fixed severity/confidence table per rule (deterministic).
 fn classify(candidate: &Candidate) -> (Severity, f64) {
+    if candidate.detector == DETECTOR_EXTERNAL {
+        return classify_external(candidate.external_severity.as_deref());
+    }
     let money = is_money_path(&candidate.file);
     match candidate.rule_id.as_str() {
         "dangerous-eval" => (Severity::Critical, 0.9),
@@ -131,6 +145,17 @@ fn classify(candidate: &Candidate) -> (Severity, f64) {
         }
         "todo-marker" => (Severity::Low, 0.3),
         _ => (Severity::Low, 0.2),
+    }
+}
+
+/// Deterministic tie-breaker priority: deterministic static evidence
+/// outranks external tool hints, which outrank model hints.
+fn detector_rank(detector: &str) -> u8 {
+    match detector {
+        DETECTOR_STATIC => 0,
+        DETECTOR_EXTERNAL => 1,
+        DETECTOR_MODEL => 2,
+        _ => 3,
     }
 }
 
@@ -182,15 +207,19 @@ pub fn triage(candidates: &[Candidate], inv: &WorkspaceInventory) -> Vec<Finding
                     file_blake3,
                 }],
                 limitations: rule_limitations(&c.rule_id),
-                provenance: make_provenance(DETECTOR_STATIC, confidence),
+                provenance: make_provenance(&c.detector, confidence),
             }
         })
         .collect();
-    // Rank: severity desc, then evidence, then id — fully deterministic.
+    // Rank: severity desc, then detector priority (static < external <
+    // model), then evidence, then id — fully deterministic.
     findings.sort_by(|a, b| {
         b.severity
             .rank()
             .cmp(&a.severity.rank())
+            .then_with(|| {
+                detector_rank(&a.provenance.detector).cmp(&detector_rank(&b.provenance.detector))
+            })
             .then_with(|| a.evidence.cmp(&b.evidence))
             .then_with(|| a.id.cmp(&b.id))
     });
@@ -274,5 +303,59 @@ mod tests {
         assert!(!s.model_hint_unverified);
         let e = make_provenance(DETECTOR_EXTERNAL, 0.5);
         assert!(!e.model_hint_unverified);
+    }
+
+    #[test]
+    fn external_severity_mapping_is_conservative_and_deterministic() {
+        assert_eq!(classify_external(Some("ERROR")), (Severity::High, 0.55));
+        assert_eq!(classify_external(Some("HIGH")), (Severity::High, 0.55));
+        assert_eq!(classify_external(Some("WARNING")), (Severity::Medium, 0.45));
+        assert_eq!(classify_external(Some("MEDIUM")), (Severity::Medium, 0.45));
+        assert_eq!(classify_external(Some("LOW")), (Severity::Low, 0.35));
+        assert_eq!(classify_external(Some("INFO")), (Severity::Low, 0.35));
+        assert_eq!(classify_external(None), (Severity::Low, 0.35));
+        // External never reaches Critical on its own.
+        assert!(classify_external(Some("ERROR")).0 < Severity::Critical);
+    }
+
+    #[test]
+    fn static_findings_outrank_external_at_equal_severity() {
+        let root =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("analyzer_examples/billing_python");
+        let inv = scan_workspace(&root).unwrap();
+        let mut cands = run_static_scan(&inv, &root);
+        cands.push(Candidate {
+            rule_id: "semgrep:test-check".to_string(),
+            file: "billing/fees.py".to_string(),
+            line_start: 5,
+            line_end: 5,
+            suspicion: "external hint".to_string(),
+            snippet: "x = 1".to_string(),
+            detector: DETECTOR_EXTERNAL.to_string(),
+            external_severity: Some("HIGH".to_string()),
+        });
+        let findings = triage(&cands, &inv);
+        let highs: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.severity == Severity::High)
+            .collect();
+        assert!(highs.len() >= 2);
+        assert_eq!(
+            highs[0].provenance.detector, DETECTOR_STATIC,
+            "static must outrank external at equal severity"
+        );
+        let ext = highs
+            .iter()
+            .find(|f| f.provenance.detector == DETECTOR_EXTERNAL)
+            .expect("external finding present");
+        assert!(
+            ext.provenance.confidence < 0.6,
+            "external confidence capped"
+        );
+        assert!(!ext.provenance.model_hint_unverified);
+        assert!(ext
+            .limitations
+            .iter()
+            .any(|l| l.contains("external SAST finding")));
     }
 }

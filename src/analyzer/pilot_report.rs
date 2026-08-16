@@ -18,7 +18,7 @@ use std::path::Path;
 use super::audit_log::RunRecord;
 use super::task_emitter::{EmittedTask, READINESS_REMEDIATION_READY};
 use super::triage::Finding;
-use super::{evidence_manifest, ingestion, scan_primitives, task_emitter, triage};
+use super::{evidence_manifest, external_sast, ingestion, scan_primitives, task_emitter, triage};
 
 /// Claims that must never appear in a pilot report (tested).
 pub const FORBIDDEN_CLAIMS: &[&str] = &[
@@ -30,6 +30,10 @@ pub const FORBIDDEN_CLAIMS: &[&str] = &[
     "certifies the absence of errors",
     "hallucinations are fully eliminated",
     "hallucinations are eliminated completely",
+    "fix verified correct",
+    "fix is verified correct",
+    "guaranteed",
+    "certified",
 ];
 
 /// One fully-built pilot evidence bundle (all deterministic parts).
@@ -71,8 +75,27 @@ fn why_it_matters(rule_id: &str) -> &'static str {
     }
 }
 
+fn render_external_sources(manifest: &evidence_manifest::EvidenceManifest) -> String {
+    if manifest.external_sources.is_empty() {
+        return String::new();
+    }
+    let mut out =
+        String::from("\nExternal candidate sources (read-only, untrusted third-party reports):\n");
+    for s in &manifest.external_sources {
+        out.push_str(&format!(
+            "- {} — report BLAKE3 `{}` — {} candidates, {} rejected paths\n",
+            s.tool, s.report_blake3, s.candidates, s.rejected_paths
+        ));
+    }
+    out.push_str(
+        "External findings are capped below static confidence and never reach Critical on tool severity alone.\n",
+    );
+    out
+}
+
 fn render_scope_section(manifest: &evidence_manifest::EvidenceManifest) -> String {
     let rule_list = manifest.ruleset.rule_ids.join(", ");
+    let external = render_external_sources(manifest);
     format!(
         "## 1. Scope and limitations
 
@@ -99,7 +122,7 @@ limitations:
   gated classes; the executor's gates contain, not eliminate, that risk.
 - Rules carry documented false-positive/false-negative profiles (see
   section 2 and docs/ANALYZER_RULES_CATALOG.md).
-",
+{external}",
         workspace = manifest.workspace,
         snap = manifest.workspace_snapshot_blake3,
         count = manifest.inventory.file_count,
@@ -254,9 +277,14 @@ Analyzer version: {ver} · schema: {schema} · findings: {nf} · remediation-rea
 
 /// Build the full deterministic bundle for a workspace. `repro_tests`
 /// maps finding id → operator-provided reproducible test file path.
+/// `external_reports` are pre-produced Semgrep/Bandit JSON reports
+/// (v0.3): ingested read-only, normalized, merged with static
+/// candidates; unknown formats fail closed. Argument order does not
+/// affect output.
 pub fn build_bundle(
     workspace: &Path,
     repro_tests: &BTreeMap<String, String>,
+    external_reports: &[std::path::PathBuf],
 ) -> Result<PilotBundle, String> {
     let canonical = workspace
         .canonicalize()
@@ -264,11 +292,23 @@ pub fn build_bundle(
     let ws_str = canonical.to_string_lossy().to_string();
 
     let inventory = ingestion::scan_workspace(&canonical)?;
-    let candidates = scan_primitives::run_static_scan(&inventory, &canonical);
+    let mut candidates = scan_primitives::run_static_scan(&inventory, &canonical);
+    let mut external_sources = Vec::new();
+    for report in external_reports {
+        let summary = external_sast::parse_external_report(report, &canonical)?;
+        external_sources.push(evidence_manifest::ExternalSource {
+            tool: summary.tool,
+            report_blake3: summary.report_blake3,
+            candidates: summary.candidates.len(),
+            rejected_paths: summary.rejected_paths,
+        });
+        candidates.extend(summary.candidates);
+    }
+    let candidates = scan_primitives::dedupe_candidates(candidates);
     let findings = triage::triage(&candidates, &inventory);
     let tasks =
         task_emitter::emit_tasks_with_readiness(&findings, &ws_str, &inventory, repro_tests);
-    let manifest = evidence_manifest::build_manifest(&inventory, &ws_str);
+    let manifest = evidence_manifest::build_manifest(&inventory, &ws_str, external_sources);
 
     let mut contract_hashes = BTreeMap::new();
     for t in &tasks {
@@ -347,18 +387,29 @@ pub fn make_run_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::task_emitter::READINESS_CANDIDATE_ONLY;
+    use crate::analyzer::triage::Severity;
     use std::path::PathBuf;
 
     fn pilot_fixture() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("analyzer_examples/pilot_fintech")
     }
 
+    fn external_reports() -> Vec<PathBuf> {
+        let dir =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("analyzer_examples/external_reports");
+        vec![
+            dir.join("semgrep_sample.json"),
+            dir.join("bandit_sample.json"),
+        ]
+    }
+
     #[test]
     fn bundle_is_byte_stable_across_repeats() {
         let ws = pilot_fixture();
         let empty = BTreeMap::new();
-        let a = build_bundle(&ws, &empty).unwrap();
-        let b = build_bundle(&ws, &empty).unwrap();
+        let a = build_bundle(&ws, &empty, &[]).unwrap();
+        let b = build_bundle(&ws, &empty, &[]).unwrap();
         assert_eq!(a.manifest_json, b.manifest_json);
         assert_eq!(a.findings_json, b.findings_json);
         assert_eq!(a.tasks_json, b.tasks_json);
@@ -369,7 +420,7 @@ mod tests {
     #[test]
     fn report_has_scope_and_no_forbidden_claims() {
         let ws = pilot_fixture();
-        let bundle = build_bundle(&ws, &BTreeMap::new()).unwrap();
+        let bundle = build_bundle(&ws, &BTreeMap::new(), &[]).unwrap();
         let md = &bundle.report_md;
         assert!(md.starts_with("# Deterministic Remediation Pilot — Evidence Report"));
         assert!(md.contains("## 1. Scope and limitations"));
@@ -386,7 +437,7 @@ mod tests {
     #[test]
     fn pilot_fixture_detects_seeded_patterns_and_not_the_control() {
         let ws = pilot_fixture();
-        let bundle = build_bundle(&ws, &BTreeMap::new()).unwrap();
+        let bundle = build_bundle(&ws, &BTreeMap::new(), &[]).unwrap();
         let rules: Vec<&str> = bundle.findings.iter().map(|f| f.rule_id.as_str()).collect();
         assert!(rules.contains(&"money-truncation"), "P1 missing: {rules:?}");
         assert!(rules.contains(&"money-round-bare"), "P2 missing: {rules:?}");
@@ -399,5 +450,55 @@ mod tests {
             "negative control must stay clean"
         );
         assert!(!bundle.findings.is_empty(), "fixture must produce findings");
+    }
+
+    #[test]
+    fn external_reports_merge_deterministically_and_honestly() {
+        let ws = pilot_fixture();
+        let reports = external_reports();
+        let a = build_bundle(&ws, &BTreeMap::new(), &reports).unwrap();
+        let b = build_bundle(&ws, &BTreeMap::new(), &reports).unwrap();
+        assert_eq!(a.findings_json, b.findings_json);
+        assert_eq!(a.manifest_json, b.manifest_json);
+        assert_eq!(a.report_md, b.report_md);
+
+        // 3 static seeded + 1 semgrep + 1 bandit.
+        assert_eq!(a.findings.len(), 5, "{:?}", a.findings.len());
+        let ext: Vec<&Finding> = a
+            .findings
+            .iter()
+            .filter(|f| f.provenance.detector == "external")
+            .collect();
+        assert_eq!(ext.len(), 2);
+        for e in &ext {
+            assert!(e.provenance.confidence < 0.6, "external confidence capped");
+            assert!(e.severity < Severity::Critical, "external never Critical");
+            assert!(e.limitations.iter().any(|l| l.contains("external SAST")));
+            assert!(!e.provenance.model_hint_unverified);
+        }
+        // Report order independence of CLI argument order.
+        let mut reversed = reports.clone();
+        reversed.reverse();
+        let r = build_bundle(&ws, &BTreeMap::new(), &reversed).unwrap();
+        assert_eq!(a.findings_json, r.findings_json);
+        assert_eq!(a.manifest_json, r.manifest_json);
+
+        // Manifest audit trail: sources + traversal rejection counted.
+        assert_eq!(a.manifest.external_sources.len(), 2);
+        let sg = a
+            .manifest
+            .external_sources
+            .iter()
+            .find(|s| s.tool == "semgrep")
+            .unwrap();
+        assert_eq!(sg.rejected_paths, 1, "traversal probe must be rejected");
+        assert_eq!(sg.candidates, 1);
+        assert!(a.report_md.contains("External candidate sources"));
+
+        // Without operator repro, external findings stay candidate_only.
+        assert!(a
+            .tasks
+            .iter()
+            .all(|t| t.readiness.readiness == READINESS_CANDIDATE_ONLY));
     }
 }

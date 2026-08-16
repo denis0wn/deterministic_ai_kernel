@@ -10,8 +10,35 @@
 - Evidence package: `evidence_manifest_v1`, findings, task contracts,
   operational log, pilot report — all content-hashed and reproducible.
 
+## Review gate and evidence chain (v0.4-pilot-ops)
+
+A finding crosses to remediation only through a recorded human decision
+(`review_decision_v1`): approving a `candidate_only` finding requires an
+explicit, permanently recorded override. The handoff is a passive work
+order document; the analyzer never invokes the executor. After an
+isolated attempt, `analyzer_chain_verify` recomputes every hash from
+bytes and structurally validates the executor's `test_report_v1`.
+
+**Boundary of verification:** a consistent evidence chain proves the
+trail is hash-coherent end to end. It does NOT prove the remediation is
+semantically correct — correctness rests on the real tests and human
+review. Chain statuses are exhaustive: `chain_consistent_remediation_
+evidenced`, `chain_consistent_no_change`, `chain_inconsistent`,
+`chain_incomplete`.
+
+## External candidate sources (v0.3)
+
+Pre-produced Semgrep/Bandit JSON reports may be ingested as an
+additional read-only candidate source (`--external-sast`). The analyzer
+never executes those tools. External findings are untrusted third-party
+claims: capped below static confidence, never Critical on tool severity
+alone, recorded in the evidence manifest with the report's BLAKE3 hash,
+and subject to the same readiness gates and executor verification as
+static findings.
+
 ## Out of scope
 
+- Running third-party SAST tools (operators run them; we ingest reports).
 - Any other language (JVM/Go/JS are backlog; do not plan work against them).
 - Whole-codebase semantic analysis or repo-scale retrieval.
 - Production deployment of anything during the pilot.

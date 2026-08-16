@@ -1,0 +1,6 @@
+[
+  { "seq": 1, "event": "step_committed", "step": "read_repository" },
+  { "seq": 2, "event": "step_committed", "step": "apply_patch" },
+  { "seq": 3, "event": "step_committed", "step": "run_tests" },
+  { "seq": 4, "event": "step_committed", "step": "validate_patch" }
+]

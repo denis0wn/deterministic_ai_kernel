@@ -85,6 +85,36 @@ Common facts:
   work.
 - **Known FN:** alternate spellings (To Do, XXX, HACK).
 
+## External SAST ingestion (v0.3) — semgrep:* / bandit:*
+
+Not a rule family but a candidate SOURCE. The analyzer ingests
+pre-produced tool reports; it never executes Semgrep/Bandit itself.
+
+- **Input:** `semgrep --json` or `bandit -f json` report files, passed via
+  `--external-sast <path>` (repeatable). Format auto-detected from
+  structure (`results[].check_id` → Semgrep, `results[].test_id` →
+  Bandit); unknown formats fail closed.
+- **Normalization:** `rule_id = semgrep:<check_id>` / `bandit:<test_id>`;
+  paths resolved against the workspace — any path escaping it (e.g.
+  `../`) is rejected and counted in `rejected_paths`; report timestamps
+  and other nondeterministic fields are ignored.
+- **Provenance:** `detector: external`; tool identity lives in the
+  `rule_id` prefix and in `evidence_manifest_v1.external_sources`
+  (tool + report BLAKE3 + candidate/rejection counts).
+- **Severity mapping (conservative, deterministic):** tool-reported
+  ERROR/HIGH → High (conf 0.55), WARNING/MEDIUM → Medium (conf 0.45),
+  anything else → Low (conf 0.35). External severity alone NEVER reaches
+  Critical; external confidence is capped below static rules.
+- **Ranking:** at equal severity, static findings outrank external
+  findings, which outrank model hints (deterministic tie-breaker).
+- **Trust model:** external findings are untrusted third-party claims —
+  same gates as static ones: snapshot anchoring, readiness policy
+  (`candidate_only` without an operator-provided reproducible test),
+  executor verification before any remediation.
+- **Known FP/FN:** inherited from the producing tool plus normalization
+  limits (single-line coordinate granularity; bandit confidence affects
+  nothing by design — only tool severity maps).
+
 ## dangerous-eval (general safety rule, outside the financial set)
 
 - **Pattern:** `eval(` or `exec(` outside comments/docstrings.

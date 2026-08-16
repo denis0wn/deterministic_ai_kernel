@@ -45,6 +45,18 @@ pub struct ManifestRun {
     pub run_id: String,
 }
 
+/// One external SAST report consumed (read-only) during the run
+/// (v0.3). The report BLAKE3 anchors which external input produced the
+/// external candidates — part of the tamper-evident audit trail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExternalSource {
+    /// `semgrep` | `bandit`.
+    pub tool: String,
+    pub report_blake3: String,
+    pub candidates: usize,
+    pub rejected_paths: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceManifest {
     pub schema_version: String,
@@ -53,6 +65,8 @@ pub struct EvidenceManifest {
     pub workspace_snapshot_blake3: String,
     pub inventory: ManifestInventory,
     pub ruleset: ManifestRuleset,
+    /// External candidate sources; empty for static-only runs.
+    pub external_sources: Vec<ExternalSource>,
     pub run: ManifestRun,
 }
 
@@ -80,7 +94,17 @@ fn canonical_json(m: &EvidenceManifest) -> String {
 /// Build the byte-stable manifest for one analyzer run. `workspace` is
 /// the canonicalized workspace path string (kept out of the hash base:
 /// the snapshot hash covers content, the path is operator context).
-pub fn build_manifest(inv: &WorkspaceInventory, workspace: &str) -> EvidenceManifest {
+/// `external_sources` is sorted deterministically (tool, then hash).
+pub fn build_manifest(
+    inv: &WorkspaceInventory,
+    workspace: &str,
+    mut external_sources: Vec<ExternalSource>,
+) -> EvidenceManifest {
+    external_sources.sort_by(|a, b| {
+        a.tool
+            .cmp(&b.tool)
+            .then_with(|| a.report_blake3.cmp(&b.report_blake3))
+    });
     let mut included: Vec<ManifestFileEntry> = inv
         .files
         .iter()
@@ -106,6 +130,7 @@ pub fn build_manifest(inv: &WorkspaceInventory, workspace: &str) -> EvidenceMani
             version: RULESET_VERSION.to_string(),
             rule_ids: ruleset_ids(),
         },
+        external_sources,
         run: ManifestRun {
             run_id: String::new(),
         },
@@ -138,15 +163,15 @@ mod tests {
     #[test]
     fn manifest_is_byte_identical_across_repeats() {
         let (inv, ws) = toy_inventory();
-        let a = manifest_json(&build_manifest(&inv, &ws));
-        let b = manifest_json(&build_manifest(&inv, &ws));
+        let a = manifest_json(&build_manifest(&inv, &ws, Vec::new()));
+        let b = manifest_json(&build_manifest(&inv, &ws, Vec::new()));
         assert_eq!(a, b, "manifest must be byte-stable");
     }
 
     #[test]
     fn manifest_has_schema_and_no_timestamps() {
         let (inv, ws) = toy_inventory();
-        let json = manifest_json(&build_manifest(&inv, &ws));
+        let json = manifest_json(&build_manifest(&inv, &ws, Vec::new()));
         assert!(json.contains("\"schema_version\": \"evidence_manifest_v1\""));
         assert!(json.contains("\"workspace_snapshot_blake3\""));
         for banned in ["timestamp", "started_at", "ts_unix", "duration"] {
@@ -160,10 +185,41 @@ mod tests {
     #[test]
     fn run_id_is_content_hash_and_stable() {
         let (inv, ws) = toy_inventory();
-        let m1 = build_manifest(&inv, &ws);
-        let m2 = build_manifest(&inv, &ws);
+        let m1 = build_manifest(&inv, &ws, Vec::new());
+        let m2 = build_manifest(&inv, &ws, Vec::new());
         assert_eq!(m1.run.run_id, m2.run.run_id);
         assert_eq!(m1.run.run_id.len(), 64, "BLAKE3 hex expected");
+    }
+
+    #[test]
+    fn external_sources_become_part_of_the_manifest_and_run_id() {
+        let (inv, ws) = toy_inventory();
+        let src = ExternalSource {
+            tool: "semgrep".to_string(),
+            report_blake3: "ab".repeat(32),
+            candidates: 1,
+            rejected_paths: 1,
+        };
+        let plain = build_manifest(&inv, &ws, Vec::new());
+        let with_ext1 = build_manifest(&inv, &ws, vec![src.clone()]);
+        let with_ext2 = build_manifest(&inv, &ws, vec![src.clone()]);
+        assert_eq!(with_ext1, with_ext2, "byte-stable with externals");
+        assert_ne!(
+            plain.run.run_id, with_ext1.run.run_id,
+            "external input must change the run identity"
+        );
+        assert_eq!(with_ext1.external_sources, vec![src.clone()]);
+        assert!(manifest_json(&with_ext1).contains("\"external_sources\""));
+        // Sorting: (tool, report_blake3) regardless of input order.
+        let other = ExternalSource {
+            tool: "bandit".to_string(),
+            report_blake3: "cd".repeat(32),
+            candidates: 2,
+            rejected_paths: 0,
+        };
+        let ab = build_manifest(&inv, &ws, vec![src.clone(), other.clone()]);
+        let ba = build_manifest(&inv, &ws, vec![other, src]);
+        assert_eq!(ab, ba);
     }
 
     #[test]
@@ -200,7 +256,7 @@ mod tests {
         std::fs::write(root.join("analyzer_out/findings.json"), "{}").unwrap();
 
         let inv = scan_workspace(root).unwrap();
-        let manifest = build_manifest(&inv, &root.to_string_lossy());
+        let manifest = build_manifest(&inv, &root.to_string_lossy(), Vec::new());
         let paths: Vec<&str> = manifest
             .inventory
             .included_files

@@ -1,0 +1,23 @@
+{
+  "errors": [],
+  "generated_at": "2026-08-16T00:00:00Z",
+  "metrics": {
+    "_totals": { "SEVERITY.HIGH": 0, "SEVERITY.MEDIUM": 1, "SEVERITY.LOW": 0 }
+  },
+  "results": [
+    {
+      "code": "19 def settlement_round(value):\n20     return round(value)\n",
+      "col_offset": 11,
+      "filename": "billing/ledger.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": { "id": 682, "link": "https://cwe.mitre.org/data/definitions/682.html" },
+      "issue_severity": "MEDIUM",
+      "issue_text": "round() without an explicit rounding policy on a monetary path",
+      "line_number": 20,
+      "line_range": [20],
+      "more_info": "https://example.invalid/bandit-sample",
+      "test_id": "B700",
+      "test_name": "fintech_round_no_policy"
+    }
+  ]
+}

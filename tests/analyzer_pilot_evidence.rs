@@ -66,7 +66,7 @@ fn scanned_fixture_hash_unchanged_by_report_generation() {
     copy_fixture(&ws);
 
     let before = workspace_fingerprint(&ws);
-    let bundle = build_bundle(&ws, &BTreeMap::new()).unwrap();
+    let bundle = build_bundle(&ws, &BTreeMap::new(), &[]).unwrap();
     let after = workspace_fingerprint(&ws);
 
     assert_eq!(before, after, "analyzer must be read-only");
@@ -77,8 +77,8 @@ fn scanned_fixture_hash_unchanged_by_report_generation() {
 fn bundle_artifacts_are_byte_stable_and_honest() {
     let ws = fixture();
     let empty = BTreeMap::new();
-    let a = build_bundle(&ws, &empty).unwrap();
-    let b = build_bundle(&ws, &empty).unwrap();
+    let a = build_bundle(&ws, &empty, &[]).unwrap();
+    let b = build_bundle(&ws, &empty, &[]).unwrap();
     assert_eq!(a.manifest_json, b.manifest_json);
     assert_eq!(a.findings_json, b.findings_json);
     assert_eq!(a.tasks_json, b.tasks_json);
@@ -114,7 +114,7 @@ fn readiness_promotion_requires_operator_provided_repro() {
         "MONEY-TRUNCATION-LEDGER-15".to_string(),
         "test_ledger.py".to_string(),
     );
-    let bundle = build_bundle(&ws, &repro).unwrap();
+    let bundle = build_bundle(&ws, &repro, &[]).unwrap();
 
     let mut ready_ids = Vec::new();
     let mut candidate_only = 0usize;
@@ -136,7 +136,7 @@ fn readiness_promotion_requires_operator_provided_repro() {
     assert_eq!(candidate_only, 2);
 
     // Without operator input everything is candidate_only.
-    let plain = build_bundle(&ws, &BTreeMap::new()).unwrap();
+    let plain = build_bundle(&ws, &BTreeMap::new(), &[]).unwrap();
     assert!(plain
         .tasks
         .iter()
@@ -223,6 +223,105 @@ fn cli_double_run_is_byte_identical_and_workspace_untouched() {
     // Scanned workspace untouched.
     let after = workspace_fingerprint(&ws);
     assert_eq!(before, after, "CLI must not modify the workspace");
+}
+
+#[test]
+fn cli_external_sast_run_is_byte_stable_and_merges_findings() {
+    let bin = pilot_bin();
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    copy_fixture(&ws);
+    let before = workspace_fingerprint(&ws);
+
+    let semgrep = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("analyzer_examples/external_reports/semgrep_sample.json");
+    let bandit = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("analyzer_examples/external_reports/bandit_sample.json");
+
+    let mut outputs = Vec::new();
+    for run in ["ext1", "ext2"] {
+        let out = tmp.path().join(run);
+        let status = std::process::Command::new(&bin)
+            .arg("--workspace")
+            .arg(&ws)
+            .arg("--output")
+            .arg(&out)
+            .arg("--external-sast")
+            .arg(&semgrep)
+            .arg("--external-sast")
+            .arg(&bandit)
+            .status()
+            .expect("spawn analyzer_pilot_report");
+        assert!(status.success(), "external run {run} failed");
+        outputs.push(out);
+    }
+
+    for name in [
+        "evidence_manifest_v1.json",
+        "findings_v1.json",
+        "task_contracts_v0.json",
+        "PILOT_REPORT.md",
+    ] {
+        let a = std::fs::read(outputs[0].join(name)).unwrap();
+        let b = std::fs::read(outputs[1].join(name)).unwrap();
+        assert_eq!(a, b, "{name} must be byte-stable with externals");
+    }
+
+    // 3 static + 2 external findings; external detectors present.
+    let findings: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(outputs[0].join("findings_v1.json")).unwrap(),
+    )
+    .unwrap();
+    let arr = findings.as_array().unwrap();
+    assert_eq!(arr.len(), 5, "3 static + 2 external expected");
+    let external_count = arr
+        .iter()
+        .filter(|f| f["provenance"]["detector"] == "external")
+        .count();
+    assert_eq!(external_count, 2);
+
+    // Manifest records both sources and the traversal rejection.
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(outputs[0].join("evidence_manifest_v1.json")).unwrap(),
+    )
+    .unwrap();
+    let sources = manifest["external_sources"].as_array().unwrap();
+    assert_eq!(sources.len(), 2);
+    let rejected: u64 = sources
+        .iter()
+        .map(|s| s["rejected_paths"].as_u64().unwrap())
+        .sum();
+    assert_eq!(rejected, 1, "semgrep traversal probe rejected");
+    for s in sources {
+        assert_eq!(s["report_blake3"].as_str().unwrap().len(), 64);
+    }
+
+    // Workspace untouched even with external inputs.
+    let after = workspace_fingerprint(&ws);
+    assert_eq!(before, after);
+}
+
+#[test]
+fn cli_external_sast_unknown_format_fails_closed() {
+    let bin = pilot_bin();
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    copy_fixture(&ws);
+    let bad = tmp.path().join("bad_report.json");
+    std::fs::write(&bad, r#"{"results": [{"weird": true}]}"#).unwrap();
+
+    let status = std::process::Command::new(&bin)
+        .arg("--workspace")
+        .arg(&ws)
+        .arg("--output")
+        .arg(tmp.path().join("out"))
+        .arg("--external-sast")
+        .arg(&bad)
+        .status()
+        .expect("spawn");
+    assert!(!status.success(), "unknown SAST format must fail closed");
 }
 
 #[test]

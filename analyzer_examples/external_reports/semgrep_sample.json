@@ -1,0 +1,36 @@
+{
+  "version": "1.99.0-sample",
+  "time": {
+    "total_bytes": 4096,
+    "profiling_time": 0.123,
+    "parsing_time": 0.045
+  },
+  "paths": {
+    "scanned": ["billing/ledger.py", "billing/safe_pricing.py"]
+  },
+  "results": [
+    {
+      "check_id": "python.fintech.money-truncation-int",
+      "path": "billing/ledger.py",
+      "start": { "line": 15, "col": 12, "offset": 300 },
+      "end": { "line": 15, "col": 34, "offset": 322 },
+      "extra": {
+        "message": "int() truncates monetary amounts toward zero; sub-cent fractions are lost",
+        "severity": "ERROR",
+        "metadata": { "category": "correctness", "technology": ["python"] },
+        "lines": "    return int(amount * 100) / 100"
+      }
+    },
+    {
+      "check_id": "python.fintech.path-traversal-probe",
+      "path": "../../outside_workspace.py",
+      "start": { "line": 1, "col": 1, "offset": 0 },
+      "end": { "line": 1, "col": 10, "offset": 9 },
+      "extra": {
+        "message": "this reported path escapes the workspace and MUST be rejected by ingestion",
+        "severity": "INFO",
+        "lines": "# probe"
+      }
+    }
+  ]
+}
