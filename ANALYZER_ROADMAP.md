@@ -146,6 +146,14 @@ success). Before ANY further remediation attempts:
 - Acceptance for this phase: a pre-declared metrics target over the
   whole attempt series, OR an accepted negative result — both are valid
   outcomes; only fake success is not.
+- Status (2026-08-16): first bounded experiment executed
+  (mq1-rounding-truncation-3att, preregistered plan + 3 attempts,
+  seeds 100/101/102): 3/3 attempts rejected fail-closed at patch_code
+  as malformed_patch (systematic model error: capitalized directory in
+  the patch target path); zero mutations, zero fake successes, all
+  evidence preserved (/tmp/dek_ai_matrix/model_quality_experiment/,
+  FINAL_RECORD + METRICS + PLAN). Next: a new registered experiment on
+  the patch-shape lever (see MODEL_QUALITY_EXPERIMENT_DESIGN_V1.md).
 
 ### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
 Only after a SEPARATE security review. Until then the hand-off stays
