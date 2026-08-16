@@ -12,6 +12,16 @@ task-level experiment under this design's guardrails executed
 /tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN.md and
 MODEL_QUALITY_EXPERIMENT_FINAL_RECORD.md). The 40-attempt multi-arm
 series of §2 has NOT started.
+2026-08-16 (later) — mq2-patch-shape-3att executed: arm A2
+(patch-contract facts incl. exact target path + letter-case rule),
+seeds 103/104/105, budget 3. Result: 3/3 malformed_patch with the
+IDENTICAL failure signature as mq1 (model capitalizes the workspace
+directory in the patch target path); the prose-context lever is
+ineffective for this defect on this model; zero mutations, zero fake
+successes, all attempts preserved
+(/tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN_MQ2.md,
+MODEL_QUALITY_EXPERIMENT_MQ2_FINAL_RECORD.md,
+model_quality_experiment_mq2/). Combined mq1+mq2: 6/6 seeds.
 
 Companion documents: PILOT_OPS_RUNBOOK.md (attempt discipline),
 docs/PILOT_METRICS_V1.md (metrics), ANALYZER_ROADMAP.md (model-quality
