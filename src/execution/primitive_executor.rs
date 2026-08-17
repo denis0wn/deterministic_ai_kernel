@@ -360,7 +360,25 @@ impl PrimitiveExecutor {
                         )
                     })?;
                     let prompt = patch_prompt(&target, &file_content, task_payload);
-                    let patch = request_patch_v1(&prompt)?;
+                    // Bounded target-correction: the initial attempt plus AT
+                    // MOST ONE corrective retry when the model returns the
+                    // wrong target_file. Every shape/context/target gate
+                    // below still applies unchanged to the final attempt,
+                    // and a persistent mismatch stays terminal — no gate is
+                    // weakened, the model is only given one explicit
+                    // correction chance.
+                    let patch = {
+                        let first = request_patch_v1(&prompt)?;
+                        if first.target_file == target {
+                            first
+                        } else {
+                            let corrective = format!(
+                                "{}\n\nYour previous reply used the WRONG target_file: \"{}\". The target_file MUST be EXACTLY \"{}\" (same letters, same case). Reply with ONLY the corrected JSON object, changing ONLY the target_file field.",
+                                prompt, first.target_file, target
+                            );
+                            request_patch_v1(&corrective)?
+                        }
+                    };
                     patch_contract::validate_patch_shape(&patch)
                         .map_err(|e| anyhow!("fatal: malformed patch: {e}"))?;
                     if patch.target_file != target {

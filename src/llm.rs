@@ -389,9 +389,9 @@ RULES:
 - Use ONLY the file content provided under FILE CONTENT. Never invent code that is not there.
 - context_before must be copied EXACTLY (byte-for-byte, including indentation) from FILE CONTENT.
 - replacement is the corrected code that replaces context_before; change only the minimal buggy region.
-- target_file must be exactly the FILE path given below.
+- target_file must be exactly the FILE path given below, copied unchanged.
 - Do NOT output a unified diff. Do NOT output markdown. Reply with ONE JSON object and nothing else:
-{"version":"patch_v1","target_file":"<FILE>","context_before":"<exact bytes from FILE CONTENT>","replacement":"<corrected code>","reason":"<one sentence>"}
+{"version":"patch_v1","target_file":"{target}","context_before":"<exact bytes from FILE CONTENT>","replacement":"<corrected code>","reason":"<one sentence>"}
 
 FILE: {target}
 FILE CONTENT:
