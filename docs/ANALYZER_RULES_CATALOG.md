@@ -1,4 +1,4 @@
-# Analyzer Rules Catalog — v0.2 (python-fintech-rules/0.2.0)
+# Analyzer Rules Catalog — v0.3 (python-fintech-rules/0.3.0)
 
 Deterministic static rules for the Python-first fintech pilot. Every rule is
 pattern-level, client-explainable, and carries its known
@@ -84,6 +84,35 @@ Common facts:
 - **Known FP:** informational comments mentioning TODO without unfinished
   work.
 - **Known FN:** alternate spellings (To Do, XXX, HACK).
+
+## float-equality (finance-path scoped)
+
+- **Pattern:** `==` comparison on a line that also carries a decimal
+  literal (digit `.` digit), in a file whose path matches the finance
+  keyword list.
+- **Detected risk:** exact equality on binary floats is unreliable for
+  money (representation error) — amounts that should match compare
+  unequal, or vice versa.
+- **Severity default:** High on money paths, otherwise Medium.
+  Confidence 0.55/0.45.
+- **Known FP:** `==` against a non-monetary float; a decimal literal used
+  in a non-comparison role on the same line; test assertions (a test
+  legitimately asserting equality).
+- **Known FN:** equality via variables (no literal present), `!=` / `>=`
+  comparisons, or `math.isclose` already in use.
+
+## floor-div-money (finance-path scoped)
+
+- **Pattern:** `//` (floor division) on a money/risk/limit/fee/settlement
+  path. URLs (`://`) and `//` inside trailing comments are excluded.
+- **Detected risk:** floor division truncates a monetary amount toward
+  negative infinity, silently discarding fractional money.
+- **Severity default:** High on money paths, otherwise Medium.
+  Confidence 0.6/0.5.
+- **Known FP:** `//` used intentionally (index math, bucket sizing) inside
+  a finance-named file.
+- **Known FN:** truncation via `int()`, `math.floor`, or `//` hidden
+  behind an alias.
 
 ## External SAST ingestion (v0.3) — semgrep:* / bandit:*
 

@@ -20,15 +20,17 @@ use super::ingestion::WorkspaceInventory;
 
 /// Version of the static ruleset — recorded in the evidence manifest so
 /// every finding is traceable to exact rule semantics.
-pub const RULESET_VERSION: &str = "python-fintech-rules/0.2.0";
+pub const RULESET_VERSION: &str = "python-fintech-rules/0.3.0";
 
-/// The five financial pilot rules (client-explainable, documented).
+/// The financial pilot rules (client-explainable, documented).
 pub const FINANCIAL_RULE_IDS: &[&str] = &[
     "money-truncation",
     "money-round-bare",
     "none-arith",
     "offbyone-range",
     "todo-marker",
+    "float-equality",
+    "floor-div-money",
 ];
 
 /// All rule ids executed by this scanner version, sorted (deterministic).
@@ -214,6 +216,61 @@ fn check_dangerous_eval(_file: &str, lines: &[&str], idx: usize) -> Option<&'sta
     None
 }
 
+/// Float equality with a decimal literal on a monetary path. Exact `==`
+/// on binary floats is unreliable for money (representation error);
+/// Decimal or a tolerance should be used.
+fn check_float_equality(file: &str, lines: &[&str], idx: usize) -> Option<&'static str> {
+    let line = lines[idx];
+    if is_noise_line(line.trim()) {
+        return None;
+    }
+    if !is_finance_path(file) {
+        return None; // scoped: only relevant on monetary paths
+    }
+    if !line.contains("==") {
+        return None;
+    }
+    // A decimal literal (digit '.' digit) must be present on the line.
+    let bytes = line.as_bytes();
+    let mut has_decimal_literal = false;
+    if bytes.len() >= 3 {
+        for i in 1..bytes.len() - 1 {
+            if bytes[i] == b'.' && bytes[i - 1].is_ascii_digit() && bytes[i + 1].is_ascii_digit() {
+                has_decimal_literal = true;
+                break;
+            }
+        }
+    }
+    if has_decimal_literal {
+        return Some(
+            "float equality (==) with a decimal literal on a monetary path — use Decimal or a tolerance",
+        );
+    }
+    None
+}
+
+/// Floor division (`//`) on a monetary path — truncates the amount
+/// (toward -inf), silently discarding fractional money.
+fn check_floor_div_money(file: &str, lines: &[&str], idx: usize) -> Option<&'static str> {
+    let line = lines[idx];
+    if is_noise_line(line.trim()) {
+        return None;
+    }
+    if !is_finance_path(file) {
+        return None; // scoped: only relevant on monetary paths
+    }
+    let dd = line.find("//")?;
+    if line.contains("://") {
+        return None; // URL, not division
+    }
+    if let Some(hash) = line.find('#') {
+        if hash < dd {
+            return None; // the `//` sits inside a trailing comment
+        }
+    }
+    Some("floor division (//) on a monetary path — truncates the amount")
+}
+
 const RULES: &[Rule] = &[
     Rule {
         id: "money-truncation",
@@ -238,6 +295,14 @@ const RULES: &[Rule] = &[
     Rule {
         id: "todo-marker",
         check: check_todo_marker,
+    },
+    Rule {
+        id: "float-equality",
+        check: check_float_equality,
+    },
+    Rule {
+        id: "floor-div-money",
+        check: check_floor_div_money,
     },
 ];
 
@@ -276,6 +341,14 @@ pub fn rule_limitations(rule_id: &str) -> Vec<String> {
         "dangerous-eval" => vec![
             "false positives: ast.literal_eval(...) matches the eval( substring but is not arbitrary execution".to_string(),
             "false negatives: dynamic imports or getattr-dispatched calls are not matched".to_string(),
+        ],
+        "float-equality" => vec![
+            "false positives: == against a non-monetary float, or a decimal literal used in a non-comparison role on the same line".to_string(),
+            "false negatives: equality via variables (no literal), != / >= comparisons, or math.isclose already in use".to_string(),
+        ],
+        "floor-div-money" => vec![
+            "false positives: // used intentionally (index math, bucket sizing) inside a finance-named file".to_string(),
+            "false negatives: truncation via int(), math.floor, or // hidden behind an alias is not matched".to_string(),
         ],
         _ => vec!["no limitation profile registered for this rule".to_string()],
     }
@@ -501,6 +574,46 @@ mod tests {
         assert_eq!(hits[0].file, "risk/limits.py");
     }
 
+    #[test]
+    fn rule_float_equality_positive_and_negative() {
+        let dir = temp_workspace(&[(
+            "billing/charges.py",
+            "def is_exact_fee(fee):\n    return fee == 1.25\n\ndef count(items):\n    return len(items)\n",
+        )]);
+        let cands = scan_dir(dir.path());
+        let hits = rule_hits(&cands, "float-equality");
+        assert_eq!(
+            hits.len(),
+            1,
+            "only the == against a decimal literal: {cands:?}"
+        );
+        assert_eq!(hits[0].line_start, 2);
+        // Negative: no decimal-literal equality -> no hits.
+        let clean = temp_workspace(&[("billing/charges.py", "def f(a, b):\n    return a == b\n")]);
+        assert!(rule_hits(&scan_dir(clean.path()), "float-equality").is_empty());
+        // Negative: decimal-literal equality OUTSIDE a finance path.
+        let nonfin = temp_workspace(&[("util/misc.py", "def g(x):\n    return x == 0.5\n")]);
+        assert!(rule_hits(&scan_dir(nonfin.path()), "float-equality").is_empty());
+    }
+
+    #[test]
+    fn rule_floor_div_money_positive_and_negative() {
+        let dir = temp_workspace(&[(
+            "billing/charges.py",
+            "def split(amount):\n    return amount // 100\n\ndef url():\n    return \"https://example.com/x\"\n",
+        )]);
+        let cands = scan_dir(dir.path());
+        let hits = rule_hits(&cands, "floor-div-money");
+        assert_eq!(hits.len(), 1, "only the real // division: {cands:?}");
+        assert_eq!(hits[0].line_start, 2);
+        // Negative: no // at all.
+        let clean = temp_workspace(&[("billing/charges.py", "def f(a):\n    return a / 100\n")]);
+        assert!(rule_hits(&scan_dir(clean.path()), "floor-div-money").is_empty());
+        // Negative: // outside a finance path.
+        let nonfin = temp_workspace(&[("util/misc.py", "def g(a):\n    return a // 2\n")]);
+        assert!(rule_hits(&scan_dir(nonfin.path()), "floor-div-money").is_empty());
+    }
+
     // --- A2: deduplication ---
 
     fn cand(rule: &str, file: &str, line: usize, snippet: &str) -> Candidate {
@@ -550,7 +663,7 @@ mod tests {
     #[test]
     fn ruleset_metadata_is_stable_and_documented() {
         let ids = ruleset_ids();
-        assert_eq!(ids.len(), 6, "5 financial + dangerous-eval");
+        assert_eq!(ids.len(), 8, "7 financial + dangerous-eval");
         for fin in FINANCIAL_RULE_IDS {
             assert!(ids.contains(&fin.to_string()), "{fin} missing");
             assert!(

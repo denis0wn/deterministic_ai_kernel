@@ -144,6 +144,20 @@ fn classify(candidate: &Candidate) -> (Severity, f64) {
             }
         }
         "todo-marker" => (Severity::Low, 0.3),
+        "float-equality" => {
+            if money {
+                (Severity::High, 0.55)
+            } else {
+                (Severity::Medium, 0.45)
+            }
+        }
+        "floor-div-money" => {
+            if money {
+                (Severity::High, 0.6)
+            } else {
+                (Severity::Medium, 0.5)
+            }
+        }
         _ => (Severity::Low, 0.2),
     }
 }

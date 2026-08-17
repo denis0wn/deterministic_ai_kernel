@@ -100,7 +100,7 @@ fn bundle_artifacts_are_byte_stable_and_honest() {
 
     // Manifest carries snapshot hash, ruleset version and no time fields.
     assert!(a.manifest_json.contains("\"workspace_snapshot_blake3\""));
-    assert!(a.manifest_json.contains("python-fintech-rules/0.2.0"));
+    assert!(a.manifest_json.contains("python-fintech-rules/0.3.0"));
     for banned in ["started_at", "ts_unix", "duration_ms"] {
         assert!(!a.manifest_json.contains(banned));
     }
