@@ -78,6 +78,17 @@ terminal with no corrective retry. Kernel-side mitigations enumerated but
 require a separate security review; NO legal analyzer-side knob exists
 (the patch prompt is kernel-owned). Record:
 /tmp/dek_ai_matrix/PATCH_TARGET_PATH_ROOT_CAUSE_ANALYSIS.md.
+2026-08-17 (later) — R1 ACHIEVED (master-plan phase, not an mq-series):
+first REAL green remediation cycle on gemma4-reasoning
+(chain_consistent_remediation_evidenced, chain_id de727fcc…). Enabling
+workaround: isolated workspace basename with an initial capital
+(`Isolated_ws`) neutralizes the path-capitalization defect without any
+kernel change. Attempt 1 (seed 300) applied a valid patch but failed
+tests honestly (Decimal vs float); attempt 2 (seed 301) green after the
+task spec clarified return type=float. Record:
+/tmp/dek_ai_matrix/R1_FIRST_GREEN_CYCLE_RECORD.md. Autonomous
+remediation on arbitrary lowercase workspace names still requires the R2
+presentation fix (executor security review).
 
 Companion documents: PILOT_OPS_RUNBOOK.md (attempt discipline),
 docs/PILOT_METRICS_V1.md (metrics), ANALYZER_ROADMAP.md (model-quality

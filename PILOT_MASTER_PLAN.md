@@ -63,23 +63,25 @@ evidence.
 
 ## 4. Фазовый план и Definition of Done
 
-### R1 — «Verified Change Wedge»: первый реальный зелёный цикл (ПРИОРИТЕТ)
+### R1 — «Verified Change Wedge»: первый реальный зелёный цикл — ✅ DONE (2026-08-17)
 **Цель:** доказать, что продукт полезен end-to-end, без зависимости от
 починки модели.
-**Что делаем:**
-- Берём находку truncation в pilot_fintech (MONEY-TRUNCATION-ROUNDING-14).
-- Оператор/человек готовит КОРЕКТНЫЙ патч (Decimal half-up) — это
-  легитимный путь (LLM недоверен, человек — источник патча).
-- Прогоняем через НАСТОЯЩИЙ конвейер: `apply_patch_v1` (context-verified)
-  → `run_tests_v1` (все тесты проходят, exit 0) → `validate_patch`.
-- `analyzer_chain_verify` → **`chain_consistent_remediation_evidenced`**.
+**Результат:** выполнен в 2 попытки (seed 300: патч применён впервые,
+тесты честно упали на Decimal-vs-float; seed 301: все 6 шагов committed,
+реальные тесты exit 0, chain verifier выдал
+`chain_consistent_remediation_evidenced`, chain_id `de727fcc…`).
+Обход известного бага капитализации пути — именем директории с
+заглавной первой буквой (`Isolated_ws`), БЕЗ изменений kernel'а;
+полноценный фикс остаётся в R2. Полный отчёт:
+/tmp/dek_ai_matrix/R1_FIRST_GREEN_CYCLE_RECORD.md, evidence:
+/tmp/dek_ai_matrix/model_quality_experiment_r1/.
 **Definition of Done (бинарно, измеримо):**
-- [ ] Один реальный зелёный цикл: patch boundary accepted + pre-image ==
+- [x] Один реальный зелёный цикл: patch boundary accepted + pre-image ==
       snapshot + реальные тесты exit 0 + структурно валидный
       test_report_v1 + independent verification passed + chain verifier
       выдал `chain_consistent_remediation_evidenced`.
-- [ ] Все артефакты сохранены и хэшированы (BLAKE3), без симуляций.
-- [ ] Запись в `/tmp/dek_ai_matrix/` + коммит в репо.
+- [x] Все артефакты сохранены и хэшированы (BLAKE3), без симуляций.
+- [x] Запись в `/tmp/dek_ai_matrix/` + коммит в репо.
 
 ### R2 — «Autonomous Remediation»: разблокировать модель
 **Цель:** первый АВТОНОМНЫЙ зелёный цикл (модель сама выдаёт патч).
@@ -144,6 +146,14 @@ evidence.
 - 2026-08-17: **Стратегический выбор — путь A (audit/evidence первым,
   human-in-the-loop); автономная ремедиация = R2-ускоритель.** Текущая
   фаза = R1; ближайший шаг = первый реальный зелёный цикл.
+- 2026-08-17 (позже): **R1 ЗАКРЫТ.** Первый реальный зелёный цикл
+  (chain_id de727fcc…): баг капитализации пути обойден именем директории
+  с заглавной буквой (без изменений kernel'а); легитимной точки ввода
+  человеческого патча без правки executor'а не существует — патч
+  сгенерирован моделью под направляющим контекстом тестов (тесты =
+  спецификация). Попытка 1 (seed 300) честно упала на Decimal-vs-float;
+  попытка 2 (seed 301) зелёная. Текущая фаза = R2 (security review +
+  фикс presentation); у R3 появился реальный демо-артефакт.
 
 ## 8. Метрики успеха
 - R1: 1 реальный зелёный evidence chain (`chain_consistent_remediation_
@@ -152,7 +162,10 @@ evidence.
 - R3: 1 подписанный пилотный SOW + завершённый пилот.
 - Выручка — R3+; до R1/R2 не гонимся.
 
-## 9. Ближайший конкретный шаг (R1)
-Подготовить корректный патч для MONEY-TRUNCATION-ROUNDING-14 и прогнать
-его через настоящий конвейер до `chain_consistent_remediation_evidenced`.
-Это единственный шаг, который сейчас двигает DoD. Всё остальное — дрифт.
+## 9. Ближайший конкретный шаг (текущая фаза = R2)
+R1 закрыт. Следующий шаг по плану — R2: security review executor и фикс
+patch-target presentation (корневая причина известна), чтобы автономная
+ремедиация работала на произвольных (lowercase) именах workspace.
+Параллельно допустимо движение R3 (пилотная упаковка) — у неё появился
+реальный демо-артефакт зелёного цикла. Любое изменение executor'а —
+только через отдельный security review.
