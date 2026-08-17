@@ -192,6 +192,13 @@ mismatch терминален). **Ни один гейт не ослаблен.*
   (ruleset 0.3.0) + многофайловый фикстур `pilot_billing_service`
   (7 находок / 6 правил / 4 файла, negative control rates.py чист,
   документированный FP в test-файле отмечен). Тесты 804/0.
+- 2026-08-17 (позже): **полная симуляция клиента (Northwind Clearing,
+  синтетика):** комплексный дефект rounding-stage (усечение комиссии)
+  найден анализатором, одобрен через human-review гейт и автономно
+  устранён executor'ом; реальные тесты exit 0; chain id `b6fce905…` =
+  chain_consistent_remediation_evidenced. Система решила нетривиальную
+  задачу end-to-end. Фикстур: analyzer_examples/client_northwind_clearing.
+  Запись: /tmp/dek_ai_matrix/CLIENT_SIM_NORTHWIND_RECORD.md.
 
 ## 8. Метрики успеха
 - R1: 1 реальный зелёный evidence chain (`chain_consistent_remediation_
