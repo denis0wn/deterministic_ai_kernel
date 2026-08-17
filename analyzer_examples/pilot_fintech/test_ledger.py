@@ -19,3 +19,22 @@ def test_settlement_round_is_not_bankers_rounding():
     # P2: policy-free round() uses banker's rounding: round(2.5) == 2.
     # With an explicit half-up policy the expected value is 3.
     assert settlement_round(2.5) == 3
+
+
+# monetary-invariant: MONEY-TRUNCATION-LEDGER-15
+# Property-based guard for the post_amount truncation finding: money
+# results must never carry a sub-cent remainder, for ALL probe values.
+_PROBES = [0.0, 0.005, 0.01, 0.125, 0.5, 0.995, 1.0, 1.005, 2.5, 3.333, 10.0, 99.999]
+
+
+def test_invariant_post_amount_cent_precision():
+    for a in _PROBES:
+        r = post_amount(a)
+        assert abs(r * 100 - round(r * 100)) < 1e-9, (
+            "sub-cent remainder for %r -> %r" % (a, r)
+        )
+
+
+def test_invariant_post_amount_determinism():
+    for a in _PROBES:
+        assert post_amount(a) == post_amount(a), "non-deterministic for %r" % a

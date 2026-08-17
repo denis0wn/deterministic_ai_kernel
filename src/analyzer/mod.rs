@@ -22,6 +22,7 @@ pub mod evidence_chain;
 pub mod evidence_manifest;
 pub mod external_sast;
 pub mod ingestion;
+pub mod monetary_oracle;
 pub mod operational;
 pub mod pilot_package;
 pub mod pilot_report;
@@ -31,4 +32,4 @@ pub mod task_emitter;
 pub mod triage;
 pub mod work_order;
 
-pub const ANALYZER_VERSION: &str = "0.4.0";
+pub const ANALYZER_VERSION: &str = "0.4.1";

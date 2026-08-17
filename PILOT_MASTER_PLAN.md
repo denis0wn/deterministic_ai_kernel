@@ -208,6 +208,18 @@ mismatch терминален). **Ни один гейт не ослаблен.*
   поймал правдоподобно-неверный фикс. Фикстур:
   analyzer_examples/client_northpay. Запись:
   /tmp/dek_ai_matrix/CLIENT_SIM_NORTHPAY_RECORD.md.
+- 2026-08-17 (позже): **денежное усиление (v0.4.1, monetary invariant
+  oracle):** найдено в ответ на запрос «не ошибаться с деньгами».
+  Добавлен жёсткий fail-safe: находка денежно-арифметического правила
+  (money-truncation / money-round-bare / floor-div-money) становится
+  remediation_ready ТОЛЬКО при наличии инвариантного теста (маркер
+  `# monetary-invariant: <ID>`) — деньги нельзя ремедиатировать без
+  property-based проверок. Модуль monetary_oracle (детектор маркера +
+  генератор шаблона: цент-точность, детерминизм, half-up граница) +
+  бинарник analyzer_monetary_oracle. Честная оговорка: инварианты ловят
+  класс ошибки масштаба; класс направления округления ловят примерные
+  тесты — нужны оба. pilot_fintech приведён в соответствие (инвариантный
+  тест добавлен). Тесты 810/0. Документация: docs/MONETARY_ORACLE.md.
 
 ## 8. Метрики успеха
 - R1: 1 реальный зелёный evidence chain (`chain_consistent_remediation_

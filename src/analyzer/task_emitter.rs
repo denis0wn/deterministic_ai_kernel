@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use super::ingestion::WorkspaceInventory;
+use super::monetary_oracle;
 use super::triage::{Finding, Severity};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,6 +56,12 @@ pub struct ReadinessCriteria {
     /// Evidence is complete: locations anchored, line ranges within the
     /// file, candidate statement and snippets non-empty.
     pub evidence_complete: bool,
+    /// True iff the finding is NOT from a money-math rule, or a
+    /// monetary-invariant test (marker-detected) guards it. Money-math
+    /// findings WITHOUT an invariant test can never be remediation_ready.
+    pub monetary_invariant_present: bool,
+    /// Whether this finding came from a money-math rule (informational).
+    pub is_monetary: bool,
     /// Always true: remediation requires human approval in this phase.
     pub manual_review_required: bool,
 }
@@ -81,7 +88,10 @@ pub const READINESS_REMEDIATION_READY: &str = "remediation_ready";
 
 const READINESS_POLICY: &str =
     "static finding without an operator-provided reproducible failing test is candidate_only; \
-the analyzer never claims fix readiness on its own; manual review is always required";
+the analyzer never claims fix readiness on its own; manual review is always required; \
+a money-math finding (money-truncation / money-round-bare / floor-div-money) is NEVER \
+remediation_ready unless a monetary-invariant test (marker '# monetary-invariant: <finding_id>') \
+guards it in the workspace — property-based checks are mandatory for money";
 
 /// The standard executor CodeFix chain, anchored to the concrete target.
 fn codefix_steps(workspace: &str, target: &str) -> Vec<String> {
@@ -185,7 +195,17 @@ fn assess_readiness(
                 && file_line_count(workspace, &loc.file).is_some_and(|n| loc.line_end <= n.max(1))
         });
 
-    let ready = reproducible_test_present && target_file_snapshot_matches && evidence_complete;
+    // Monetary hard gate: money-math findings require a property-based
+    // invariant test in the workspace; non-monetary findings are not
+    // gated by it (vacuously present).
+    let is_monetary = monetary_oracle::is_monetary_rule(&f.rule_id);
+    let monetary_invariant_present =
+        !is_monetary || monetary_oracle::invariant_present(workspace, inv, &f.id);
+
+    let ready = reproducible_test_present
+        && target_file_snapshot_matches
+        && evidence_complete
+        && monetary_invariant_present;
     ReadinessAssessment {
         readiness: if ready {
             READINESS_REMEDIATION_READY.to_string()
@@ -196,6 +216,8 @@ fn assess_readiness(
             reproducible_test_present,
             target_file_snapshot_matches,
             evidence_complete,
+            monetary_invariant_present,
+            is_monetary,
             manual_review_required: true,
         },
         policy: READINESS_POLICY.to_string(),
@@ -282,10 +304,13 @@ mod tests {
 
     #[test]
     fn operator_provided_repro_test_promotes_to_remediation_ready() {
+        // Uses a NON-monetary finding (none-arith) so the monetary-
+        // invariant gate is vacuous; monetary promotion is covered by
+        // money_finding_with_invariant_becomes_ready.
         let (findings, inv, ws) = toy();
         let finding = findings
             .iter()
-            .find(|f| f.id.starts_with("MONEY-TRUNCATION"))
+            .find(|f| f.id.starts_with("NONE-ARITH"))
             .unwrap();
         let mut repro = BTreeMap::new();
         repro.insert(finding.id.clone(), "test_fees.py".to_string());
@@ -320,5 +345,107 @@ mod tests {
                 .map(|t| t.contract)
                 .collect();
         assert_eq!(v0, serde_json::to_string(&wrapped).unwrap());
+    }
+
+    // --- Monetary invariant hard gate ---
+
+    /// Build a temp workspace with a truncation defect on a known line.
+    /// `with_marker` controls whether the test file carries the
+    /// `# monetary-invariant:` marker guarding the finding.
+    fn money_ws(with_marker: bool) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("billing")).unwrap();
+        // Defect on line 3 -> finding id MONEY-TRUNCATION-FEES-3.
+        std::fs::write(
+            dir.path().join("billing/fees.py"),
+            "def compute_fee(amount):\n    # fee in cents\n    return int(amount * 100) / 100\n",
+        )
+        .unwrap();
+        let mut test = String::from(
+            "from billing.fees import compute_fee\n\n\ndef test_fee():\n    assert compute_fee(0.125) == 0.13\n",
+        );
+        if with_marker {
+            test.push_str("\n# monetary-invariant: MONEY-TRUNCATION-FEES-3\n");
+        }
+        std::fs::write(dir.path().join("test_fees.py"), test).unwrap();
+        dir
+    }
+
+    fn emit_money(with_marker: bool) -> (Vec<super::EmittedTask>, tempfile::TempDir) {
+        let dir = money_ws(with_marker);
+        let inv = scan_workspace(dir.path()).unwrap();
+        let findings = triage(&run_static_scan(&inv, dir.path()), &inv);
+        let mut repro = BTreeMap::new();
+        repro.insert(
+            "MONEY-TRUNCATION-FEES-3".to_string(),
+            "test_fees.py".to_string(),
+        );
+        let ws = dir.path().to_string_lossy().to_string();
+        let tasks = emit_tasks_with_readiness(&findings, &ws, &inv, &repro);
+        (tasks, dir)
+    }
+
+    #[test]
+    fn money_finding_without_invariant_is_never_ready() {
+        let (tasks, _dir) = emit_money(false);
+        let t = tasks
+            .iter()
+            .find(|t| t.contract.finding.id == "MONEY-TRUNCATION-FEES-3")
+            .expect("money finding present");
+        assert!(t.readiness.criteria.is_monetary);
+        assert!(!t.readiness.criteria.monetary_invariant_present);
+        assert!(
+            t.readiness.criteria.reproducible_test_present,
+            "repro was provided"
+        );
+        assert_eq!(
+            t.readiness.readiness, READINESS_CANDIDATE_ONLY,
+            "money without invariant test must stay candidate_only even with a repro test"
+        );
+    }
+
+    #[test]
+    fn money_finding_with_invariant_becomes_ready() {
+        let (tasks, _dir) = emit_money(true);
+        let t = tasks
+            .iter()
+            .find(|t| t.contract.finding.id == "MONEY-TRUNCATION-FEES-3")
+            .expect("money finding present");
+        assert!(t.readiness.criteria.is_monetary);
+        assert!(t.readiness.criteria.monetary_invariant_present);
+        assert_eq!(t.readiness.readiness, READINESS_REMEDIATION_READY);
+    }
+
+    #[test]
+    fn non_money_finding_not_gated_by_invariant() {
+        // none-arith is not a money-math rule -> invariant gate is vacuous.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("billing")).unwrap();
+        std::fs::write(
+            dir.path().join("billing/net.py"),
+            "def net(rec):\n    fee = rec.get(\"fee\")\n    return rec[\"gross\"] - fee\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("test_net.py"), "def test_n():\n    pass\n").unwrap();
+        let inv = scan_workspace(dir.path()).unwrap();
+        let findings = triage(&run_static_scan(&inv, dir.path()), &inv);
+        let f = findings
+            .iter()
+            .find(|f| f.rule_id == "none-arith")
+            .expect("none-arith present");
+        let mut repro = BTreeMap::new();
+        repro.insert(f.id.clone(), "test_net.py".to_string());
+        let ws = dir.path().to_string_lossy().to_string();
+        let tasks = emit_tasks_with_readiness(&findings, &ws, &inv, &repro);
+        let t = tasks
+            .iter()
+            .find(|t| t.contract.finding.id == f.id)
+            .unwrap();
+        assert!(!t.readiness.criteria.is_monetary);
+        assert!(
+            t.readiness.criteria.monetary_invariant_present,
+            "vacuously present for non-money"
+        );
+        assert_eq!(t.readiness.readiness, READINESS_REMEDIATION_READY);
     }
 }
