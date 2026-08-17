@@ -40,9 +40,11 @@ Non-money findings are not gated (the criterion is vacuously present).
 The template ships two always-on invariants that need no expected values:
 
 - **Cent precision** — a money result must never carry a sub-cent
-  remainder: `abs(r*100 - round(r*100)) < 1e-9`. This catches the
-  rounding-scale error class (e.g. a result of `0.125` where a
-  cent-rounded `0.13` is required).
+  remainder: `abs((r * 100) % 1) < 1e-9`. This catches the rounding-scale
+  error class (e.g. a result of `0.125` where a cent-rounded `0.13` is
+  required). The **modulo form** is used deliberately instead of
+  `round(r*100)`: a bare `round(...)` inside the guard would itself trip
+  the `money-round-bare` rule when the test lives in a finance-path file.
 - **Determinism** — `f(x) == f(x)` for all probes.
 
 plus a skeleton **half-up boundary** check the operator adapts to the
@@ -58,6 +60,30 @@ tests (e.g. asserting `0.125 -> 0.13`). The invariants are an ADDITIONAL
 safety net on top of example tests, not a replacement. A robust monetary
 test suite has both: example tests pin the policy (direction), invariants
 guarantee structural properties (precision, determinism) for all values.
+
+## Current coverage (as of v0.4.1, 2026-08-18)
+
+Every REAL money-math defect across all monetary fixtures now carries a
+monetary-invariant test; money therefore passes the gate and can reach
+`remediation_ready`:
+
+| Fixture | Money-math finding(s) guarded |
+|---|---|
+| pilot_fintech | `post_amount` (money-truncation), `settlement_round` (money-round-bare) |
+| pilot_billing_service | `to_cents` (money-truncation), `split_fee` (floor-div-money) |
+| client_northwind_clearing | `settlement_fee` (money-truncation) |
+| client_northpay | `proportional_refund` (money-truncation) |
+| billing_python | `compute_fee` (money-truncation) |
+
+**Deliberate exceptions (no invariant, by design):**
+- `client_northpay::split_count` (floor-div-money) and
+  `client_northpay::loyalty_bonus` (float-equality) are DECOYS — correct
+  code that must be REJECTED at review, not remediated. They are
+  intentionally left without invariants so the gate keeps them
+  `candidate_only`.
+- `float-equality` is NOT a money-math rule (not in the gated set), so its
+  findings (including the documented false positives on test-file
+  assertions) are not gated by the oracle.
 
 ## Read-only invariant
 
