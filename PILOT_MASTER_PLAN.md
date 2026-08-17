@@ -199,6 +199,15 @@ mismatch терминален). **Ни один гейт не ослаблен.*
   chain_consistent_remediation_evidenced. Система решила нетривиальную
   задачу end-to-end. Фикстур: analyzer_examples/client_northwind_clearing.
   Запись: /tmp/dek_ai_matrix/CLIENT_SIM_NORTHWIND_RECORD.md.
+- 2026-08-17 (позже): **сложная симуляция клиента (NorthPay, синтетика,
+  многодефектная):** 8 находок, оператор выбрал настоящую и отклонил 2
+  ловушки-декоя; модель не тронула декои и обошла банкерскую ловушку, но
+  допустила тонкую ошибку масштаба округления (0.125 вместо 0.13) —
+  авторитативный тест поймал, система отвергла фикс (tests_failed,
+  no fabricated success). ЧЕСТНЫЙ ОТРИЦАТЕЛЬНЫЙ результат: safety-net
+  поймал правдоподобно-неверный фикс. Фикстур:
+  analyzer_examples/client_northpay. Запись:
+  /tmp/dek_ai_matrix/CLIENT_SIM_NORTHPAY_RECORD.md.
 
 ## 8. Метрики успеха
 - R1: 1 реальный зелёный evidence chain (`chain_consistent_remediation_
