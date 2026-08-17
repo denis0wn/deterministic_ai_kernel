@@ -38,3 +38,20 @@ def test_invariant_post_amount_cent_precision():
 def test_invariant_post_amount_determinism():
     for a in _PROBES:
         assert post_amount(a) == post_amount(a), "non-deterministic for %r" % a
+
+
+# monetary-invariant: MONEY-ROUND-BARE-LEDGER-20
+# Property-based guards for settlement_round (bare round; policy-free).
+def test_invariant_settlement_round_cent_precision():
+    for a in _PROBES:
+        r = settlement_round(a)
+        assert abs((r * 100) % 1) < 1e-9, (
+            "sub-cent remainder for %r -> %r" % (a, r)
+        )
+
+
+def test_invariant_settlement_round_determinism():
+    for a in _PROBES:
+        assert settlement_round(a) == settlement_round(a), (
+            "non-deterministic for %r" % a
+        )
