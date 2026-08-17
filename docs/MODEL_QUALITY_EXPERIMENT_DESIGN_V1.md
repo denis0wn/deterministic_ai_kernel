@@ -22,6 +22,16 @@ successes, all attempts preserved
 (/tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN_MQ2.md,
 MODEL_QUALITY_EXPERIMENT_MQ2_FINAL_RECORD.md,
 model_quality_experiment_mq2/). Combined mq1+mq2: 6/6 seeds.
+2026-08-17 — mq3-structural-levers-3att executed: workspace renamed to
+`isolatedws` (H1 naming trigger), A2 facts under renamed workspace, and
+a structural PatchV1 shape example (H3); seeds 106/107/108, budget 3.
+Result: 3/3 malformed_patch, IDENTICAL signature — H1 REJECTED, A2
+ineffective, H3 REJECTED. All prompt-level levers tested so far fail to
+fix this model's patch-target-path capitalization; combined mq1+mq2+mq3:
+9/9 seeds. Zero mutations, zero fake successes, all attempts preserved
+(/tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN_MQ3.md,
+MODEL_QUALITY_EXPERIMENT_MQ3_FINAL_RECORD.md,
+model_quality_experiment_mq3/). Seed 109 remains reserved.
 
 Companion documents: PILOT_OPS_RUNBOOK.md (attempt discipline),
 docs/PILOT_METRICS_V1.md (metrics), ANALYZER_ROADMAP.md (model-quality

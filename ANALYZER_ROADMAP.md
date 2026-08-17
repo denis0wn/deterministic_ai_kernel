@@ -158,9 +158,19 @@ success). Before ANY further remediation attempts:
   restatement; seeds 103/104/105): 3/3 malformed_patch with the SAME
   signature — the prose-context lever does not fix this defect on this
   model; combined 6/6 across seeds, always fail-closed pre-effect
-  (/tmp/dek_ai_matrix/model_quality_experiment_mq2/). Next: registered
-  STRUCTURAL-lever experiment (patch-shape example and/or workspace
-  naming hypothesis) — new plan + explicit go-ahead required.
+  (/tmp/dek_ai_matrix/model_quality_experiment_mq2/).
+- Status (2026-08-17): third bounded experiment executed
+  (mq3-structural-levers-3att; workspace renamed to isolatedws, A2
+  under renamed workspace, structural PatchV1 shape example; seeds
+  106/107/108): 3/3 malformed_patch, IDENTICAL signature — H1 naming
+  hypothesis REJECTED, H3 structural example REJECTED; combined
+  mq1+mq2+mq3: 9/9 seeds, always fail-closed pre-effect
+  (/tmp/dek_ai_matrix/model_quality_experiment_mq3/). Prompt-level
+  levers for the path-capitalization defect are exhausted within the
+  tested space. Next (registered plan + explicit go-ahead required):
+  model/runtime change as the variable, or a workspace-relative target
+  framing ONLY if supported without executor changes, or accept as a
+  documented model constraint. Seed 109 reserved.
 
 ### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
 Only after a SEPARATE security review. Until then the hand-off stays
