@@ -27,3 +27,23 @@ def test_batch_settlement_matches_schedule():
     ]
     # net = (100.0 - 1.01) + (250.0 - 5.00) = 98.99 + 245.00 = 343.99
     assert batch_settlement(txns) == 343.99
+
+
+# monetary-invariant: MONEY-TRUNCATION-SETTLEMENT-28
+# Property-based guards for settlement_fee (HALF-UP to the cent).
+_PROBES = [0.0, 0.005, 0.01, 0.125, 0.5, 0.995, 1.0, 1.005, 2.5, 3.333, 10.0, 99.999]
+
+
+def test_invariant_settlement_fee_cent_precision():
+    for a in _PROBES:
+        r = settlement_fee(a, 0.01005)
+        assert abs((r * 100) % 1) < 1e-9, (
+            "sub-cent remainder for %r -> %r" % (a, r)
+        )
+
+
+def test_invariant_settlement_fee_determinism():
+    for a in _PROBES:
+        assert settlement_fee(a, 0.01005) == settlement_fee(a, 0.01005), (
+            "non-deterministic for %r" % a
+        )

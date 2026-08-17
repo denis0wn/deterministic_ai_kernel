@@ -25,6 +25,28 @@ def test_refund_full_share():
     assert proportional_refund(5.0, 4, 4) == 5.0
 
 
+# monetary-invariant: MONEY-TRUNCATION-FEES-25
+# Property-based guards for proportional_refund (HALF-UP to the cent).
+# The decoy helpers (split_count, loyalty_bonus) are intentionally NOT
+# given invariants — they are correct code, rejected at review.
+_PROBES = [0.0, 0.005, 0.01, 0.125, 0.5, 0.995, 1.0, 1.005, 2.5, 3.333, 10.0, 99.999]
+
+
+def test_invariant_refund_cent_precision():
+    for a in _PROBES:
+        r = proportional_refund(a, 1, 8)
+        assert abs((r * 100) % 1) < 1e-9, (
+            "sub-cent remainder for %r -> %r" % (a, r)
+        )
+
+
+def test_invariant_refund_determinism():
+    for a in _PROBES:
+        assert proportional_refund(a, 1, 8) == proportional_refund(a, 1, 8), (
+            "non-deterministic for %r" % a
+        )
+
+
 def test_split_count_decoy_intact():
     # Floor division is the CORRECT behavior; a "fix" that changes it
     # breaks this guard.

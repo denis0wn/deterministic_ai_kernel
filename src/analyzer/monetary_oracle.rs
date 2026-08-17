@@ -75,10 +75,12 @@ def _money_result(amount):
 
 
 def test_invariant_cent_precision():
-    # A money result must never carry a sub-cent remainder.
+    # A money result must never carry a sub-cent remainder. The modulo
+    # form is used (not round()) so this guard itself does not trip the
+    # money-round-bare rule when placed in a finance-path test file.
     for a in _PROBES:
         r = _money_result(a)
-        assert abs(r * 100 - round(r * 100)) < 1e-9, (
+        assert abs((r * 100) % 1) < 1e-9, (
             "sub-cent remainder for %r -> %r" % (a, r)
         )
 

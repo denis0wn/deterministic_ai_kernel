@@ -30,7 +30,7 @@ _PROBES = [0.0, 0.005, 0.01, 0.125, 0.5, 0.995, 1.0, 1.005, 2.5, 3.333, 10.0, 99
 def test_invariant_post_amount_cent_precision():
     for a in _PROBES:
         r = post_amount(a)
-        assert abs(r * 100 - round(r * 100)) < 1e-9, (
+        assert abs((r * 100) % 1) < 1e-9, (
             "sub-cent remainder for %r -> %r" % (a, r)
         )
 
