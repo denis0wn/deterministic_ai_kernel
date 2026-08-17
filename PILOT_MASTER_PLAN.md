@@ -83,16 +83,25 @@ evidence.
 - [x] Все артефакты сохранены и хэшированы (BLAKE3), без симуляций.
 - [x] Запись в `/tmp/dek_ai_matrix/` + коммит в репо.
 
-### R2 — «Autonomous Remediation»: разблокировать модель
+### R2 — «Autonomous Remediation»: разблокировать модель — ✅ DONE (2026-08-17)
 **Цель:** первый АВТОНОМНЫЙ зелёный цикл (модель сама выдаёт патч).
-**Что делаем:**
-- Security review executor (roadmap v0.5) — обязателен до любых изменений.
-- Фикс patch-target presentation (корневая причина известна).
-- Повторный model-quality эксперимент → автономный зелёный цикл.
+**Результат:** достигнут в 2 попытки. Security review executor выполнен и
+задокументирован (R2_SECURITY_REVIEW.md + addendum). Внесены 2 изменения
+в executor: (1) подстановка kernel-resolved `{target}` в JSON-шаблон
+PATCH_PROMPT; (2) bounded corrective retry на mismatch target_file
+(одна корректирующая попытка, все гейты после неё неизменны, устойчивый
+mismatch терминален). **Ни один гейт не ослаблен.** Итог: автономный
+зелёный цикл на LOWERCASE workspace без обхода именем
+(chain_id `040b3ba4…`); полный сьют executor 725/0 после изменений.
+Отчёт: /tmp/dek_ai_matrix/R2_AUTONOMOUS_GREEN_CYCLE_RECORD.md, evidence:
+/tmp/dek_ai_matrix/model_quality_experiment_r2/.
+**Важный факт:** одна подстановка `{target}` в шаблон НЕ устранила
+капитализацию (гипотеза «реконструкция из памяти» опровергнута);
+сработала только комбинация с corrective retry.
 **Definition of Done:**
-- [ ] Security review завершён, изменения одобрены.
-- [ ] Автономный патч проходит полную цепочку до
-      `chain_consistent_remediation_evidenced`.
+- [x] Security review завершён, изменения одобрены.
+- [x] Автономный патч проходит полную цепочку до
+      `chain_consistent_remediation_evidenced` (на lowercase workspace).
 **Зависит от:** R1 (нужен зелёный эталон для сравнения).
 
 ### R3 — «Pilot Productization»: первый клиентский пилот
@@ -154,6 +163,13 @@ evidence.
   спецификация). Попытка 1 (seed 300) честно упала на Decimal-vs-float;
   попытка 2 (seed 301) зелёная. Текущая фаза = R2 (security review +
   фикс presentation); у R3 появился реальный демо-артефакт.
+- 2026-08-17 (позже): **R2 ЗАКРЫТ.** Security review executor выполнен;
+  внесены 2 изменения (подстановка `{target}` в шаблон + bounded
+  corrective retry на mismatch target_file), ни один гейт не ослаблен;
+  автономный зелёный цикл на LOWERCASE workspace без обхода именем
+  (chain_id 040b3ba4…), сьют executor 725/0. Ключевой факт: одна
+  подстановка в шаблон не устранила капитализацию — сработал только
+  corrective retry. Текущая фаза = R3 (пилотная упаковка).
 
 ## 8. Метрики успеха
 - R1: 1 реальный зелёный evidence chain (`chain_consistent_remediation_
@@ -162,10 +178,9 @@ evidence.
 - R3: 1 подписанный пилотный SOW + завершённый пилот.
 - Выручка — R3+; до R1/R2 не гонимся.
 
-## 9. Ближайший конкретный шаг (текущая фаза = R2)
-R1 закрыт. Следующий шаг по плану — R2: security review executor и фикс
-patch-target presentation (корневая причина известна), чтобы автономная
-ремедиация работала на произвольных (lowercase) именах workspace.
-Параллельно допустимо движение R3 (пилотная упаковка) — у неё появился
-реальный демо-артефакт зелёного цикла. Любое изменение executor'а —
-только через отдельный security review.
+## 9. Ближайший конкретный шаг (текущая фаза = R3)
+R1 и R2 закрыты: есть и human-guided, и автономный зелёный цикл (оба на
+реальных гейтах, без симуляций). Следующий шаг — R3: пилотная упаковка
+(SOW, delivery-runbook, критерии приёмки) и первый клиентский пилот.
+Автономная ремедиация разблокирована (lowercase workspace работают).
+Дальнейшие изменения executor'а — только через отдельный security review.
