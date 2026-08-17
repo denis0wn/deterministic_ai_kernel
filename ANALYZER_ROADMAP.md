@@ -171,6 +171,47 @@ success). Before ANY further remediation attempts:
   model/runtime change as the variable, or a workspace-relative target
   framing ONLY if supported without executor changes, or accept as a
   documented model constraint. Seed 109 reserved.
+- Status (2026-08-17, later): mq4-model-variable-3att attempted (model
+  as the variable: coder fine-tune artifact). Closed as ENVIRONMENT
+  LIMITATION: the artifact is unservable by the installed mlx_lm
+  (`Model type gemma4_unified not supported`, confirmed by direct load);
+  attempt 1 = infrastructure_failure, seeds 201/202 preserved by the
+  registered stop rule; no model-quality conclusion drawn
+  (/tmp/dek_ai_matrix/model_quality_experiment_mq4/). Options pending
+  approval: compatible second model artifact, or a preregistered mlx_lm
+  upgrade experiment (with runtime re-validation), or close the track.
+- Status (2026-08-17, later): the preregistered mlx_lm upgrade
+  (env-mlxlm-upgrade-1) closed WITHOUT EXECUTION — the installed mlx_lm
+  0.31.3 already IS the latest PyPI release, so `gemma4_unified` is an
+  upstream support gap, not staleness; no environment change made
+  (/tmp/dek_ai_matrix/MLX_LM_UPGRADE_EXPERIMENT_PLAN.md). Remaining
+  paths (separate approval each): prerelease mlx_lm from git main as its
+  own experiment with full re-validation; a different artifact supported
+  by the released runtime (seeds 203+ under a fresh plan); or close the
+  model-variable track.
+- Status (2026-08-17, later): mq5-model-variable-r2-3att executed with
+  a compatible second model (Qwen2.5-Coder-7B-Instruct-4bit, qwen2;
+  seeds 203/204/205): 3/3 malformed_patch with the SAME signature as
+  all gemma4-reasoning attempts. COMBINED 12/12 across two model
+  families — the "gemma4-specific" interpretation is REFUTED; the
+  defect is task-presentation-robust
+  (/tmp/dek_ai_matrix/model_quality_experiment_mq5/). Next (each needs
+  explicit approval): read-only root-cause analysis of the kernel's
+  patch_code target-path presentation (no code changes); an
+  analyzer-side presentation experiment only if a legal knob is found;
+  or close remediation-attempt tracks at the current evidence level.
+  Reserved seeds: 109, 201, 202.
+- Status (2026-08-17, later): READ-ONLY root-cause analysis completed
+  (/tmp/dek_ai_matrix/PATCH_TARGET_PATH_ROOT_CAUSE_ANALYSIS.md): the
+  kernel's PATCH_PROMPT makes the model re-type the target path from a
+  `<FILE>` placeholder; both model families capitalize the only
+  name-like path component (the workspace basename) during
+  reconstruction; mismatch is terminal with no corrective retry. This
+  is a task-presentation property of the FROZEN kernel prompt layer;
+  kernel-side mitigations exist but each requires a separate security
+  review; no legal analyzer-side knob exists. Decision pending from the
+  owner: open a kernel presentation review track, or keep remediation
+  attempts closed and run the pilot as analysis + evidence-chain only.
 
 ### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
 Only after a SEPARATE security review. Until then the hand-off stays

@@ -32,6 +32,52 @@ fix this model's patch-target-path capitalization; combined mq1+mq2+mq3:
 (/tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN_MQ3.md,
 MODEL_QUALITY_EXPERIMENT_MQ3_FINAL_RECORD.md,
 model_quality_experiment_mq3/). Seed 109 remains reserved.
+2026-08-17 — mq4-model-variable-3att (model as the variable: coder
+fine-tune gemma-4-12b-coder-fable5-composer2.5-4bit; seeds 200/201/202,
+budget 3): attempt 1 (seed 200) ended as infrastructure_failure — the
+artifact is unservable on this machine (installed mlx_lm: `ValueError:
+Model type gemma4_unified not supported`, reproduced by direct load);
+per the registered stop rule seeds 201/202 were NOT executed. No
+model-quality conclusion drawn; zero mutations; fake_success 0. Closed
+as ENVIRONMENT LIMITATION
+(/tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN_MQ4.md,
+MODEL_QUALITY_EXPERIMENT_MQ4_FINAL_RECORD.md,
+model_quality_experiment_mq4/). Open item: pilot_metrics_v1 lacks an
+infrastructure_failure counter (documented schema gap).
+2026-08-17 (later) — env-mlxlm-upgrade-1 (preregistered upgrade of the
+serving runtime to unblock the model-variable track): CLOSED WITHOUT
+EXECUTION — the environment already runs the latest released mlx_lm
+(0.31.3; mlx 0.31.2; Python 3.13.2), so there is nothing to upgrade to;
+`gemma4_unified` is unsupported by the newest released runtime as well
+(upstream support gap, not local staleness). No environment change made.
+Record: /tmp/dek_ai_matrix/MLX_LM_UPGRADE_EXPERIMENT_PLAN.md. Remaining
+paths (each needs separate approval): prerelease mlx_lm from git main as
+its own experiment; a different artifact supported by 0.31.3; or close
+the model-variable track.
+2026-08-17 (later) — mq5-model-variable-r2-3att executed: model
+variable round 2 with mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+(qwen2; compatibility verified pre-registration; direct load verified
+pre-series), seeds 203/204/205, budget 3, everything else identical to
+the mq1 baseline. Result: 3/3 malformed_patch with the SAME signature
+(`Isolated_ws` capitalized path). KEY UPDATE: combined mq1+mq2+mq3+mq5
+= 12/12 across TWO model families — the mq4-era "gemma4-specific"
+interpretation is REFUTED; the defect is task-presentation-robust; the
+explanatory layer likely lives in the frozen kernel's patch_code
+presentation (read-only analysis track proposed, no code changes).
+(/tmp/dek_ai_matrix/MODEL_QUALITY_EXPERIMENT_PLAN_MQ5.md,
+MODEL_QUALITY_EXPERIMENT_MQ5_FINAL_RECORD.md,
+model_quality_experiment_mq5/). Reserved seeds now: 109, 201, 202.
+2026-08-17 (later) — READ-ONLY root-cause analysis of the patch target
+path failure (executor source @ 6eebb0f, no code changes):
+PATCH_PROMPT gives the model a symbolic `<FILE>` placeholder in the JSON
+template plus the real path on a FILE: line, so the model must RE-TYPE
+the path; both families reconstruct the only "name-like" component (the
+workspace basename) with a leading capital — a task-presentation
+property + universal LLM prior, not a model defect. Target mismatch is
+terminal with no corrective retry. Kernel-side mitigations enumerated but
+require a separate security review; NO legal analyzer-side knob exists
+(the patch prompt is kernel-owned). Record:
+/tmp/dek_ai_matrix/PATCH_TARGET_PATH_ROOT_CAUSE_ANALYSIS.md.
 
 Companion documents: PILOT_OPS_RUNBOOK.md (attempt discipline),
 docs/PILOT_METRICS_V1.md (metrics), ANALYZER_ROADMAP.md (model-quality
