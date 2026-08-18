@@ -240,9 +240,55 @@ executor/kernel change, no gate weakened, read-only invariant intact.
   (total_fees(3×0.125)=0.38, 1×0.125=0.13); real tests exit 0. No
   seed-hunting: the contrast is hints-vs-no-hints, not seed search.
   Record: /tmp/dek_ai_matrix/LAYER1_HINTS_EXPERIMENT_RECORD.md.
-- Next (NOT started; needs its own security review + kernel change):
-  Layer 2 = bounded test-failure-driven feedback loop (real test
-  failure text fed back to the model as the next hint).
+
+### Layer 2 (verifier-driven feedback loop) — DEFERRED / NOT JUSTIFIED (2026-08-18)
+Forensic review: /tmp/dek_ai_matrix/LAYER2_FORENSIC_REVIEW_REPORT.md
+(verdict CONDITIONAL GO). The justification experiment (C4) did NOT
+find what was needed, so Layer 2 is closed as DEFERRED — not as
+"doesn't work":
+- C4 NorthPay branch (WITH money-truncation hints, seeds 1051–1053,
+  pre-registered, canonical pipeline-run path): 3/3 HONEST SHAPE-
+  NEGATIVE — byte-identical `malformed patch: invalid escape at line 1
+  column 290` at 02_patch_code; tests never ran; workspace untouched.
+  Record: /tmp/dek_ai_matrix/C4_NORTHPAY_WITH_HINTS_RECORD.md.
+- The demonstrated residual class (JSON escaping) is orthogonal to fix
+  guidance and OUT of scope for verifier-driven feedback (no test
+  signal exists); it belongs to the representation-robustness track.
+- The settlement case produced a genuine tests_failed but is converted
+  by Layer 1 hints (seed 950), so it cannot serve as evidence of need.
+- Missing evidence class — Layer 2 stays DEFERRED until one exists:
+  Layer 1 → valid executable candidate → independent verifier →
+  SEMANTIC FAILURE → Layer 1 unable to fix it.
+- Resume condition: a reproducible executable semantic failure that
+  Layer 1 does not eliminate and the verifier can diagnose. Only then:
+  prerequisites C1 (persist failing TestReportV1), C2 (record model
+  calls — ChatRequest has no seed field today), C3 (event the feedback
+  cycle), then a security review before any kernel change.
+
+Work-selection principle adopted with this decision: do not build a
+mechanism because it is architecturally elegant; build it only after a
+reproducible failure that the mechanism can actually fix. Refusing the
+next layer when evidence is absent is a good experimental result, not
+lost progress.
+
+Active track instead: representation robustness — localize WHY the
+model emits malformed patch_v1 JSON on the NorthPay prompt but not on
+the settlement prompt (task → prompt construction → model output →
+serialization/escaping → parser), and audit the planner-pipeline
+success-semantics misfire — VERIFIED in the C4 kernel.db: the
+`run run` (planner-pipeline) path wrote a full simulated lifecycle for
+a no-effect run into the SAME canonical event_log table the fold
+reads — STEP_COMPLETED for 04_run_tests (29 ms), TASK_COMPLETED
+success:true, REPLAY_VALIDATED — while the canonical effect-loop path
+in the same DB honestly recorded TerminalFailure for the real task.
+Two writers, one log, divergent success semantics. AUDITED
+(/tmp/dek_ai_matrix/MISFIRE_AUDIT_REPORT.md): severity MEDIUM,
+contained — the simulated path (standalone `run` binary, no-op
+DefaultStepExecutor) writes full success lifecycles into the canonical
+event_log, but the fold's unit-shape contract rejects them (replay
+INVALID), nothing materializes into step_status/effect_ledger, and
+chain attestation cannot be forged through it. Remediation items 1–5
+in the audit report await owner decision; no code changed.
 
 ### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
 Only after a SEPARATE security review. Until then the hand-off stays
