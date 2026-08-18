@@ -213,6 +213,37 @@ success). Before ANY further remediation attempts:
   owner: open a kernel presentation review track, or keep remediation
   attempts closed and run the pilot as analysis + evidence-chain only.
 
+### Layer 1 (rule-driven proactive hints) — DONE & VALIDATED (2026-08-18)
+The analyzer itself now generates the corrective guidance instead of a
+human per task (owner directive: the system must produce the right
+hints itself; no manual per-task hinting). Analyzer-side only — no
+executor/kernel change, no gate weakened, read-only invariant intact.
+- `src/analyzer/hint_engine.rs`: deterministic rule→hints mapping (no
+  LLM). Covered rules: money-truncation (3 hints: use decimal module
+  with ROUND_HALF_UP; add the import INSIDE the fixed function to keep
+  the patch a single contiguous region; sum exact values then round
+  once), money-round-bare, floor-div-money, none-arith,
+  offbyone-range. All other rules → empty (fail-closed to no hints).
+- `EmittedTask.hints: Vec<String>` (serde default — TaskContract v0
+  consumers unaffected); analyzer version 0.4.1.
+- Root cause addressed: PatchV1 is a SINGLE contiguous region, so a
+  fix needing a top-of-file import + a lower function change cannot be
+  one clean patch; the model's hard-task failure was exactly a missing
+  `from decimal import Decimal, ROUND_HALF_UP` → NameError → honest
+  tests_failed.
+- Controlled validation experiment on client_settlement (hard fixture):
+  WITHOUT hints 3/3 tests_failed (seeds 900/901/902, same missing-
+  import signature); WITH Layer-1 hints GREEN at seed 950 — chain
+  `chain_consistent_remediation_evidenced`, chain_id 1261be0e…,
+  executor task 0e52b9bd0dd74fa9; model applied the in-function import
+  + Decimal HALF-UP fix; independent re-verification passed
+  (total_fees(3×0.125)=0.38, 1×0.125=0.13); real tests exit 0. No
+  seed-hunting: the contrast is hints-vs-no-hints, not seed search.
+  Record: /tmp/dek_ai_matrix/LAYER1_HINTS_EXPERIMENT_RECORD.md.
+- Next (NOT started; needs its own security review + kernel change):
+  Layer 2 = bounded test-failure-driven feedback loop (real test
+  failure text fed back to the model as the next hint).
+
 ### v0.5 (future; was previously labeled v0.4) — executor integration via stable API
 Only after a SEPARATE security review. Until then the hand-off stays
 manual (work order → operator → executor pipeline-run in an isolated

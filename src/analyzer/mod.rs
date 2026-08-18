@@ -21,6 +21,7 @@ pub mod audit_log;
 pub mod evidence_chain;
 pub mod evidence_manifest;
 pub mod external_sast;
+pub mod hint_engine;
 pub mod ingestion;
 pub mod monetary_oracle;
 pub mod operational;

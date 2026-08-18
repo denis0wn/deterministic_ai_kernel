@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use super::hint_engine;
 use super::ingestion::WorkspaceInventory;
 use super::monetary_oracle;
 use super::triage::{Finding, Severity};
@@ -75,12 +76,17 @@ pub struct ReadinessAssessment {
     pub policy: String,
 }
 
-/// Emitted task = unchanged TaskContract v0 + readiness assessment.
-/// The executor consumes only the `contract` field.
+/// Emitted task = unchanged TaskContract v0 + readiness assessment +
+/// rule-driven fix hints. The executor consumes only the `contract` field;
+/// the hints are advisory context the operator (or a payload builder) may
+/// include in the model's task.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmittedTask {
     pub contract: TaskContract,
     pub readiness: ReadinessAssessment,
+    /// Layer-1 rule-driven fix hints (advisory; never weaken a gate).
+    #[serde(default)]
+    pub hints: Vec<String>,
 }
 
 pub const READINESS_CANDIDATE_ONLY: &str = "candidate_only";
@@ -237,6 +243,7 @@ pub fn emit_tasks_with_readiness(
         .map(|f| EmittedTask {
             contract: build_contract(f, workspace),
             readiness: assess_readiness(f, inv, workspace, repro_tests),
+            hints: hint_engine::generate_hints(&f.rule_id),
         })
         .collect()
 }
