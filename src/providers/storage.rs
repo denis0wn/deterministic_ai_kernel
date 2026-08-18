@@ -439,6 +439,11 @@ fn canonical_event_kind(event_type: &str) -> &'static str {
         // new attempt repeats an earlier attempt's failure signature.
         // Observation-only: never mutates step/task state in the fold.
         "REPETITION" => "REPETITION",
+        // PROGRESS UNTIL VERIFIED stage 3: terminal taxonomy assessment
+        // (VerifiedSuccess / VerifiedFailure / NoVerifiedPathFound /
+        // InProgress) for the attempt's fingerprint group.
+        // Observation-only.
+        "TASK_TERMINAL_ASSESSED" => "TASK_TERMINAL_ASSESSED",
         "DONE" => "DONE",
         _ => "",
     }
@@ -519,7 +524,11 @@ impl TaskFold {
                 self.done = true;
                 return;
             }
-            "EFFECT_RESERVED" | "ArtifactProduced" | "REPETITION" | "" => return,
+            "EFFECT_RESERVED"
+            | "ArtifactProduced"
+            | "REPETITION"
+            | "TASK_TERMINAL_ASSESSED"
+            | "" => return,
             _ => {}
         }
 

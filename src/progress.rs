@@ -249,6 +249,85 @@ pub fn prior_failure_matches(
         .next())
 }
 
+/// Task-level terminal taxonomy (PROGRESS UNTIL VERIFIED stage 3).
+///
+/// v1 derivation rules (documented, deliberately conservative):
+/// - VerifiedSuccess: the group contains a Completed attempt —
+///   kernel-owned verification passed for this task definition.
+/// - NoVerifiedPathFound: every attempt in the group failed AND the
+///   latest attempt is a Repetition — no new information and no new
+///   strategy were brought to bear; the honest state is "no verified
+///   path found", NOT "unsolvable" and NOT "LLM said it cannot".
+/// - VerifiedFailure: a POSITIVE unsatisfiability proof — not
+///   derivable in v1 (needs the stage-5 verifier-gap machinery); the
+///   variant exists so the taxonomy is complete.
+/// - InProgress: anything else (new failures still carry information).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum TerminalTaxonomy {
+    VerifiedSuccess,
+    VerifiedFailure,
+    NoVerifiedPathFound,
+    InProgress,
+}
+
+/// Assess the terminal taxonomy for the fingerprint group containing
+/// `task_id`. Returns (fingerprint, taxonomy, basis).
+pub fn terminal_assessment_for_task(
+    conn: &Connection,
+    artifacts_dir: &Path,
+    task_id: &str,
+) -> Result<Option<(String, TerminalTaxonomy, String)>> {
+    let report = assess_db(conn, artifacts_dir)?;
+    let attempt = match report.attempts.iter().find(|a| a.task_id == task_id) {
+        Some(a) => a,
+        None => return Ok(None),
+    };
+    let fp = attempt.payload_fingerprint.clone();
+    let group: Vec<&(String, Verdict)> = report
+        .verdicts
+        .iter()
+        .filter(|(t, _)| {
+            report
+                .attempts
+                .iter()
+                .find(|a| &a.task_id == t)
+                .map(|a| a.payload_fingerprint == fp)
+                .unwrap_or(false)
+        })
+        .collect();
+    if group
+        .iter()
+        .any(|(_, v)| matches!(v, Verdict::ProgressVerifiedSuccess))
+    {
+        return Ok(Some((
+            fp,
+            TerminalTaxonomy::VerifiedSuccess,
+            format!("attempt {task_id} completed under kernel-owned verification"),
+        )));
+    }
+    let latest = group.last().map(|(t, v)| (t.clone(), v.clone()));
+    match latest {
+        Some((t, Verdict::Repetition { of_task })) => Ok(Some((
+            fp,
+            TerminalTaxonomy::NoVerifiedPathFound,
+            format!(
+                "repetition exhaustion: latest attempt {t} repeats the failure signature of {of_task}; no new information, no new strategy demonstrated"
+            ),
+        ))),
+        Some((_, Verdict::ProgressNewFailure)) => Ok(Some((
+            fp,
+            TerminalTaxonomy::InProgress,
+            "latest attempt produced new failure information; admissible strategies untried"
+                .to_string(),
+        ))),
+        _ => Ok(Some((
+            fp,
+            TerminalTaxonomy::InProgress,
+            "baseline or inconclusive attempt".to_string(),
+        ))),
+    }
+}
+
 /// Human-readable rendering of the report.
 pub fn render(report: &ProgressReport) -> String {
     let mut out = String::new();
@@ -487,5 +566,70 @@ mod tests {
         );
         let none = prior_failure_matches(&conn, &art.0, "another payload").expect("test failure");
         assert_eq!(none, None);
+    }
+
+    /// Stage 3 taxonomy: repetition exhaustion (all attempts failed,
+    /// latest repeats the signature) is NO VERIFIED PATH FOUND — not
+    /// "unsolvable", not "LLM said it cannot".
+    #[test]
+    fn repetition_exhaustion_is_no_verified_path_found() {
+        let guard = DbGuard::new("nvpf");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        let reason = "fatal: same signature";
+        failed_task(&conn, 10, "task_a", reason);
+        failed_task(&conn, 20, "task_b", reason);
+        let art = ArtifactsGuard::new("nvpf");
+        for t in ["task_a", "task_b"] {
+            write_payload(&art, t, "same payload");
+        }
+        let (_, taxonomy, basis) = terminal_assessment_for_task(&conn, &art.0, "task_b")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::NoVerifiedPathFound);
+        assert!(basis.contains("repetition exhaustion"), "got: {basis}");
+    }
+
+    /// Stage 3 taxonomy: a completed attempt is VERIFIED SUCCESS.
+    #[test]
+    fn completed_group_is_verified_success() {
+        let guard = DbGuard::new("taxonomy_success");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        insert_event(&conn, 10, "task_a", "STEP_STARTED", "{}");
+        insert_event(&conn, 11, "task_a", "STEP_COMPLETED", "{}");
+        let art = ArtifactsGuard::new("taxonomy_success");
+        write_payload(&art, "task_a", "payload");
+        let (_, taxonomy, _) = terminal_assessment_for_task(&conn, &art.0, "task_a")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::VerifiedSuccess);
+    }
+
+    /// Stage 3 taxonomy: a NEW failure reason keeps the group IN
+    /// PROGRESS (new information; strategies untried).
+    #[test]
+    fn new_failure_keeps_group_in_progress() {
+        let guard = DbGuard::new("taxonomy_new_failure");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        failed_task(&conn, 10, "task_a", "fatal: reason one");
+        failed_task(&conn, 20, "task_b", "fatal: reason two");
+        let art = ArtifactsGuard::new("taxonomy_new_failure");
+        for t in ["task_a", "task_b"] {
+            write_payload(&art, t, "same payload");
+        }
+        let (_, taxonomy, basis) = terminal_assessment_for_task(&conn, &art.0, "task_b")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::InProgress);
+        assert!(basis.contains("new failure information"), "got: {basis}");
+    }
+
+    /// Unknown tasks yield no assessment (never a fabricated one).
+    #[test]
+    fn unknown_task_has_no_assessment() {
+        let guard = DbGuard::new("taxonomy_unknown");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        let art = ArtifactsGuard::new("taxonomy_unknown");
+        let r = terminal_assessment_for_task(&conn, &art.0, "ghost").expect("test failure");
+        assert!(r.is_none());
     }
 }

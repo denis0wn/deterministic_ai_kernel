@@ -123,3 +123,42 @@ fn repetition_observation_does_not_change_task_state() {
     );
     cleanup(&db);
 }
+
+/// Stage 3: TASK_TERMINAL_ASSESSED (terminal taxonomy observation) is
+/// fold-compatible and state-neutral, like REPETITION.
+#[test]
+fn terminal_assessment_observation_is_fold_compatible() {
+    let db = unique_db("terminal_fold");
+    let bus = EventBus::new(&db).unwrap();
+
+    emit_step_lifecycle(&bus, "task-r", "00_step");
+
+    bus.append_event(
+        "task-r",
+        None,
+        "TASK_TERMINAL_ASSESSED",
+        &json!({
+            "task_id": "task-r",
+            "payload_fingerprint": "abcd",
+            "taxonomy": "VerifiedSuccess",
+            "basis": "completed under kernel-owned verification",
+            "policy": "progress_until_verified/stage3",
+        }),
+    )
+    .unwrap();
+
+    let db_str = db.to_str().unwrap();
+    assert!(
+        deterministic_ai_kernel::replay::engine::replay_validate(db_str, "task-r"),
+        "replay_validate must accept a canonical lifecycle plus TASK_TERMINAL_ASSESSED"
+    );
+    let storage = deterministic_ai_kernel::providers::storage_for(db_str);
+    assert!(
+        storage
+            .replay_violations("task-r")
+            .unwrap_or_default()
+            .is_empty(),
+        "TASK_TERMINAL_ASSESSED must not produce fold violations"
+    );
+    cleanup(&db);
+}

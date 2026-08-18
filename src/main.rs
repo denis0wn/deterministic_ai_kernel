@@ -204,6 +204,47 @@ fn vacuum_db(db: &str) {
     println!("VACUUM OK");
 }
 
+/// PROGRESS UNTIL VERIFIED stage 3: record the terminal taxonomy
+/// assessment for the task's fingerprint group as an observation-only
+/// TASK_TERMINAL_ASSESSED event. Never fatal — a failed assessment
+/// must not mask the real task outcome.
+fn record_terminal_assessment(db: &str, task_id: &str) {
+    let conn = match deterministic_ai_kernel::providers::storage::open_initialized(db) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("progress: terminal assessment could not open db: {e}");
+            return;
+        }
+    };
+    match deterministic_ai_kernel::progress::terminal_assessment_for_task(
+        &conn,
+        std::path::Path::new("artifacts"),
+        task_id,
+    ) {
+        Ok(Some((fp, taxonomy, basis))) => {
+            let payload = serde_json::json!({
+                "task_id": task_id,
+                "payload_fingerprint": fp,
+                "taxonomy": serde_json::to_value(&taxonomy)
+                    .unwrap_or(serde_json::json!("InProgress")),
+                "basis": basis,
+                "policy": "progress_until_verified/stage3",
+            });
+            if let Err(e) = deterministic_ai_kernel::providers::storage_for(db).append_event(
+                task_id,
+                None,
+                "TASK_TERMINAL_ASSESSED",
+                &payload,
+            ) {
+                eprintln!("progress: failed to record TASK_TERMINAL_ASSESSED: {e}");
+            }
+            println!("TERMINAL_ASSESSMENT: {taxonomy:?} ({basis})");
+        }
+        Ok(None) => {}
+        Err(e) => eprintln!("progress: terminal assessment failed: {e}"),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     deterministic_ai_kernel::model_registry::validate().unwrap();
@@ -1120,13 +1161,16 @@ async fn main() {
                         &resolved,
                     ) {
                         Ok(Some((prior_task, reason))) => {
+                            let strategies =
+                                deterministic_ai_kernel::strategy::admissible_strategies(&reason);
                             let repetition_payload = serde_json::json!({
                                 "task_id": task_id,
                                 "repeats_task": prior_task,
                                 "payload_fingerprint":
                                     deterministic_ai_kernel::progress::payload_fingerprint(&resolved),
                                 "failure_signature": reason,
-                                "policy": "progress_until_verified/stage2_detect_only",
+                                "admissible_strategies": strategies,
+                                "policy": "progress_until_verified/stage3_detect_only",
                             });
                             if let Err(e) = deterministic_ai_kernel::providers::storage_for(db)
                                 .append_event(&task_id, None, "REPETITION", &repetition_payload)
@@ -1134,7 +1178,7 @@ async fn main() {
                                 eprintln!("progress: failed to record REPETITION event: {e}");
                             }
                             println!("NOTE    : REPETITION DETECTED — this payload previously failed with an identical signature in task {prior_task}.");
-                            println!("NOTE    : Re-running without new information or a new strategy is not progress (stage 2: detect-only, execution proceeds).");
+                            println!("NOTE    : Admissible strategies (kernel-enumerated): {strategies:?}. Re-running without new information or a new strategy is not progress (stage 3: detect-only, execution proceeds).");
                         }
                         Ok(None) => {}
                         Err(e) => eprintln!("progress: repetition check failed: {e}"),
@@ -1191,9 +1235,11 @@ async fn main() {
                 // as a silent stall.
                 println!("TASK_STATE: failed");
                 println!("TASK_FAILED_REASON: {e}");
+                record_terminal_assessment(db, &task_id);
                 eprintln!("execute-effects failed: {e}");
                 std::process::exit(1);
             }
+            record_terminal_assessment(db, &task_id);
 
             let final_answer_path = format!(
                 "{}/artifacts/final_answer.{}.txt",

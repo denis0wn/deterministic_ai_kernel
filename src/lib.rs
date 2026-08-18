@@ -19,6 +19,7 @@ pub mod replay;
 pub mod scheduler;
 pub mod schema;
 pub mod snapshot;
+pub mod strategy;
 pub mod workflow;
 
 pub mod worker;

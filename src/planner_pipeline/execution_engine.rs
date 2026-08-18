@@ -1038,7 +1038,7 @@ mod tests {
         let mut tape = ReplayTape::new();
         engine_db(&guard.db_path_str())
             .run_with_replay("step one", &ctx(), &mut tape)
-            .expect("test failure");
+            .unwrap_or_else(|e| panic!("test failure: run_with_replay errored: {e}"));
         let events = event_rows(&guard.db_path_str());
         assert!(
             events.iter().any(|(t, _)| t == "PLANNER_TAPE_CHECKED"),
