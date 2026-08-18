@@ -49,6 +49,9 @@ const LOCKED_SUBCOMMANDS: &[&str] = &[
     "pipeline-run",
     "plan-task",
     "print-model-manifest",
+    // PROGRESS UNTIL VERIFIED stage 2: read-only progress ledger
+    // (attempts grouped by payload fingerprint; repetition detection).
+    "progress",
     "prompt",
     "reconcile",
     "replay",
@@ -82,7 +85,7 @@ fn discovered_subcommands() -> std::collections::BTreeSet<String> {
 fn cli_subcommand_count_is_locked() {
     assert_eq!(
         LOCKED_SUBCOMMANDS.len(),
-        56, // P0 MLX lifecycle: +1 for lm-lifecycle
+        57, // PROGRESS UNTIL VERIFIED stage 2: +1 for progress
         "CLI subcommand count changed — update LOCKED_SUBCOMMANDS and bump this assertion"
     );
 }

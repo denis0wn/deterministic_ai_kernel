@@ -1107,6 +1107,41 @@ async fn main() {
                 eprintln!("Failed to write pipeline input: {e}");
                 std::process::exit(1);
             });
+            // PROGRESS UNTIL VERIFIED — stage 2 (detect-only): if this exact
+            // payload already failed with a byte-identical failure
+            // signature, record a REPETITION observation event. Detection
+            // never blocks execution in stage 2; strategy selection is a
+            // later stage.
+            match deterministic_ai_kernel::providers::storage::open_initialized(db) {
+                Ok(conn) => {
+                    match deterministic_ai_kernel::progress::prior_failure_matches(
+                        &conn,
+                        std::path::Path::new("artifacts"),
+                        &resolved,
+                    ) {
+                        Ok(Some((prior_task, reason))) => {
+                            let repetition_payload = serde_json::json!({
+                                "task_id": task_id,
+                                "repeats_task": prior_task,
+                                "payload_fingerprint":
+                                    deterministic_ai_kernel::progress::payload_fingerprint(&resolved),
+                                "failure_signature": reason,
+                                "policy": "progress_until_verified/stage2_detect_only",
+                            });
+                            if let Err(e) = deterministic_ai_kernel::providers::storage_for(db)
+                                .append_event(&task_id, None, "REPETITION", &repetition_payload)
+                            {
+                                eprintln!("progress: failed to record REPETITION event: {e}");
+                            }
+                            println!("NOTE    : REPETITION DETECTED — this payload previously failed with an identical signature in task {prior_task}.");
+                            println!("NOTE    : Re-running without new information or a new strategy is not progress (stage 2: detect-only, execution proceeds).");
+                        }
+                        Ok(None) => {}
+                        Err(e) => eprintln!("progress: repetition check failed: {e}"),
+                    }
+                }
+                Err(e) => eprintln!("progress: repetition check could not open db: {e}"),
+            }
             {
                 let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
                     .unwrap_or_else(|e| {
@@ -1330,6 +1365,26 @@ async fn main() {
             }
             println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
             println!("REPLAY OK: {}", ok);
+            return;
+        }
+        Some("progress") => {
+            // PROGRESS UNTIL VERIFIED — stage 2 ledger: attempts grouped
+            // by payload fingerprint with progress/repetition verdicts.
+            // Detect-only; prints the ledger and exits 0.
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("progress: failed to open db: {e}");
+                    std::process::exit(1);
+                });
+            let report = deterministic_ai_kernel::progress::assess_db(
+                &conn,
+                std::path::Path::new("artifacts"),
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("progress: assessment failed: {e}");
+                std::process::exit(1);
+            });
+            print!("{}", deterministic_ai_kernel::progress::render(&report));
             return;
         }
         Some("stats") => {

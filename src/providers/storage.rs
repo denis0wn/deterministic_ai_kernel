@@ -435,6 +435,10 @@ fn canonical_event_kind(event_type: &str) -> &'static str {
         "LEASE_EXPIRED" => "LEASE_EXPIRED",
         "EFFECT_RESERVED" => "EFFECT_RESERVED",
         "ArtifactProduced" => "ArtifactProduced",
+        // PROGRESS UNTIL VERIFIED stage 2: kernel-owned observation that a
+        // new attempt repeats an earlier attempt's failure signature.
+        // Observation-only: never mutates step/task state in the fold.
+        "REPETITION" => "REPETITION",
         "DONE" => "DONE",
         _ => "",
     }
@@ -515,7 +519,7 @@ impl TaskFold {
                 self.done = true;
                 return;
             }
-            "EFFECT_RESERVED" | "ArtifactProduced" | "" => return,
+            "EFFECT_RESERVED" | "ArtifactProduced" | "REPETITION" | "" => return,
             _ => {}
         }
 
