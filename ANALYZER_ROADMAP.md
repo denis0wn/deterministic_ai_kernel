@@ -264,6 +264,25 @@ find what was needed, so Layer 2 is closed as DEFERRED — not as
   prerequisites C1 (persist failing TestReportV1), C2 (record model
   calls — ChatRequest has no seed field today), C3 (event the feedback
   cycle), then a security review before any kernel change.
+- Design constraints on resume (from arXiv 2608.02464, "Real-Time
+  Detection and Repair of LLM Agent Failures"; notes in
+  /tmp/dek_ai_matrix/PAPER_NOTES_2608.02464.md): (a) feedback payload
+  must be the "located" rung — NAME of the failing check/test, NO
+  values from traceback; this is the only feedback form that survived
+  their correction against a resampling control (p=0.0005) and it
+  simultaneously shrinks our T11 gaming surface (expected values in
+  feedback = the hardcoding channel) and the injection surface;
+  (b) any feedback POC must pair each feedback attempt with a
+  same-prefix resample-without-feedback control and be credited only
+  the margin above it — a loop that merely matches resample luck
+  proves nothing. The paper's deterministic-verification-first result
+  (0 false positives, cross-family transfer, no calibration) is
+  independent external validation of this kernel's existing posture;
+  statistical telemetry monitors are explicitly NOT adopted (6-step
+  episodes give no post-onset horizon; per-deployment nulls violate
+  the determinism posture; at temp 0 our failures are contract-
+  checkable — the class the paper itself delegates to deterministic
+  verifiers).
 
 Work-selection principle adopted with this decision: do not build a
 mechanism because it is architecturally elegant; build it only after a
