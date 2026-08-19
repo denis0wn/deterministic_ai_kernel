@@ -162,3 +162,70 @@ fn terminal_assessment_observation_is_fold_compatible() {
     );
     cleanup(&db);
 }
+
+/// Stage 4: decomposition records (SUBTASK_OF on the lemma,
+/// TASK_DECOMPOSED on the carrier) are fold-compatible and
+/// state-neutral.
+#[test]
+fn decomposition_records_are_fold_compatible() {
+    let db = unique_db("decomposition_fold");
+    let bus = EventBus::new(&db).unwrap();
+
+    emit_step_lifecycle(&bus, "task-lemma", "00_step");
+    emit_step_lifecycle(&bus, "task-carrier", "00_step");
+
+    bus.append_event(
+        "task-lemma",
+        None,
+        "SUBTASK_OF",
+        &json!({
+            "task_id": "task-lemma",
+            "carrier_label": "task-carrier",
+            "role": "lemma",
+            "policy": "progress_until_verified/stage4",
+        }),
+    )
+    .unwrap();
+    bus.append_event(
+        "task-carrier",
+        None,
+        "TASK_DECOMPOSED",
+        &json!({
+            "task_id": "task-carrier",
+            "subtasks": ["task-lemma"],
+            "composition_contract": {
+                "target_file": "t.py",
+                "regions": "disjoint",
+                "acceptance": "carrier task-level tests",
+            },
+            "policy": "progress_until_verified/stage4",
+        }),
+    )
+    .unwrap();
+
+    let db_str = db.to_str().unwrap();
+    assert!(
+        deterministic_ai_kernel::replay::engine::replay_validate(db_str, "task-lemma"),
+        "replay_validate must accept SUBTASK_OF"
+    );
+    assert!(
+        deterministic_ai_kernel::replay::engine::replay_validate(db_str, "task-carrier"),
+        "replay_validate must accept TASK_DECOMPOSED"
+    );
+    let storage = deterministic_ai_kernel::providers::storage_for(db_str);
+    assert!(
+        storage
+            .replay_violations("task-lemma")
+            .unwrap_or_default()
+            .is_empty(),
+        "SUBTASK_OF must not produce fold violations"
+    );
+    assert!(
+        storage
+            .replay_violations("task-carrier")
+            .unwrap_or_default()
+            .is_empty(),
+        "TASK_DECOMPOSED must not produce fold violations"
+    );
+    cleanup(&db);
+}

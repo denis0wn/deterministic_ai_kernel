@@ -21,6 +21,8 @@ const LOCKED_SUBCOMMANDS: &[&str] = &[
     "compare-capsules",
     "complete-step",
     "current-models",
+    // PROGRESS UNTIL VERIFIED stage 4: decomposition finalize record.
+    "decomposition",
     "doctor",
     "doctor-json",
     "embeddings-smoke",
@@ -85,7 +87,7 @@ fn discovered_subcommands() -> std::collections::BTreeSet<String> {
 fn cli_subcommand_count_is_locked() {
     assert_eq!(
         LOCKED_SUBCOMMANDS.len(),
-        57, // PROGRESS UNTIL VERIFIED stage 2: +1 for progress
+        58, // PROGRESS UNTIL VERIFIED stage 4: +1 for decomposition
         "CLI subcommand count changed — update LOCKED_SUBCOMMANDS and bump this assertion"
     );
 }

@@ -199,7 +199,7 @@ pub fn assess(mut attempts: Vec<Attempt>) -> Vec<(String, Verdict)> {
                     match a
                         .failure_reason
                         .as_ref()
-                        .and_then(|reason| prior.iter().find(|(t, r)| r == reason))
+                        .and_then(|reason| prior.iter().find(|(_, r)| r == reason))
                     {
                         Some((origin, _)) => Verdict::Repetition {
                             of_task: origin.clone(),
@@ -283,6 +283,23 @@ pub fn terminal_assessment_for_task(
         None => return Ok(None),
     };
     let fp = attempt.payload_fingerprint.clone();
+    // Stage 4: a kernel-registered decomposition subtask is a LEMMA —
+    // its completion never counts as VerifiedSuccess; the theorem is
+    // the composition carrier's task-level verification.
+    let subtask_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = 'SUBTASK_OF'",
+            [task_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if subtask_count > 0 {
+        return Ok(Some((
+            fp,
+            TerminalTaxonomy::InProgress,
+            "lemma task — semantic verification delegated to the composition carrier".to_string(),
+        )));
+    }
     let group: Vec<&(String, Verdict)> = report
         .verdicts
         .iter()
@@ -631,5 +648,30 @@ mod tests {
         let art = ArtifactsGuard::new("taxonomy_unknown");
         let r = terminal_assessment_for_task(&conn, &art.0, "ghost").expect("test failure");
         assert!(r.is_none());
+    }
+
+    /// Stage 4: a kernel-registered subtask (SUBTASK_OF) is a LEMMA —
+    /// even a completed subtask never yields VerifiedSuccess; the
+    /// theorem is the composition carrier's task-level verification.
+    #[test]
+    fn completed_subtask_is_lemma_not_verified_success() {
+        let guard = DbGuard::new("taxonomy_lemma");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        insert_event(&conn, 10, "task_a", "STEP_STARTED", "{}");
+        insert_event(&conn, 11, "task_a", "STEP_COMPLETED", "{}");
+        insert_event(
+            &conn,
+            12,
+            "task_a",
+            "SUBTASK_OF",
+            "{\"task_id\":\"task_a\",\"carrier_label\":\"carrier-x\",\"role\":\"lemma\"}",
+        );
+        let art = ArtifactsGuard::new("taxonomy_lemma");
+        write_payload(&art, "task_a", "payload");
+        let (_, taxonomy, basis) = terminal_assessment_for_task(&conn, &art.0, "task_a")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::InProgress);
+        assert!(basis.contains("lemma"), "got: {basis}");
     }
 }

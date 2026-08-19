@@ -1082,6 +1082,8 @@ async fn main() {
             let mut payload: Option<String> = None;
             let mut seed: u64 = 42;
             let mut as_json = false;
+            // Stage 4 decomposition: operator-declared lemma registration.
+            let mut subtask_of: Option<String> = None;
             let mut i = 2usize;
             while i < args.len() {
                 match args[i].as_str() {
@@ -1096,6 +1098,10 @@ async fn main() {
                     "--seed" => {
                         i += 1;
                         seed = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(42);
+                    }
+                    "--subtask-of" => {
+                        i += 1;
+                        subtask_of = args.get(i).cloned();
                     }
                     "--json" => {
                         as_json = true;
@@ -1223,6 +1229,30 @@ async fn main() {
                     eprintln!("Failed to insert task: {e}");
                     std::process::exit(1);
                 });
+            }
+            // PROGRESS UNTIL VERIFIED stage 4: operator-declared lemma
+            // registration. Kernel-owned event: only this CLI path can
+            // create subtask status, and only before dispatch. The
+            // completion gate reads it; the taxonomy excludes subtasks
+            // from VerifiedSuccess (lemmas are not theorems).
+            if let Some(carrier_label) = &subtask_of {
+                let subtask_payload = serde_json::json!({
+                    "task_id": task_id,
+                    "carrier_label": carrier_label,
+                    "role": "lemma",
+                    "composition_contract": "semantic verification delegated to the composition carrier's task-level tests",
+                    "policy": "progress_until_verified/stage4",
+                });
+                if let Err(e) = deterministic_ai_kernel::providers::storage_for(db).append_event(
+                    &task_id,
+                    None,
+                    "SUBTASK_OF",
+                    &subtask_payload,
+                ) {
+                    eprintln!("progress: failed to record SUBTASK_OF: {e}");
+                    std::process::exit(1);
+                }
+                println!("NOTE    : task {task_id} registered as decomposition subtask (lemma) of carrier '{carrier_label}'; semantic verification delegated to the carrier.");
             }
             if let Err(e) = schedule(db, &task_id) {
                 eprintln!("schedule failed: {e}");
@@ -1411,6 +1441,92 @@ async fn main() {
             }
             println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
             println!("REPLAY OK: {}", ok);
+            return;
+        }
+        Some("decomposition") => {
+            // PROGRESS UNTIL VERIFIED stage 4: finalize a decomposition
+            // record once the composition carrier has completed: emits
+            // TASK_DECOMPOSED on the carrier naming its subtask(s) and
+            // the composition contract. Observation-only.
+            // usage: decomposition --carrier <task_id> --subtask <task_id>
+            //        --target-file <path> [--acceptance <text>]
+            let mut carrier: Option<String> = None;
+            let mut subtask: Option<String> = None;
+            let mut target_file: Option<String> = None;
+            let mut acceptance = "carrier task-level tests".to_string();
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--carrier" => {
+                        i += 1;
+                        carrier = args.get(i).cloned();
+                    }
+                    "--subtask" => {
+                        i += 1;
+                        subtask = args.get(i).cloned();
+                    }
+                    "--target-file" => {
+                        i += 1;
+                        target_file = args.get(i).cloned();
+                    }
+                    "--acceptance" => {
+                        i += 1;
+                        if let Some(a) = args.get(i) {
+                            acceptance = a.clone();
+                        }
+                    }
+                    other => {
+                        eprintln!("unknown arg: {other}");
+                        std::process::exit(1);
+                    }
+                }
+                i += 1;
+            }
+            let (carrier, subtask, target_file) = match (carrier, subtask, target_file) {
+                (Some(c), Some(s), Some(t)) => (c, s, t),
+                _ => {
+                    eprintln!(
+                        "usage: decomposition --carrier <task_id> --subtask <task_id> --target-file <path> [--acceptance <text>]"
+                    );
+                    std::process::exit(1);
+                }
+            };
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("decomposition: failed to open db: {e}");
+                    std::process::exit(1);
+                });
+            for (name, id) in [("carrier", &carrier), ("subtask", &subtask)] {
+                let exists: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM tasks WHERE task_id = ?1", [id], |r| {
+                        r.get(0)
+                    })
+                    .unwrap_or(0);
+                if exists == 0 {
+                    eprintln!("decomposition: {name} task '{id}' does not exist");
+                    std::process::exit(1);
+                }
+            }
+            let payload = serde_json::json!({
+                "task_id": carrier,
+                "subtasks": [subtask],
+                "composition_contract": {
+                    "target_file": target_file,
+                    "regions": "disjoint (each subtask patch grounded exactly once at its apply moment)",
+                    "acceptance": acceptance,
+                },
+                "policy": "progress_until_verified/stage4",
+            });
+            if let Err(e) = deterministic_ai_kernel::providers::storage_for(db).append_event(
+                &carrier,
+                None,
+                "TASK_DECOMPOSED",
+                &payload,
+            ) {
+                eprintln!("decomposition: failed to record TASK_DECOMPOSED: {e}");
+                std::process::exit(1);
+            }
+            println!("DECOMPOSITION RECORDED: carrier {carrier} <- subtask {subtask} (target {target_file}; acceptance: {acceptance})");
             return;
         }
         Some("progress") => {

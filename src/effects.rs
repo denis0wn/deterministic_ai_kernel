@@ -99,6 +99,25 @@ fn find_latest_test_report(db: &str, task_id: &str) -> Result<Option<serde_json:
     Ok(None)
 }
 
+/// Stage 4 decomposition: true iff the canonical event log carries a
+/// kernel-owned SUBTASK_OF registration for this task. Read straight
+/// from the append-only log — neither model output nor payload content
+/// can produce this status.
+fn is_registered_subtask(db: &str, task_id: &str) -> bool {
+    rusqlite::Connection::open(db)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = 'SUBTASK_OF'",
+                [task_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .ok()
+        })
+        .map(|n| n > 0)
+        .unwrap_or(false)
+}
+
 pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
     providers::get_filesystem().create_dir_all("artifacts")?;
     let payload = payload_for_task(task_id)?;
@@ -253,12 +272,26 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                 let tests_passed = find_latest_test_report(db, task_id)?
                     .and_then(|r| r.get("passed").and_then(|p| p.as_bool()))
                     .unwrap_or(false);
-                if !applied || !tests_passed {
+                // PROGRESS UNTIL VERIFIED stage 4 — decomposition lemma:
+                // a task kernel-registered as SUBTASK_OF may complete with
+                // verified apply evidence but WITHOUT a passing test
+                // report: its semantic verification is delegated to the
+                // composition carrier's task-level tests (subtask proofs
+                // are lemmas; the carrier is the theorem). Registration
+                // is kernel-owned (SUBTASK_OF event), never model- or
+                // payload-derived. Unregistered tasks keep the full gate
+                // — matrix H remains impossible for them.
+                let is_subtask = is_registered_subtask(db, task_id);
+                if !applied || (!tests_passed && !is_subtask) {
                     return Err(anyhow!(
-                        "fatal: CodeFix completion blocked: apply_evidence={} passing_test_report={} — no fake success",
+                        "fatal: CodeFix completion blocked: apply_evidence={} passing_test_report={} subtask={} — no fake success",
                         applied,
-                        tests_passed
+                        tests_passed,
+                        is_subtask
                     ));
+                }
+                if is_subtask && !tests_passed {
+                    println!("NOTE    : SUBTASK (lemma) completion — patch applied and kernel-verified; semantic verification delegated to the composition carrier.");
                 }
             }
             storage.process_effects_ledger(task_id)?;

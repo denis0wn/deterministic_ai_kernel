@@ -444,6 +444,13 @@ fn canonical_event_kind(event_type: &str) -> &'static str {
         // InProgress) for the attempt's fingerprint group.
         // Observation-only.
         "TASK_TERMINAL_ASSESSED" => "TASK_TERMINAL_ASSESSED",
+        // PROGRESS UNTIL VERIFIED stage 4: decomposition records.
+        // SUBTASK_OF: kernel-owned registration of a lemma task whose
+        // semantic verification is delegated to the composition
+        // carrier. TASK_DECOMPOSED: the carrier's composition contract
+        // with its subtasks. Both observation-only.
+        "SUBTASK_OF" => "SUBTASK_OF",
+        "TASK_DECOMPOSED" => "TASK_DECOMPOSED",
         "DONE" => "DONE",
         _ => "",
     }
@@ -528,6 +535,8 @@ impl TaskFold {
             | "ArtifactProduced"
             | "REPETITION"
             | "TASK_TERMINAL_ASSESSED"
+            | "SUBTASK_OF"
+            | "TASK_DECOMPOSED"
             | "" => return,
             _ => {}
         }
