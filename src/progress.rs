@@ -300,6 +300,36 @@ pub fn terminal_assessment_for_task(
             "lemma task — semantic verification delegated to the composition carrier".to_string(),
         )));
     }
+    // Stage 5: verifier-gap lifecycle shapes the terminal claim.
+    // Pending  — a path may still open (human grant): NOT NVPF yet.
+    // Granted  — resume with the new verification capability.
+    // Declined — constructive NO VERIFIED PATH FOUND with full ledger.
+    match gap_status(conn, task_id) {
+        GapStatus::Declined => {
+            return Ok(Some((
+                fp,
+                TerminalTaxonomy::NoVerifiedPathFound,
+                "verifier gap DECLINED by human review — no verified path remains; gap proof and decline are recorded in the event log"
+                    .to_string(),
+            )));
+        }
+        GapStatus::Pending => {
+            return Ok(Some((
+                fp,
+                TerminalTaxonomy::InProgress,
+                "verifier gap pending human grant/decline — a verified path may open; not NVPF"
+                    .to_string(),
+            )));
+        }
+        GapStatus::Granted => {
+            return Ok(Some((
+                fp,
+                TerminalTaxonomy::InProgress,
+                "verifier granted — resume with the new verification capability".to_string(),
+            )));
+        }
+        GapStatus::None => {}
+    }
     let group: Vec<&(String, Verdict)> = report
         .verdicts
         .iter()
@@ -343,6 +373,105 @@ pub fn terminal_assessment_for_task(
             "baseline or inconclusive attempt".to_string(),
         ))),
     }
+}
+
+/// Stage 5: kernel-owned verifier inventory (documented constant list).
+/// These are the deterministic verification primitives available to the
+/// kernel; a gap proof must show the acceptance criterion is not
+/// covered by any (combination of) them.
+pub fn verifier_inventory() -> Vec<&'static str> {
+    vec![
+        "patch_v1 shape gate (no-op, path traversal, required fields)",
+        "patch grounding (context_before byte-for-byte exactly once)",
+        "apply-time re-validation + BLAKE3 post-verify + rollback",
+        "run_tests_v1 (kernel-owned allowlisted argv + harness)",
+        "workspace boundary guard (resolve_safe)",
+        "monetary-invariant marker gate (analyzer layer)",
+        "evidence_chain_v1 consistency links",
+    ]
+}
+
+/// Stage 5: gap lifecycle state for a task, derived from canonical
+/// events only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GapStatus {
+    None,
+    Pending,
+    Granted,
+    Declined,
+}
+
+fn event_count(conn: &Connection, task_id: &str, event_type: &str) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = ?2",
+        rusqlite::params![task_id, event_type],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
+}
+
+pub fn gap_status(conn: &Connection, task_id: &str) -> GapStatus {
+    if event_count(conn, task_id, "VERIFIER_GAP_PROOF") == 0 {
+        return GapStatus::None;
+    }
+    if event_count(conn, task_id, "VERIFIER_DECLINED") > 0 {
+        return GapStatus::Declined;
+    }
+    if event_count(conn, task_id, "VERIFIER_GRANTED") > 0 {
+        return GapStatus::Granted;
+    }
+    GapStatus::Pending
+}
+
+/// Stage 5: build a kernel-verified verifier gap proof payload.
+///
+/// The KERNEL contributes the checkable basis: the task's attempt
+/// ledger (fingerprints, outcomes, failure signatures), the verifier
+/// inventory, and the gap lifecycle state. The criterion and the
+/// uncovered property are HUMAN-STATED (operator knowledge) and are
+/// recorded explicitly as such — the kernel never invents them and
+/// never accepts an LLM's "I cannot verify" as a gap.
+pub fn gap_proof_payload(
+    conn: &Connection,
+    artifacts_dir: &Path,
+    task_id: &str,
+    criterion: &str,
+    uncovered: &str,
+) -> Result<Option<serde_json::Value>> {
+    let report = assess_db(conn, artifacts_dir)?;
+    let attempt = match report.attempts.iter().find(|a| a.task_id == task_id) {
+        Some(a) => a,
+        None => return Ok(None),
+    };
+    let fp = attempt.payload_fingerprint.clone();
+    let basis: Vec<serde_json::Value> = report
+        .attempts
+        .iter()
+        .filter(|a| a.payload_fingerprint == fp)
+        .map(|a| {
+            serde_json::json!({
+                "task_id": a.task_id,
+                "first_generation": a.first_generation,
+                "outcome": format!("{:?}", a.outcome),
+                "failure_signature": a.failure_reason,
+            })
+        })
+        .collect();
+    if basis.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::json!({
+        "task_id": task_id,
+        "payload_fingerprint": fp,
+        "criterion": criterion,
+        "criterion_source": "human-stated",
+        "uncovered_property": uncovered,
+        "uncovered_property_source": "human-stated",
+        "verifier_inventory": verifier_inventory(),
+        "attempt_basis": basis,
+        "status": "pending_grant",
+        "policy": "progress_until_verified/stage5",
+    })))
 }
 
 /// Human-readable rendering of the report.
@@ -673,5 +802,86 @@ mod tests {
             .expect("test failure");
         assert_eq!(taxonomy, TerminalTaxonomy::InProgress);
         assert!(basis.contains("lemma"), "got: {basis}");
+    }
+
+    /// Stage 5: a PENDING gap proof keeps the group InProgress — a
+    /// verified path may still open (human grant). NOT NVPF yet.
+    #[test]
+    fn pending_gap_is_in_progress_not_nvpf() {
+        let guard = DbGuard::new("gap_pending");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        failed_task(&conn, 10, "task_a", "fatal: something");
+        insert_event(
+            &conn,
+            20,
+            "task_a",
+            "VERIFIER_GAP_PROOF",
+            "{\"task_id\":\"task_a\",\"status\":\"pending_grant\"}",
+        );
+        let art = ArtifactsGuard::new("gap_pending");
+        write_payload(&art, "task_a", "payload");
+        let (_, taxonomy, basis) = terminal_assessment_for_task(&conn, &art.0, "task_a")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::InProgress);
+        assert!(basis.contains("pending"), "got: {basis}");
+    }
+
+    /// Stage 5: a DECLINED gap is constructive NO VERIFIED PATH FOUND.
+    #[test]
+    fn declined_gap_is_no_verified_path_found() {
+        let guard = DbGuard::new("gap_declined");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        failed_task(&conn, 10, "task_a", "fatal: something");
+        insert_event(&conn, 20, "task_a", "VERIFIER_GAP_PROOF", "{}");
+        insert_event(
+            &conn,
+            21,
+            "task_a",
+            "VERIFIER_DECLINED",
+            "{\"task_id\":\"task_a\",\"reason\":\"no objective criterion\"}",
+        );
+        let art = ArtifactsGuard::new("gap_declined");
+        write_payload(&art, "task_a", "payload");
+        let (_, taxonomy, basis) = terminal_assessment_for_task(&conn, &art.0, "task_a")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::NoVerifiedPathFound);
+        assert!(basis.contains("DECLINED"), "got: {basis}");
+    }
+
+    /// Stage 5: a GRANTED verifier reopens the path (InProgress until
+    /// the next attempt decides).
+    #[test]
+    fn granted_gap_reopens_path() {
+        let guard = DbGuard::new("gap_granted");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        failed_task(&conn, 10, "task_a", "fatal: something");
+        insert_event(&conn, 20, "task_a", "VERIFIER_GAP_PROOF", "{}");
+        insert_event(
+            &conn,
+            21,
+            "task_a",
+            "VERIFIER_GRANTED",
+            "{\"task_id\":\"task_a\",\"verifier_blake3\":\"abc\"}",
+        );
+        let art = ArtifactsGuard::new("gap_granted");
+        write_payload(&art, "task_a", "payload");
+        let (_, taxonomy, basis) = terminal_assessment_for_task(&conn, &art.0, "task_a")
+            .expect("test failure")
+            .expect("test failure");
+        assert_eq!(taxonomy, TerminalTaxonomy::InProgress);
+        assert!(basis.contains("granted"), "got: {basis}");
+    }
+
+    /// Stage 5: gap proof requires an attempt basis — unknown tasks
+    /// yield no proof (never a fabricated gap).
+    #[test]
+    fn gap_proof_requires_attempt_basis() {
+        let guard = DbGuard::new("gap_no_basis");
+        let conn = storage::open_initialized(&guard.path_str()).expect("test failure");
+        let art = ArtifactsGuard::new("gap_no_basis");
+        let r = gap_proof_payload(&conn, &art.0, "ghost", "c", "u").expect("test failure");
+        assert!(r.is_none());
     }
 }

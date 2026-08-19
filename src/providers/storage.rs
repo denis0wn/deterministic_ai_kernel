@@ -451,6 +451,13 @@ fn canonical_event_kind(event_type: &str) -> &'static str {
         // with its subtasks. Both observation-only.
         "SUBTASK_OF" => "SUBTASK_OF",
         "TASK_DECOMPOSED" => "TASK_DECOMPOSED",
+        // PROGRESS UNTIL VERIFIED stage 5: verifier-gap lifecycle.
+        // VERIFIER_GAP_PROOF (kernel-verified basis + human-stated
+        // criterion), VERIFIER_GRANTED / VERIFIER_DECLINED (human
+        // decision). All observation-only.
+        "VERIFIER_GAP_PROOF" => "VERIFIER_GAP_PROOF",
+        "VERIFIER_GRANTED" => "VERIFIER_GRANTED",
+        "VERIFIER_DECLINED" => "VERIFIER_DECLINED",
         "DONE" => "DONE",
         _ => "",
     }
@@ -537,6 +544,9 @@ impl TaskFold {
             | "TASK_TERMINAL_ASSESSED"
             | "SUBTASK_OF"
             | "TASK_DECOMPOSED"
+            | "VERIFIER_GAP_PROOF"
+            | "VERIFIER_GRANTED"
+            | "VERIFIER_DECLINED"
             | "" => return,
             _ => {}
         }

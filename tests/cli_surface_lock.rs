@@ -74,6 +74,9 @@ const LOCKED_SUBCOMMANDS: &[&str] = &[
     "switch",
     "sync-all-model-roles",
     "vacuum",
+    // PROGRESS UNTIL VERIFIED stage 5: verifier-gap lifecycle
+    // (prove / grant / decline).
+    "verifier-gap",
 ];
 
 /// Discover subcommand match arms in main.rs: `Some("name") =>`.
@@ -87,7 +90,7 @@ fn discovered_subcommands() -> std::collections::BTreeSet<String> {
 fn cli_subcommand_count_is_locked() {
     assert_eq!(
         LOCKED_SUBCOMMANDS.len(),
-        58, // PROGRESS UNTIL VERIFIED stage 4: +1 for decomposition
+        59, // PROGRESS UNTIL VERIFIED stage 5: +1 for verifier-gap
         "CLI subcommand count changed — update LOCKED_SUBCOMMANDS and bump this assertion"
     );
 }

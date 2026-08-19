@@ -1443,6 +1443,170 @@ async fn main() {
             println!("REPLAY OK: {}", ok);
             return;
         }
+        Some("verifier-gap") => {
+            // PROGRESS UNTIL VERIFIED stage 5: verifier-gap lifecycle.
+            //   verifier-gap prove   --task <id> --criterion <text> --uncovered <text>
+            //   verifier-gap grant   --task <id> --verifier-file <path>
+            //   verifier-gap decline --task <id> --reason <text>
+            // The kernel verifies the BASIS (attempt ledger, inventory,
+            // lifecycle) from its own data; criterion/uncovered are
+            // human-stated and recorded as such. The LLM's "I cannot
+            // verify" is never accepted as a gap. Grant/decline are
+            // human decisions; the kernel records them and shapes the
+            // terminal taxonomy (granted => resume; declined =>
+            // constructive NVPF).
+            let action = args.get(2).cloned().unwrap_or_default();
+            let mut task_id: Option<String> = None;
+            let mut criterion: Option<String> = None;
+            let mut uncovered: Option<String> = None;
+            let mut verifier_file: Option<String> = None;
+            let mut reason: Option<String> = None;
+            let mut i = 3usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--task" => {
+                        i += 1;
+                        task_id = args.get(i).cloned();
+                    }
+                    "--criterion" => {
+                        i += 1;
+                        criterion = args.get(i).cloned();
+                    }
+                    "--uncovered" => {
+                        i += 1;
+                        uncovered = args.get(i).cloned();
+                    }
+                    "--verifier-file" => {
+                        i += 1;
+                        verifier_file = args.get(i).cloned();
+                    }
+                    "--reason" => {
+                        i += 1;
+                        reason = args.get(i).cloned();
+                    }
+                    other => {
+                        eprintln!("unknown arg: {other}");
+                        std::process::exit(1);
+                    }
+                }
+                i += 1;
+            }
+            let task_id = task_id.unwrap_or_else(|| {
+                eprintln!("verifier-gap: --task is required");
+                std::process::exit(1);
+            });
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("verifier-gap: failed to open db: {e}");
+                    std::process::exit(1);
+                });
+            let store = deterministic_ai_kernel::providers::storage_for(db);
+            match action.as_str() {
+                "prove" => {
+                    let (criterion, uncovered) = match (criterion, uncovered) {
+                        (Some(c), Some(u)) => (c, u),
+                        _ => {
+                            eprintln!(
+                                "verifier-gap prove: --criterion and --uncovered are required"
+                            );
+                            std::process::exit(1);
+                        }
+                    };
+                    let proof = deterministic_ai_kernel::progress::gap_proof_payload(
+                        &conn,
+                        std::path::Path::new("artifacts"),
+                        &task_id,
+                        &criterion,
+                        &uncovered,
+                    )
+                    .unwrap_or_else(|e| {
+                        eprintln!("verifier-gap: proof construction failed: {e}");
+                        std::process::exit(1);
+                    })
+                    .unwrap_or_else(|| {
+                        eprintln!("verifier-gap: task '{task_id}' has no attempts — a gap proof requires an attempt basis");
+                        std::process::exit(1);
+                    });
+                    if let Err(e) = store.append_event(&task_id, None, "VERIFIER_GAP_PROOF", &proof)
+                    {
+                        eprintln!("verifier-gap: failed to record gap proof: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("VERIFIER GAP PROOF RECORDED for task {task_id}:");
+                    println!("  criterion (human-stated)  : {criterion}");
+                    println!("  uncovered (human-stated)  : {uncovered}");
+                    println!(
+                        "  verifier inventory        : {} primitives",
+                        deterministic_ai_kernel::progress::verifier_inventory().len()
+                    );
+                    println!("  status                    : pending human grant/decline");
+                }
+                "grant" => {
+                    if deterministic_ai_kernel::progress::gap_status(&conn, &task_id)
+                        != deterministic_ai_kernel::progress::GapStatus::Pending
+                    {
+                        eprintln!("verifier-gap grant: no PENDING gap proof for task '{task_id}'");
+                        std::process::exit(1);
+                    }
+                    let path = verifier_file.unwrap_or_else(|| {
+                        eprintln!("verifier-gap grant: --verifier-file is required");
+                        std::process::exit(1);
+                    });
+                    let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+                        eprintln!("verifier-gap grant: cannot read verifier file '{path}': {e}");
+                        std::process::exit(1);
+                    });
+                    let file_hash = blake3::hash(&bytes).to_hex().to_string();
+                    let payload = serde_json::json!({
+                        "task_id": task_id,
+                        "verifier_path": path,
+                        "verifier_blake3": file_hash,
+                        "source": "human-authored",
+                        "note": "kernel records provenance only; authority comes from human review",
+                        "policy": "progress_until_verified/stage5",
+                    });
+                    if let Err(e) = store.append_event(&task_id, None, "VERIFIER_GRANTED", &payload)
+                    {
+                        eprintln!("verifier-gap: failed to record grant: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("VERIFIER GRANTED for task {task_id}: {path} (blake3 {file_hash}). Resume with a new attempt.");
+                }
+                "decline" => {
+                    if deterministic_ai_kernel::progress::gap_status(&conn, &task_id)
+                        != deterministic_ai_kernel::progress::GapStatus::Pending
+                    {
+                        eprintln!(
+                            "verifier-gap decline: no PENDING gap proof for task '{task_id}'"
+                        );
+                        std::process::exit(1);
+                    }
+                    let reason = reason.unwrap_or_else(|| {
+                        eprintln!("verifier-gap decline: --reason is required");
+                        std::process::exit(1);
+                    });
+                    let payload = serde_json::json!({
+                        "task_id": task_id,
+                        "reason": reason,
+                        "decided_by": "human",
+                        "policy": "progress_until_verified/stage5",
+                    });
+                    if let Err(e) =
+                        store.append_event(&task_id, None, "VERIFIER_DECLINED", &payload)
+                    {
+                        eprintln!("verifier-gap: failed to record decline: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("VERIFIER GAP DECLINED for task {task_id}: {reason}");
+                    println!("Terminal taxonomy: NO VERIFIED PATH FOUND (constructive; full ledger recorded).");
+                }
+                other => {
+                    eprintln!("verifier-gap: unknown action '{other}' (prove|grant|decline)");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
         Some("decomposition") => {
             // PROGRESS UNTIL VERIFIED stage 4: finalize a decomposition
             // record once the composition carrier has completed: emits

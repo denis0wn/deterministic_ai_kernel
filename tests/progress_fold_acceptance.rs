@@ -229,3 +229,66 @@ fn decomposition_records_are_fold_compatible() {
     );
     cleanup(&db);
 }
+
+/// Stage 5: verifier-gap lifecycle events (VERIFIER_GAP_PROOF,
+/// VERIFIER_GRANTED, VERIFIER_DECLINED) are fold-compatible and
+/// state-neutral.
+#[test]
+fn verifier_gap_events_are_fold_compatible() {
+    let db = unique_db("gap_fold");
+    let bus = EventBus::new(&db).unwrap();
+
+    emit_step_lifecycle(&bus, "task-g1", "00_step");
+    emit_step_lifecycle(&bus, "task-g2", "00_step");
+    emit_step_lifecycle(&bus, "task-g3", "00_step");
+
+    bus.append_event(
+        "task-g1",
+        None,
+        "VERIFIER_GAP_PROOF",
+        &json!({"task_id": "task-g1"}),
+    )
+    .unwrap();
+    bus.append_event(
+        "task-g1",
+        None,
+        "VERIFIER_GRANTED",
+        &json!({"task_id": "task-g1"}),
+    )
+    .unwrap();
+    bus.append_event(
+        "task-g2",
+        None,
+        "VERIFIER_GAP_PROOF",
+        &json!({"task_id": "task-g2"}),
+    )
+    .unwrap();
+    bus.append_event(
+        "task-g2",
+        None,
+        "VERIFIER_DECLINED",
+        &json!({"task_id": "task-g2"}),
+    )
+    .unwrap();
+    bus.append_event(
+        "task-g3",
+        None,
+        "VERIFIER_GAP_PROOF",
+        &json!({"task_id": "task-g3"}),
+    )
+    .unwrap();
+
+    let db_str = db.to_str().unwrap();
+    for t in ["task-g1", "task-g2", "task-g3"] {
+        assert!(
+            deterministic_ai_kernel::replay::engine::replay_validate(db_str, t),
+            "replay_validate must accept verifier-gap events for {t}"
+        );
+        let storage = deterministic_ai_kernel::providers::storage_for(db_str);
+        assert!(
+            storage.replay_violations(t).unwrap_or_default().is_empty(),
+            "verifier-gap events must not produce fold violations for {t}"
+        );
+    }
+    cleanup(&db);
+}
