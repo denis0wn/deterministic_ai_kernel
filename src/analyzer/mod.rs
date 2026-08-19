@@ -19,6 +19,7 @@
 
 pub mod audit_log;
 pub mod evidence_chain;
+pub mod evidence_chain_v2;
 pub mod evidence_manifest;
 pub mod external_sast;
 pub mod hint_engine;
@@ -33,4 +34,4 @@ pub mod task_emitter;
 pub mod triage;
 pub mod work_order;
 
-pub const ANALYZER_VERSION: &str = "0.4.1";
+pub const ANALYZER_VERSION: &str = "0.4.2";
