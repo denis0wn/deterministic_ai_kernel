@@ -251,120 +251,16 @@ def write_verdict(verdict, verdict_out):
     print(f"verdict_file={verdict_path} bytes={verdict_path.stat().st_size}")
     print(json.dumps(verdict, indent=2))
 
-def plan_environment_id(plan):
-    return plan.get("environment_id") or plan.get("environment", {}).get("environment_id") or plan.get("environment", {}).get("environment_fingerprint")
-
-def plan_execution_order_id(plan):
-    return plan.get("execution_order_id")
-
-def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
-    prior = load_json(reuse_plan_path)
-
-    prior_plan_id = prior.get("plan_id") or prior.get("plan_hash")
-    current_plan_id = current_plan.get("plan_id")
-
-    prior_plan_hash = prior.get("plan_hash") or prior.get("plan_id")
-    current_plan_hash = current_plan.get("plan_hash")
-
-    if prior_plan_hash == current_plan_hash:
-        prior_fp = prior.get("environment_fingerprint") or prior.get("environment", {}).get("environment_fingerprint")
-        current_fp = current_plan.get("environment_fingerprint") or current_plan.get("environment", {}).get("environment_fingerprint")
-        if prior_fp != current_fp:
-            verdict = {
-                "ok": False,
-                "status": "invalid_reuse",
-                "reason": "plan_hash matched but environment_fingerprint differed",
-                "plan_id": current_plan["plan_id"],
-                "plan_hash": current_plan["plan_hash"],
-                "environment_id": current_plan["environment_id"],
-                "execution_order_id": current_plan["execution_order_id"],
-                "expected_environment_fingerprint": prior_fp,
-                "actual_environment_fingerprint": current_fp,
-                "graph_schema_version": current_plan["graph_schema_version"],
-                "selected_pipeline": current_plan["selected_pipeline"],
-                "selected_only": current_plan["selected_only"],
-                "deterministic_order": current_plan["deterministic_order"],
-                "node_count": 0,
-                "environment": current_plan["environment"],
-                "environment_debug": current_plan["environment_debug"],
-                "nodes": [],
-            }
-            write_verdict(verdict, verdict_out)
-            raise SystemExit(2)
-        return
-
-    if prior_plan_id == current_plan_id:
-        return
-
-    prior_pipeline = prior.get("selected_pipeline")
-    current_pipeline = current_plan.get("selected_pipeline")
-
-    if prior_pipeline != current_pipeline:
-        verdict = {
-            "ok": False,
-            "status": "invalid_reuse",
-            "reason": "plan_id differed: selected_pipeline differed for reuse-plan",
-            "plan_id": current_plan["plan_id"],
-            "plan_hash": current_plan["plan_hash"],
-            "environment_id": current_plan["environment_id"],
-            "execution_order_id": current_plan["execution_order_id"],
-            "expected_selected_pipeline": prior_pipeline,
-            "actual_selected_pipeline": current_pipeline,
-            "graph_schema_version": current_plan["graph_schema_version"],
-            "selected_pipeline": current_plan["selected_pipeline"],
-            "selected_only": current_plan["selected_only"],
-            "deterministic_order": current_plan["deterministic_order"],
-            "node_count": 0,
-            "environment": current_plan["environment"],
-            "environment_debug": current_plan["environment_debug"],
-            "nodes": [],
-        }
-        write_verdict(verdict, verdict_out)
-        raise SystemExit(2)
-
-    prior_env = plan_environment_id(prior)
-    current_env = plan_environment_id(current_plan)
-
-    if prior_env != current_env:
-        verdict = {
-            "ok": False,
-            "status": "invalid_reuse",
-            "reason": "plan_id differed: environment_id differed",
-            "plan_id": current_plan["plan_id"],
-            "plan_hash": current_plan["plan_hash"],
-            "environment_id": current_plan["environment_id"],
-            "execution_order_id": current_plan["execution_order_id"],
-            "expected_environment_id": prior_env,
-            "actual_environment_id": current_env,
-            "graph_schema_version": current_plan["graph_schema_version"],
-            "selected_pipeline": current_plan["selected_pipeline"],
-            "selected_only": current_plan["selected_only"],
-            "deterministic_order": current_plan["deterministic_order"],
-            "node_count": 0,
-            "environment": current_plan["environment"],
-            "environment_debug": current_plan["environment_debug"],
-            "nodes": [],
-        }
-        write_verdict(verdict, verdict_out)
-        raise SystemExit(2)
-
-    prior_order = plan_execution_order_id(prior)
-    current_order = plan_execution_order_id(current_plan)
-    if prior_order != current_order:
-        reason = "plan_id differed: execution_order_id differed"
-    else:
-        reason = "plan_id differed"
-
+def invalid_reuse_verdict(current_plan, reason, artifact_error, extra=None):
     verdict = {
         "ok": False,
         "status": "invalid_reuse",
         "reason": reason,
+        "artifact_error": artifact_error,
         "plan_id": current_plan["plan_id"],
         "plan_hash": current_plan["plan_hash"],
         "environment_id": current_plan["environment_id"],
         "execution_order_id": current_plan["execution_order_id"],
-        "expected_plan_id": prior_plan_id,
-        "actual_plan_id": current_plan_id,
         "graph_schema_version": current_plan["graph_schema_version"],
         "selected_pipeline": current_plan["selected_pipeline"],
         "selected_only": current_plan["selected_only"],
@@ -374,7 +270,154 @@ def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
         "environment_debug": current_plan["environment_debug"],
         "nodes": [],
     }
-    write_verdict(verdict, verdict_out)
+    if extra:
+        verdict.update(extra)
+    return verdict
+
+def is_sha256_hex(value):
+    return isinstance(value, str) and len(value) == 64 and all(ch in "0123456789abcdef" for ch in value)
+
+def plan_environment_id(plan):
+    return plan.get("environment_id") or plan.get("environment", {}).get("environment_id") or plan.get("environment", {}).get("environment_fingerprint")
+
+def plan_execution_order_id(plan):
+    return plan.get("execution_order_id")
+
+def validate_reuse_plan(current_plan, prior):
+    if not isinstance(prior, dict):
+        return ("reuse plan malformed: missing environment identity", "MISSING_ENVIRONMENT_IDENTITY", None)
+
+    env = prior.get("environment")
+    top_env_id = prior.get("environment_id")
+    nested_env_id = env.get("environment_id") if isinstance(env, dict) else None
+    fingerprint = prior.get("environment_fingerprint")
+    nested_fp = env.get("environment_fingerprint") if isinstance(env, dict) else None
+
+    if not top_env_id and not nested_env_id and not fingerprint and not nested_fp:
+        return ("reuse plan malformed: missing environment identity", "MISSING_ENVIRONMENT_IDENTITY", None)
+
+    candidate = fingerprint or nested_fp or top_env_id or nested_env_id
+    if not is_sha256_hex(candidate):
+        return ("reuse plan malformed: invalid environment_fingerprint format", "INVALID_ENVIRONMENT_FINGERPRINT", None)
+
+    if not prior.get("execution_order_id"):
+        return ("reuse plan malformed: missing execution_order_id", "MISSING_EXECUTION_ORDER_ID", None)
+
+    ordered_nodes = prior.get("ordered_nodes")
+    if not isinstance(ordered_nodes, list):
+        return ("reuse plan malformed: ordered_nodes integrity failed", "INVALID_ORDERED_NODES", None)
+
+    seen_keys = set()
+    for node in ordered_nodes:
+        if not isinstance(node, dict):
+            return ("reuse plan malformed: ordered_nodes integrity failed", "INVALID_ORDERED_NODES", None)
+        for field in ("key", "id", "version"):
+            value = node.get(field)
+            if not isinstance(value, str) or not value:
+                return ("reuse plan malformed: ordered_nodes integrity failed", "INVALID_ORDERED_NODES", None)
+        key = node["key"]
+        if key in seen_keys:
+            return ("reuse plan malformed: ordered_nodes integrity failed", "INVALID_ORDERED_NODES", None)
+        seen_keys.add(key)
+
+    if prior.get("graph_schema_version") != current_plan.get("graph_schema_version"):
+        return (
+            "reuse plan incompatible: graph_schema_version differed",
+            "SCHEMA_VERSION_MISMATCH",
+            {
+                "expected_graph_schema_version": prior.get("graph_schema_version"),
+                "actual_graph_schema_version": current_plan.get("graph_schema_version"),
+            },
+        )
+
+    return None
+
+
+def enforce_reuse_policy(current_plan, reuse_plan_path, verdict_out):
+    prior = load_json(reuse_plan_path)
+    validation_error = validate_reuse_plan(current_plan, prior)
+    if validation_error is not None:
+        reason, artifact_error, extra = validation_error
+        write_verdict(invalid_reuse_verdict(current_plan, reason, artifact_error, extra), verdict_out)
+        raise SystemExit(2)
+
+    prior_plan_id = prior.get("plan_id") or prior.get("plan_hash")
+    current_plan_id = current_plan.get("plan_id")
+    prior_plan_hash = prior.get("plan_hash") or prior.get("plan_id")
+    current_plan_hash = current_plan.get("plan_hash")
+
+    if prior_plan_hash == current_plan_hash:
+        prior_fp = prior.get("environment_fingerprint") or prior.get("environment", {}).get("environment_fingerprint")
+        current_fp = current_plan.get("environment_fingerprint") or current_plan.get("environment", {}).get("environment_fingerprint")
+        if prior_fp != current_fp:
+            write_verdict(
+                invalid_reuse_verdict(
+                    current_plan,
+                    "plan_hash matched but environment_fingerprint differed",
+                    "ENVIRONMENT_FINGERPRINT_MISMATCH",
+                    {
+                        "expected_environment_fingerprint": prior_fp,
+                        "actual_environment_fingerprint": current_fp,
+                    },
+                ),
+                verdict_out,
+            )
+            raise SystemExit(2)
+        return
+
+    if prior_plan_id == current_plan_id:
+        return
+
+    prior_pipeline = prior.get("selected_pipeline")
+    current_pipeline = current_plan.get("selected_pipeline")
+    if prior_pipeline != current_pipeline:
+        write_verdict(
+            invalid_reuse_verdict(
+                current_plan,
+                "plan_id differed: selected_pipeline differed for reuse-plan",
+                "SELECTED_PIPELINE_MISMATCH",
+                {
+                    "expected_selected_pipeline": prior_pipeline,
+                    "actual_selected_pipeline": current_pipeline,
+                },
+            ),
+            verdict_out,
+        )
+        raise SystemExit(2)
+
+    prior_env = plan_environment_id(prior)
+    current_env = plan_environment_id(current_plan)
+    if prior_env != current_env:
+        write_verdict(
+            invalid_reuse_verdict(
+                current_plan,
+                "plan_id differed: environment_id differed",
+                "ENVIRONMENT_ID_MISMATCH",
+                {
+                    "expected_environment_id": prior_env,
+                    "actual_environment_id": current_env,
+                },
+            ),
+            verdict_out,
+        )
+        raise SystemExit(2)
+
+    prior_order = plan_execution_order_id(prior)
+    current_order = plan_execution_order_id(current_plan)
+    reason = "plan_id differed: execution_order_id differed" if prior_order != current_order else "plan_id differed"
+    artifact_error = "EXECUTION_ORDER_ID_MISMATCH" if prior_order != current_order else "PLAN_ID_MISMATCH"
+    write_verdict(
+        invalid_reuse_verdict(
+            current_plan,
+            reason,
+            artifact_error,
+            {
+                "expected_plan_id": prior_plan_id,
+                "actual_plan_id": current_plan_id,
+            },
+        ),
+        verdict_out,
+    )
     raise SystemExit(2)
 
 def run_plan(plan, by_key, verdict_out):

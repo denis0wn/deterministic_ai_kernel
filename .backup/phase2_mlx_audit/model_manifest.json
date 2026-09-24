@@ -8,16 +8,7 @@
       "enabled": true,
       "notes": "Primary task planning model. Reasoning model with strong logical deduction.",
       "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific.",
-      "max_tokens": 1500,
-      "backend": "mlx",
-      "path": "~/Models/gemma4-reasoning",
-      "capabilities": {
-        "text": true,
-        "reasoning": true,
-        "code": true,
-        "vision": false,
-        "audio": false
-      }
+      "max_tokens": 1500
     },
     {
       "id": "huihui-gemma-4-e2b-it-abliterated-mlx",
@@ -26,10 +17,7 @@
       "ram_class": "medium",
       "enabled": true,
       "notes": "Fallback task planning model.",
-      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific.",
-      "backend": null,
-      "path": null,
-      "capabilities": null
+      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific."
     },
     {
       "id": "qwen2.5-coder-3b-instruct-mlx",
@@ -38,10 +26,7 @@
       "ram_class": "light",
       "enabled": true,
       "notes": "Primary coding model.",
-      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff.",
-      "backend": null,
-      "path": null,
-      "capabilities": null
+      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
       "id": "gemma-4-12b-it-optiq",
@@ -50,16 +35,7 @@
       "ram_class": "medium",
       "enabled": true,
       "notes": "Heavy coding fallback. MLX-native OptiQ mixed-precision, Apple Silicon M-series.",
-      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff.",
-      "backend": "mlx",
-      "path": "~/Models/gemma4-reasoning",
-      "capabilities": {
-        "text": true,
-        "reasoning": true,
-        "code": true,
-        "vision": false,
-        "audio": false
-      }
+      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
       "id": "omnicoder-9b-mlx-mxfp8",
@@ -68,10 +44,7 @@
       "ram_class": "medium",
       "enabled": true,
       "notes": "Optional heavier code fallback.",
-      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff.",
-      "backend": null,
-      "path": null,
-      "capabilities": null
+      "system_prompt": "You are a precise coding assistant. Return only code and short explanations. No prose, no fluff."
     },
     {
       "id": "qwen2.5-14b-instruct-mlx",
@@ -80,10 +53,7 @@
       "ram_class": "heavy",
       "enabled": false,
       "notes": "Disabled by default; LM Studio returned speculative decoding incompatibility.",
-      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific.",
-      "backend": null,
-      "path": null,
-      "capabilities": null
+      "system_prompt": "You are a deterministic task planner. Break every request into numbered steps. Be concise and specific."
     },
     {
       "id": "qwen3-vl-8b-instruct-mlx",
@@ -92,10 +62,7 @@
       "ram_class": "heavy",
       "enabled": false,
       "notes": "Enable only when multimodal support is needed.",
-      "system_prompt": "You are a vision-language assistant. Describe images accurately and answer questions about visual content.",
-      "backend": null,
-      "path": null,
-      "capabilities": null
+      "system_prompt": "You are a vision-language assistant. Describe images accurately and answer questions about visual content."
     },
     {
       "id": "qwen2.5-coder-3b-instruct-mlx",
@@ -104,16 +71,7 @@
       "ram_class": "light",
       "enabled": true,
       "notes": "Code review role. Focused on Rust idioms, correctness, and architecture.",
-      "system_prompt": "You are a senior Rust engineer doing a code review. Identify correctness issues, non-idiomatic patterns, missing edge cases, and suggest concrete improvements. Be concise and specific. Format feedback as numbered points.",
-      "backend": "mlx",
-      "path": "~/Models/gemma4-reasoning",
-      "capabilities": {
-        "text": true,
-        "reasoning": true,
-        "code": true,
-        "vision": false,
-        "audio": false
-      }
+      "system_prompt": "You are a senior Rust engineer doing a code review. Identify correctness issues, non-idiomatic patterns, missing edge cases, and suggest concrete improvements. Be concise and specific. Format feedback as numbered points."
     },
     {
       "id": "text-embedding-nomic-embed-text-v1.5",
@@ -122,10 +80,7 @@
       "ram_class": "light",
       "enabled": true,
       "notes": "Embedding-only model; not for chat.",
-      "system_prompt": "",
-      "backend": null,
-      "path": null,
-      "capabilities": null
+      "system_prompt": ""
     }
   ]
 }

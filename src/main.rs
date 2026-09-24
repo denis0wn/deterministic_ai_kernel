@@ -1,3 +1,4 @@
+mod ai;
 mod api;
 mod cli_json;
 mod effects;
@@ -28,6 +29,14 @@ use scheduler::{current_status_map, next_ready_step, reconcile, schedule};
 use snapshot::{rebuild_snapshot, restore_snapshot};
 use std::fs;
 use workflow::compiler::Workflow;
+
+fn suppress_nested_cargo_warnings() {
+    if std::env::var_os("RUSTFLAGS").is_none() {
+        unsafe {
+            std::env::set_var("RUSTFLAGS", "-Awarnings");
+        }
+    }
+}
 
 fn print_stats(db: &str) {
     let conn = Connection::open(db).unwrap();
@@ -204,6 +213,7 @@ fn vacuum_db(db: &str) {
 
 #[tokio::main]
 async fn main() {
+    suppress_nested_cargo_warnings();
     model_registry::validate().unwrap();
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {

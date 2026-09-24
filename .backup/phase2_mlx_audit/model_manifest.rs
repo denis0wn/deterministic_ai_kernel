@@ -8,15 +8,6 @@ pub struct ModelManifest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ManifestCapabilities {
-    pub text: bool,
-    pub reasoning: bool,
-    pub code: bool,
-    pub vision: bool,
-    pub audio: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ManifestModel {
     pub id: String,
     pub role: String,
@@ -25,12 +16,6 @@ pub struct ManifestModel {
     pub enabled: bool,
     pub notes: String,
     pub system_prompt: String,
-    #[serde(default)]
-    pub backend: Option<String>,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub capabilities: Option<ManifestCapabilities>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,17 +48,6 @@ pub fn best_enabled_model_for_role(role: &str) -> Result<ManifestModel> {
         .min_by_key(|m| m.priority)
         .cloned()
         .ok_or_else(|| anyhow!("no enabled model found for role {:?}", role))
-}
-
-#[allow(dead_code)]
-pub fn single_active_runtime_model() -> Result<ManifestModel> {
-    let manifest = load_manifest()?;
-    manifest
-        .models
-        .iter()
-        .find(|m| m.enabled && m.backend.as_deref() == Some("mlx"))
-        .cloned()
-        .ok_or_else(|| anyhow!("no enabled MLX runtime model found"))
 }
 
 pub fn env_key_for_role(role: &str) -> Result<&'static str> {

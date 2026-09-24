@@ -6,9 +6,9 @@ fn switch_plan_is_deterministic_for_task_planning() {
     let p2 = switch_plan("task_planning", 64.0).unwrap();
 
     assert_eq!(p1, p2);
-    assert_eq!(p1.model, "huihui-gemma-4-e2b-it-abliterated-mlx");
-    assert_eq!(p1.ram_class, "medium");
-    assert_eq!(p1.threshold_gb, 6.0);
+    assert_eq!(p1.model, "google/gemma-4-12b-qat");
+    assert_eq!(p1.ram_class, "heavy");
+    assert_eq!(p1.threshold_gb, 10.0);
     assert_eq!(p1.free_gb, 64.0);
 }
 

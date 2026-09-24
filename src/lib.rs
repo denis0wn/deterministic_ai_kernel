@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod api;
 pub(crate) mod cli_json;
 pub mod effects;
