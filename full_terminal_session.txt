@@ -1,0 +1,190 @@
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mcd ~/deterministic_ai_kerne[7ml[7m && cat >> src/scheduler.rs << 'RUST'[27m[K
+[K
+[7mpub fn claim_step([27m[K
+[7m    db: &str,[27m[K
+[7m    task_id: &str,[27m[K
+[7m    worker_id: &str,[27m[K
+[7m    capability: crate::workflow::contract::WorkerCapability,[27m[K
+[7m) -> Result<Option<String>> {[27m[K
+[7m    use crate::workflow::contract::required_capability_for_step;[27m[K
+[7m    use crate::workflow::compiler::Workflow;[27m[K
+[K
+[7m    let conn = Connection::open(db)?;[27m[K
+[K
+[7m    for step in Workflow::build_steps(task_id) {[27m[K
+[7m        if required_capability_for_step(&step.kind) != capability {[27m[K
+[7m            continue;[27m[K
+[7m        }[27m[K
+[K
+[7m        let step_id = format!("{:02}_{}",[27m[K
+[7m            Workflow::build_steps(task_id).iter().position(|s| s.kind == step.ki[7mn[7md).unwrap_or(0),[27m[K
+[7m            step_slug(&step)[27m[K
+[7m        );[27m[K
+[K
+[7m        let status: Option<String> = conn[27m[K
+[7m            .query_row([27m[K
+[7m                "SELECT status FROM step_status WHERE task_id = ?1 AND step_id =[7m [7m?2",[27m[K
+[7m                params![task_id, &step_id],[27m[K
+[7m                |r| r.get(0),[27m[K
+[7m            )[27m[K
+[7m            .optional()?;[27m[K
+[K
+[7m        if status.as_deref() != Some("ready") {[27m[K
+[7m            continue;[27m[K
+[7m        }[27m[K
+[K
+[7m        let active_lease: Option<i64> = conn[27m[K
+[7m            .query_row([27m[K
+[7m                "SELECT 1 FROM leases WHERE task_id = ?1 AND step_id = ?2 AND st[7ma[7mte = 'active' LIMIT 1",[27m[K
+[7m                params![task_id, &step_id],[27m[K
+[7m                |r| r.get(0),[27m[K
+[7m            )[27m[K
+[7m            .optional()?;[27m[K
+[K
+[7m        if active_lease.is_some() {[27m[K
+[7m            continue;[27m[K
+[7m        }[27m[K
+[K
+[7m        conn.execute([27m[K
+[7m            "UPDATE step_status SET status = 'running', worker_id = ?3 WHERE tas[7mk[7m_id = ?1 AND step_id = ?2",[27m[K
+[7m            params![task_id, &step_id, worker_id],[27m[K
+[7m        )?;[27m[K
+[K
+[7m        return Ok(Some(step_id));[27m[K
+[7m    }[27m[K
+[K
+[7m    Ok(None)[27m[K
+[7m}[27m[K
+[7mRUST[27m[K
+[7mcargo check 2>&1 | tail -20[27m[K
+[K[64A[53C[27mc[27md[27m [27m~[27m/[27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27mel[27m [27m&[27m&[27m [27mc[27ma[27mt[27m [27m>[27m>[27m [27ms[27mr[27mc[27m/[27ms[27mc[27mh[27me[27md[27mu[27ml[27me[27mr[27m.[27mr[27ms[27m [27m<[27m<[27m [27m'[27mR[27mU[27mS[27mT[27m'[2B[27mp[27mu[27mb[27m [27mf[27mn[27m [27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m([1B[27m [27m [27m [27m [27md[27mb[27m:[27m [27m&[27ms[27mt[27mr[27m,[1B[27m [27m [27m [27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m:[27m [27m&[27ms[27mt[27mr[27m,[1B[27m [27m [27m [27m [27mw[27mo[27mr[27mk[27me[27mr[27m_[27mi[27md[27m:[27m [27m&[27ms[27mt[27mr[27m,[1B[27m [27m [27m [27m [27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m:[27m [27mc[27mr[27ma[27mt[27me[27m:[27m:[27mw[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m:[27m:[27mc[27mo[27mn[27mt[27mr[27ma[27mc[27mt[27m:[27m:[27mW[27mo[27mr[27mk[27me[27mr[27mC[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m,[1B[27m)[27m [27m-[27m>[27m [27mR[27me[27ms[27mu[27ml[27mt[27m<[27mO[27mp[27mt[27mi[27mo[27mn[27m<[27mS[27mt[27mr[27mi[27mn[27mg[27m>[27m>[27m [27m{[1B[27m [27m [27m [27m [27mu[27ms[27me[27m [27mc[27mr[27ma[27mt[27me[27m:[27m:[27mw[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m:[27m:[27mc[27mo[27mn[27mt[27mr[27ma[27mc[27mt[27m:[27m:[27mr[27me[27mq[27mu[27mi[27mr[27me[27md[27m_[27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m_[27mf[27mo[27mr[27m_[27ms[27mt[27me[27mp[27m;[1B[27m [27m [27m [27m [27mu[27ms[27me[27m [27mc[27mr[27ma[27mt[27me[27m:[27m:[27mw[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m:[27m:[27mc[27mo[27mm[27mp[27mi[27ml[27me[27mr[27m:[27m:[27mW[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m;[2B[27m [27m [27m [27m [27ml[27me[27mt[27m [27mc[27mo[27mn[27mn[27m [27m=[27m [27mC[27mo[27mn[27mn[27me[27mc[27mt[27mi[27mo[27mn[27m:[27m:[27mo[27mp[27me[27mn[27m([27md[27mb[27m)[27m?[27m;[2B[27m [27m [27m [27m [27mf[27mo[27mr[27m [27ms[27mt[27me[27mp[27m [27mi[27mn[27m [27mW[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m:[27m:[27mb[27mu[27mi[27ml[27md[27m_[27ms[27mt[27me[27mp[27ms[27m([27mt[27ma[27ms[27mk[27m_[27mi[27md[27m)[27m [27m{[1B[27m [27m [27m [27m [27m [27m [27m [27m [27mi[27mf[27m [27mr[27me[27mq[27mu[27mi[27mr[27me[27md[27m_[27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m_[27mf[27mo[27mr[27m_[27ms[27mt[27me[27mp[27m([27m&[27ms[27mt[27me[27mp[27m.[27mk[27mi[27mn[27md[27m)[27m [27m![27m=[27m [27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m [27m{[1B[21P[12Ccontinue;[38C[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m}[2B[27m [27m [27m [27m [27m [27m [27m [27m [27ml[27me[27mt[27m [27ms[27mt[27me[27mp[27m_[27mi[27md[27m [27m=[27m [27mf[27mo[27mr[27mm[27ma[27mt[27m![27m([27m"[27m{[27m:[27m0[27m2[27m}[27m_[27m{[27m}[27m"[27m,[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27mW[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m:[27m:[27mb[27mu[27mi[27ml[27md[27m_[27ms[27mt[27me[27mp[27ms[27m([27mt[27ma[27ms[27mk[27m_[27mi[27md[27m)[27m.[27mi[27mt[27me[27mr[27m([27m)[27m.[27mp[27mo[27ms[27mi[27mt[27mi[27mo[27mn[27m([27m|[27ms[27m|[27m [27ms[27m.[27mk[27mi[27mn[27md[27m [27m=[27m=[27m [27ms[27mt[27me[27mp[27m.[27mk[27min[27md[27m)[27m.[27mu[27mn[27mw[27mr[27ma[27mp[27m_[27mo[27mr[27m([27m0[27m)[27m,[1B[28P[12Cstep_slug(&step)[24C[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m)[27m;[2B[27m [27m [27m [27m [27m [27m [27m [27m [27ml[27me[27mt[27m [27ms[27mt[27ma[27mt[27mu[27ms[27m:[27m [27mO[27mp[27mt[27mi[27mo[27mn[27m<[27mS[27mt[27mr[27mi[27mn[27mg[27m>[27m [27m=[27m [27mc[27mo[27mn[27mn[1B[23P[12C.query_row([34C[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m"[27mS[27mE[27mL[27mE[27mC[27mT[27m [27ms[27mt[27ma[27mt[27mu[27ms[27m [27mF[27mR[27mO[27mM[27m [27ms[27mt[27me[27mp[27m_[27ms[27mt[27ma[27mt[27mu[27ms[27m [27mW[27mH[27mE[27mR[27mE[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m [27m=[27m [27m?[27m1[27m [27mA[27mN[27mD[27m [27ms[27mt[27me[27mp[27m_[27mi[27md[27m [27m= [27m?[27m2[27m"[27m,[1B[43P[16Cparams![task_id, &step_id],[K[1B[29P[16C|r| r.get(0),[22C[K[1B[13P[12C)[54C[K[1B[25P[12C.optional()?;[30C[K[2B[27m [27m [27m [27m [27m [27m [27m [27m [27mi[27mf[27m [27ms[27mt[27ma[27mt[27mu[27ms[27m.[27ma[27ms[27m_[27md[27me[27mr[27me[27mf[27m([27m)[27m [27m![27m=[27m [27mS[27mo[27mm[27me[27m([27m"[27mr[27me[27ma[27md[27my[27m"[27m)[27m [27m{[1B[21P[12Ccontinue;[38C[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m}[2B[27m [27m [27m [27m [27m [27m [27m [27m [27ml[27me[27mt[27m [27ma[27mc[27mt[27mi[27mv[27me[27m_[27ml[27me[27ma[27ms[27me[27m:[27m [27mO[27mp[27mt[27mi[27mo[27mn[27m<[27mi[27m6[27m4[27m>[27m [27m=[27m [27mc[27mo[27mn[27mn[1B[23P[12C.query_row([34C[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m"[27mS[27mE[27mL[27mE[27mC[27mT[27m [27m1[27m [27mF[27mR[27mO[27mM[27m [27ml[27me[27ma[27ms[27me[27ms[27m [27mW[27mH[27mE[27mR[27mE[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m [27m=[27m [27m?[27m1[27m [27mA[27mN[27mD[27m [27ms[27mt[27me[27mp[27m_[27mi[27md[27m [27m=[27m [27m?[27m2[27m [27mA[27mN[27mD[27m [27ms[27mta[27mt[27me[27m [27m=[27m [27m'[27ma[27mc[27mt[27mi[27mv[27me[27m'[27m [27mL[27mI[27mM[27mI[27mT[27m [27m1[27m"[27m,[1B[43P[16Cparams![task_id, &step_id],[K[1B[29P[16C|r| r.get(0),[22C[K[1B[13P[12C)[54C[K[1B[25P[12C.optional()?;[30C[K[2B[27m [27m [27m [27m [27m [27m [27m [27m [27mi[27mf[27m [27ma[27mc[27mt[27mi[27mv[27me[27m_[27ml[27me[27ma[27ms[27me[27m.[27mi[27ms[27m_[27ms[27mo[27mm[27me[27m([27m)[27m [27m{[1B[21P[12Ccontinue;[38C[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m}[2B[27m [27m [27m [27m [27m [27m [27m [27m [27mc[27mo[27mn[27mn[27m.[27me[27mx[27me[27mc[27mu[27mt[27me[27m([1B[27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m [27m"[27mU[27mP[27mD[27mA[27mT[27mE[27m [27ms[27mt[27me[27mp[27m_[27ms[27mt[27ma[27mt[27mu[27ms[27m [27mS[27mE[27mT[27m [27ms[27mt[27ma[27mt[27mu[27ms[27m [27m=[27m [27m'[27mr[27mu[27mn[27mn[27mi[27mn[27mg[27m'[27m,[27m [27mw[27mo[27mr[27mk[27me[27mr[27m_[27mi[27md[27m [27m=[27m [27m?[27m3[27m [27mW[27mH[27mE[27mR[27mE[27m [27mt[27ma[27msk[27m_[27mi[27md[27m [27m=[27m [27m?[27m1[27m [27mA[27mN[27mD[27m [27ms[27mt[27me[27mp[27m_[27mi[27md[27m [27m=[27m [27m?[27m2[27m"[27m,[1B[50P[12Cparams![task_id, &step_id, worker_id],[K[1B[27m [27m [27m [27m [27m [27m [27m [27m [27m)[27m?[27m;[2B[27m [27m [27m [27m [27m [27m [27m [27m [27mr[27me[27mt[27mu[27mr[27mn[27m [27mO[27mk[27m([27mS[27mo[27mm[27me[27m([27ms[27mt[27me[27mp[27m_[27mi[27md[27m)[27m)[27m;[1B[27m [27m [27m [27m [27m}[2B[27m [27m [27m [27m [27mO[27mk[27m([27mN[27mo[27mn[27me[27m)[1B[27m}[1B[27mR[27mU[27mS[27mT[1B[27mc[27ma[27mr[27mg[27mo[27m [27mc[27mh[27me[27mc[27mk[27m [27m2[27m>[27m&[27m1[27m [27m|[27m [27mt[27ma[27mi[27ml[27m [27m-[27m2[27m0[1B[K[?2004l
+   --> src/scheduler.rs:578:8
+    |
+578 | pub fn claim_step(
+    |        ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `CodeFix` is never constructed
+  --> src/workflow/contract.rs:56:5
+   |
+53 | pub enum TaskClass {
+   |          --------- variant in this enum
+...
+56 |     CodeFix,
+   |     ^^^^^^^
+   |
+   = note: `TaskClass` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `deterministic_ai_kernel` (bin "deterministic_ai_kernel") generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.50s
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mcd ~/deterministic_ai_kerne[7ml[7m && cat >> tests/scheduler_integration.rs << 'RUST'[27m[K
+[K
+[7m#[test][27m[K
+[7mfn claim_step_filters_by_capability() {[27m[K
+[7m    use deterministic_ai_kernel::workflow::contract::WorkerCapability;[27m[K
+[7m    use deterministic_ai_kernel::scheduler::{claim_step, seed_dependencies, sche[7md[7mule};[27m[K
+[K
+[7m    let db = tmp_db();[27m[K
+[7m    let task_id = "task-claim-cap";[27m[K
+[K
+[7m    seed_dependencies(&db, task_id).unwrap();[27m[K
+[7m    schedule(&db, task_id).unwrap();[27m[K
+[K
+[7m    // Executor не должен получить первый шаг (Planner)[27m[K
+[7m    let result = claim_step(&db, task_id, "worker-exec", WorkerCapability::Execu[7mt[7mor).unwrap();[27m[K
+[7m    assert!(result.is_none(), "executor should not claim a planner step");[27m[K
+[K
+[7m    // Planner должен получить первый шаг[27m[K
+[7m    let result = claim_step(&db, task_id, "worker-plan", WorkerCapability::Plann[7me[7mr).unwrap();[27m[K
+[7m    assert!(result.is_some(), "planner should claim first ready step");[27m[K
+[7m}[27m[K
+[7mRUST[27m[K
+[7mcargo test claim_step_filters_by_capability -- --nocapture 2>&1 | tail -20[27m[K
+[K[27A[53C[27mc[27md[27m [27m~[27m/[27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27mel[27m [27m&[27m&[27m [27mc[27ma[27mt[27m [27m>[27m>[27m [27mt[27me[27ms[27mt[27ms[27m/[27ms[27mc[27mh[27me[27md[27mu[27ml[27me[27mr[27m_[27mi[27mn[27mt[27me[27mg[27mr[27ma[27mt[27mi[27mo[27mn[27m.[27mr[27ms[27m [27m<[27m<[27m [27m'[27mR[27mU[27mS[27mT[27m'[2B[27m#[27m[[27mt[27me[27ms[27mt[27m][1B[27mf[27mn[27m [27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m_[27mf[27mi[27ml[27mt[27me[27mr[27ms[27m_[27mb[27my[27m_[27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m([27m)[27m [27m{[1B[27m [27m [27m [27m [27mu[27ms[27me[27m [27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27me[27ml[27m:[27m:[27mw[27mo[27mr[27mk[27mf[27ml[27mo[27mw[27m:[27m:[27mc[27mo[27mn[27mt[27mr[27ma[27mc[27mt[27m:[27m:[27mW[27mo[27mr[27mk[27me[27mr[27mC[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m;[1B[27m [27m [27m [27m [27mu[27ms[27me[27m [27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27me[27ml[27m:[27m:[27ms[27mc[27mh[27me[27md[27mu[27ml[27me[27mr[27m:[27m:[27m{[27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m,[27m [27ms[27me[27me[27md[27m_[27md[27me[27mp[27me[27mn[27md[27me[27mn[27mc[27mi[27me[27ms[27m,[27m [27ms[27mc[27mh[27med[27mu[27ml[27me[27m}[27m;[2B[27m [27m [27m [27m [27ml[27me[27mt[27m [27md[27mb[27m [27m=[27m [27mt[27mm[27mp[27m_[27md[27mb[27m([27m)[27m;[1B[27m [27m [27m [27m [27ml[27me[27mt[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m [27m=[27m [27m"[27mt[27ma[27ms[27mk[27m-[27mc[27ml[27ma[27mi[27mm[27m-[27mc[27ma[27mp[27m"[27m;[2B[27m [27m [27m [27m [27ms[27me[27me[27md[27m_[27md[27me[27mp[27me[27mn[27md[27me[27mn[27mc[27mi[27me[27ms[27m([27m&[27md[27mb[27m,[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m)[27m.[27mu[27mn[27mw[27mr[27ma[27mp[27m([27m)[27m;[1B[27m [27m [27m [27m [27ms[27mc[27mh[27me[27md[27mu[27ml[27me[27m([27m&[27md[27mb[27m,[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m)[27m.[27mu[27mn[27mw[27mr[27ma[27mp[27m([27m)[27m;[2B[27m [27m [27m [27m [27m/[27m/[27m [27mE[27mx[27me[27mc[27mu[27mt[27mo[27mr[27m [27mн[27mе[27m [27mд[27mо[27mл[27mж[27mе[27mн[27m [27mп[27mо[27mл[27mу[27mч[27mи[27mт[27mь[27m [27mп[27mе[27mр[27mв[27mы[27mй[27m [27mш[27mа[27mг[27m [27m([27mP[27ml[27ma[27mn[27mn[27me[27mr[27m)[1B[27m [27m [27m [27m [27ml[27me[27mt[27m [27mr[27me[27ms[27mu[27ml[27mt[27m [27m=[27m [27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m([27m&[27md[27mb[27m,[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m,[27m [27m"[27mw[27mo[27mr[27mk[27me[27mr[27m-[27me[27mx[27me[27mc[27m"[27m,[27m [27mW[27mo[27mr[27mk[27me[27mr[27mC[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m:[27m:[27mE[27mx[27me[27mc[27mut[27mo[27mr[27m)[27m.[27mu[27mn[27mw[27mr[27ma[27mp[27m([27m)[27m;[1B[27m [27m [27m [27m [27ma[27ms[27ms[27me[27mr[27mt[27m![27m([27mr[27me[27ms[27mu[27ml[27mt[27m.[27mi[27ms[27m_[27mn[27mo[27mn[27me[27m([27m)[27m,[27m [27m"[27me[27mx[27me[27mc[27mu[27mt[27mo[27mr[27m [27ms[27mh[27mo[27mu[27ml[27md[27m [27mn[27mo[27mt[27m [27mc[27ml[27ma[27mi[27mm[27m [27ma[27m [27mp[27ml[27ma[27mn[27mn[27me[27mr[27m [27ms[27mt[27me[27mp[27m"[27m)[27m;[2B[27m [27m [27m [27m [27m/[27m/[27m [27mP[27ml[27ma[27mn[27mn[27me[27mr[27m [27mд[27mо[27mл[27mж[27mе[27mн[27m [27mп[27mо[27mл[27mу[27mч[27mи[27mт[27mь[27m [27mп[27mе[27mр[27mв[27mы[27mй[27m [27mш[27mа[27mг[1B[27m [27m [27m [27m [27ml[27me[27mt[27m [27mr[27me[27ms[27mu[27ml[27mt[27m [27m=[27m [27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m([27m&[27md[27mb[27m,[27m [27mt[27ma[27ms[27mk[27m_[27mi[27md[27m,[27m [27m"[27mw[27mo[27mr[27mk[27me[27mr[27m-[27mp[27ml[27ma[27mn[27m"[27m,[27m [27mW[27mo[27mr[27mk[27me[27mr[27mC[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m:[27m:[27mP[27ml[27ma[27mn[27mne[27mr[27m)[27m.[27mu[27mn[27mw[27mr[27ma[27mp[27m([27m)[27m;[1B[27m [27m [27m [27m [27ma[27ms[27ms[27me[27mr[27mt[27m![27m([27mr[27me[27ms[27mu[27ml[27mt[27m.[27mi[27ms[27m_[27ms[27mo[27mm[27me[27m([27m)[27m,[27m [27m"[27mp[27ml[27ma[27mn[27mn[27me[27mr[27m [27ms[27mh[27mo[27mu[27ml[27md[27m [27mc[27ml[27ma[27mi[27mm[27m [27mf[27mi[27mr[27ms[27mt[27m [27mr[27me[27ma[27md[27my[27m [27ms[27mt[27me[27mp[27m"[27m)[27m;[1B[27m}[1B[27mR[27mU[27mS[27mT[1B[27mc[27ma[27mr[27mg[27mo[27m [27mt[27me[27ms[27mt[27m [27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m_[27mf[27mi[27ml[27mt[27me[27mr[27ms[27m_[27mb[27my[27m_[27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m [27m-[27m-[27m [27m-[27m-[27mn[27mo[27mc[27ma[27mp[27mt[27mu[27mr[27me[27m [27m2[27m>[27m&[27m1[27m [27m|[27m [27mt[27ma[27mi[27ml[27m [27m-[27m2[27m0[1B[K[?2004l
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `CodeFix` is never constructed
+  --> src/workflow/contract.rs:56:5
+   |
+53 | pub enum TaskClass {
+   |          --------- variant in this enum
+...
+56 |     CodeFix,
+   |     ^^^^^^^
+   |
+   = note: `TaskClass` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+Some errors have detailed explanations: E0425, E0433.
+For more information about an error, try `rustc --explain E0425`.
+error: could not compile `deterministic_ai_kernel` (test "scheduler_integration") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+warning: `deterministic_ai_kernel` (bin "deterministic_ai_kernel" test) generated 1 warning
+warning: `deterministic_ai_kernel` (bin "deterministic_ai_kernel") generated 2 warnings (1 duplicate)
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mcargo test claim_step_filte[7mr[7ms_by_capability -- --nocapture 2>&1 | grep "error\[" -A 5[27m[K
+[K[A[A[53C[27mc[27ma[27mr[27mg[27mo[27m [27mt[27me[27ms[27mt[27m [27mc[27ml[27ma[27mi[27mm[27m_[27ms[27mt[27me[27mp[27m_[27mf[27mi[27ml[27mt[27mer[27ms[27m_[27mb[27my[27m_[27mc[27ma[27mp[27ma[27mb[27mi[27ml[27mi[27mt[27my[27m [27m-[27m-[27m [27m-[27m-[27mn[27mo[27mc[27ma[27mp[27mt[27mu[27mr[27me[27m [27m2[27m>[27m&[27m1[27m [27m|[27m [27mg[27mr[27me[27mp[27m [27m"[27me[27mr[27mr[27mo[27mr[27m\[27m[[27m"[27m [27m-[27mA[27m [27m5[1B[K[?2004l
+error[E0433]: cannot find module or crate `deterministic_ai_kernel` in this scope
+   --> tests/scheduler_integration.rs:234:9
+    |
+234 |     use deterministic_ai_kernel::workflow::contract::WorkerCapability;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `deterministic_ai_kernel`
+    |
+--
+error[E0433]: cannot find module or crate `deterministic_ai_kernel` in this scope
+   --> tests/scheduler_integration.rs:235:9
+    |
+235 |     use deterministic_ai_kernel::scheduler::{claim_step, seed_dependenc...
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `deterministic_ai_kernel`
+    |
+--
+error[E0425]: cannot find function `tmp_db` in this scope
+   --> tests/scheduler_integration.rs:237:14
+    |
+237 |     let db = tmp_db();
+    |              ^^^^^^ not found in this scope
+
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mhead -20 /Users/denissmolia[7mk[7mov/deterministic_ai_kernel/tests/scheduler_integration.rs[27m[K
+[K[A[A[53C[27mh[27me[27ma[27md[27m [27m-[27m2[27m0[27m [27m/[27mU[27ms[27me[27mr[27ms[27m/[27md[27me[27mn[27mi[27ms[27ms[27mm[27mo[27ml[27mi[27mak[27mo[27mv[27m/[27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27me[27ml[27m/[27mt[27me[27ms[27mt[27ms[27m/[27ms[27mc[27mh[27me[27md[27mu[27ml[27me[27mr[27m_[27mi[27mn[27mt[27me[27mg[27mr[27ma[27mt[27mi[27mo[27mn[27m.[27mr[27ms[1B[K[?2004l
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn unique_db_path(test_name: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("deterministic_ai_kernel_{}_{}.db", test_name, nanos))
+}
+
+fn run(db: &PathBuf, args: &[&str]) -> String {
+    let out = Command::new("cargo")
+        .args(["run", "--quiet", "--"])
+        .env("KERNEL_DB_PATH", db.as_os_str())
+        .args(args)
+        .output()
+        .expect("failed to run command");
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mexport CARGO_TERM_COLOR=alw[7ma[7mys[27m[K[A[50C[27me[27mx[27mp[27mo[27mr[27mt[27m [27mC[27mA[27mR[27mG[27mO[27m_[27mT[27mE[27mR[27mM[27m_[27mC[27mO[27mL[27mO[27mR[27m=[27ma[27ml[27mwa[27my[27ms[?2004l
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mcd ~/deterministic_ai_kerne[7ml[7m && cat src/lib.rs 2>/dev/null || echo "NO_LIB"[27m[K
+[K[A[A[53C[27mc[27md[27m [27m~[27m/[27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27mel[27m [27m&[27m&[27m [27mc[27ma[27mt[27m [27ms[27mr[27mc[27m/[27ml[27mi[27mb[27m.[27mr[27ms[27m [27m2[27m>[27m/[27md[27me[27mv[27m/[27mn[27mu[27ml[27ml[27m [27m|[27m|[27m [27me[27mc[27mh[27mo[27m [27m"[27mN[27mO[27m_[27mL[27mI[27mB[27m"[1B[K[?2004l
+NO_LIB
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mcd ~/deterministic_ai_kerne[7ml[7m && cat Cargo.toml | grep -A5 '\\[\\[bin\\]\]\|\\[lib\\]'[27m[K
+[K[A[A[53C[27mc[27md[27m [27m~[27m/[27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mn[27mel[27m [27m&[27m&[27m [27mc[27ma[27mt[27m [27mC[27ma[27mr[27mg[27mo[27m.[27mt[27mo[27mm[27ml[27m [27m|[27m [27mg[27mr[27me[27mp[27m [27m-[27mA[27m5[27m [27m'[27m\[27m\[27m[[27m\[27m\[27m[[27mb[27mi[27mn[27m\[27m\[27m][27m\[27m][27m\[27m|[27m\[27m\[27m[[27ml[27mi[27mb[27m\[27m\[27m][27m'[1B[K[?2004l
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h[7mcat ~/deterministic_ai_kern[7me[7ml/Cargo.toml[27m[K
+[K[A[A[53C[27mc[27ma[27mt[27m [27m~[27m/[27md[27me[27mt[27me[27mr[27mm[27mi[27mn[27mi[27ms[27mt[27mi[27mc[27m_[27ma[27mi[27m_[27mk[27me[27mr[27mne[27ml[27m/[27mC[27ma[27mr[27mg[27mo[27m.[27mt[27mo[27mm[27ml[1B[K[?2004l
+[package]
+name = "deterministic_ai_kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+dotenvy = "0.15"
+[1m[7m%[27m[1m[0m                                                                                ]7;file://MacBook-Pro.local/Users/denissmoliakov/deterministic_ai_kernel[0m[27m[24m[Jdenissmoliakov@MacBook-Pro deterministic_ai_kernel % [K[?2004h
