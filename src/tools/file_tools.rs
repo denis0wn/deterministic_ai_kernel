@@ -36,11 +36,42 @@ pub(crate) fn resolve_safe(path: &str, workspace: &str) -> Result<std::path::Pat
         }
     }
 
-    // Fallback: use the target as-is but check it starts with ws
-    if !target.starts_with(&ws) {
+    // Fallback: neither the target nor its parent exists yet, so nothing can
+    // be canonicalized. Normalize '..' lexically before the prefix check —
+    // Path::starts_with compares component-wise and does NOT resolve '..',
+    // so checking the raw target would let "ws/x/../../etc/passwd" through
+    // and the subsequent fs call would resolve it at OS level.
+    let normalized = lexical_normalize(&target);
+    if !normalized.starts_with(&ws) {
         return Err("Path escapes workspace root".to_string());
     }
-    Ok(target)
+    Ok(normalized)
+}
+
+/// Lexically resolve `.` and `..` without touching the filesystem.
+///
+/// Only used when canonicalization is impossible because the target and its
+/// parent do not exist yet. Symlinks are NOT resolved here; the canonicalize
+/// branches in `resolve_safe` above are what handle those.
+fn lexical_normalize(target: &Path) -> std::path::PathBuf {
+    use std::path::Component;
+
+    let mut out = std::path::PathBuf::new();
+    for component in target.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // pop() fails at a root ("/.." == "/") or on an empty relative
+                // path. Keep ".." only in the relative case, so that escaping
+                // above the workspace stays visible to the starts_with check.
+                if !out.pop() && !out.is_absolute() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 pub async fn read_file(
@@ -319,4 +350,81 @@ pub async fn get_file_info(
         "modified_unix": modified,
         "readonly": meta.permissions().readonly(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Disposable workspace per test — never the user's repository.
+    fn fresh_workspace(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "dak_file_tools_{}_{}_{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("create workspace");
+        dir.canonicalize().expect("canonical workspace")
+    }
+
+    #[test]
+    fn lexical_normalize_collapses_parent_dir_components() {
+        let p = Path::new("/ws/sub/../other/./f.txt");
+        assert_eq!(lexical_normalize(p), Path::new("/ws/other/f.txt"));
+    }
+
+    #[test]
+    fn lexical_normalize_keeps_escape_visible_for_relative_paths() {
+        // A relative path that climbs above its start must not be silently
+        // collapsed to "/", otherwise the starts_with check would pass.
+        assert_eq!(lexical_normalize(Path::new("../x")), Path::new("../x"));
+    }
+
+    #[test]
+    fn resolve_safe_rejects_dotdot_escape_through_the_fallback_branch() {
+        let ws = fresh_workspace("fallback_escape");
+        // Neither the target nor its parent exists, so canonicalization fails
+        // and resolve_safe reaches the lexical fallback.
+        let err = resolve_safe("missing_dir/../../outside.txt", &ws.to_string_lossy())
+            .expect_err("traversal must be rejected");
+        assert!(
+            err.contains("escapes workspace"),
+            "expected an escape error, got: {err}"
+        );
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn resolve_safe_still_allows_new_file_in_a_new_subdirectory() {
+        let ws = fresh_workspace("new_subdir");
+        // The fallback must stay usable for legitimate creation of a file
+        // whose parent directory does not exist yet.
+        let got = resolve_safe("brand_new_dir/report.md", &ws.to_string_lossy())
+            .expect("new file inside the workspace must resolve");
+        assert!(got.starts_with(&ws), "resolved outside workspace: {got:?}");
+        assert_eq!(got.file_name().unwrap(), "report.md");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn resolve_safe_rejects_absolute_path_outside_workspace() {
+        let ws = fresh_workspace("absolute_outside");
+        let err = resolve_safe("/etc/passwd", &ws.to_string_lossy())
+            .expect_err("absolute path outside workspace must be rejected");
+        assert!(err.contains("escapes workspace"), "got: {err}");
+        std::fs::remove_dir_all(&ws).ok();
+    }
+
+    #[test]
+    fn resolve_safe_accepts_existing_file_inside_workspace() {
+        let ws = fresh_workspace("existing_inside");
+        std::fs::write(ws.join("ok.txt"), b"x").expect("write fixture");
+        let got = resolve_safe("ok.txt", &ws.to_string_lossy()).expect("must resolve");
+        assert_eq!(got, ws.join("ok.txt"));
+        std::fs::remove_dir_all(&ws).ok();
+    }
 }

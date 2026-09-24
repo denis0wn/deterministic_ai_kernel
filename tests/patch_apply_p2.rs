@@ -132,19 +132,24 @@ fn patch_then_apply_spec(workspace: &str) -> serde_json::Value {
         },
     ]);
     // steps: 00_patch_code, 01_apply_patch
-    let apply = spec
-        .steps
-        .iter_mut()
-        .find(|s| s.step_id == "01_apply_patch")
-        .unwrap();
-    apply
-        .primitive
-        .as_mut()
-        .unwrap()
-        .payload
-        .as_object_mut()
-        .unwrap()
-        .insert("workspace".to_string(), json!(workspace));
+    // Both steps are confined to the same authorized workspace: PatchCode
+    // reads the target file to ground the prompt, ApplyPatch writes it. Since
+    // the H-1/H-2 confinement fix the executor refuses any filesystem access
+    // without one, so the workspace is declared on both, not only on apply.
+    for step_id in ["00_patch_code", "01_apply_patch"] {
+        let step = spec
+            .steps
+            .iter_mut()
+            .find(|s| s.step_id == step_id)
+            .unwrap();
+        step.primitive
+            .as_mut()
+            .unwrap()
+            .payload
+            .as_object_mut()
+            .unwrap()
+            .insert("workspace".to_string(), json!(workspace));
+    }
     serde_json::to_value(&spec).unwrap()
 }
 
@@ -403,10 +408,21 @@ fn e2e_stale_file_between_generation_and_apply_is_rejected() {
     let payload = format!("Fix multiply in {}", fixture.display());
 
     // Step 1: generate the patch through the real PatchCode executor.
-    let gen_spec = steps_to_exec_spec(&[Step {
+    let mut gen_spec = steps_to_exec_spec(&[Step {
         kind: StepKind::PatchCode,
         detail: Some("patch code".to_string()),
     }]);
+    // PatchCode reads the target file to ground the prompt; since the H-1
+    // confinement fix that read is workspace-scoped, so the step must declare
+    // the same authorized workspace the apply step uses below.
+    gen_spec.steps[0]
+        .primitive
+        .as_mut()
+        .unwrap()
+        .payload
+        .as_object_mut()
+        .unwrap()
+        .insert("workspace".to_string(), json!(ws.to_str().unwrap()));
     let prim = gen_spec.steps[0].primitive.as_ref().unwrap();
     let result = PrimitiveExecutor::execute("p2-stale-gen", prim, &payload)
         .expect("patch generation succeeds");

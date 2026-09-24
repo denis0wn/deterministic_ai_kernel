@@ -74,20 +74,27 @@ fn mock_llm_embed_text_different_inputs_differ() {
 #[test]
 fn primitive_write_with_llm_uses_mock() {
     test_util::register_mock_llm();
-    let tmp = tempfile::NamedTempFile::new().unwrap();
-    let path = tmp.path().to_str().unwrap();
+    // H-2: model output may only be written inside the authorized workspace,
+    // so the destination lives in a workspace declared on the step payload.
+    // This test previously wrote to a bare tempfile path with no confinement.
+    let ws = tempfile::tempdir().unwrap();
+    let target = ws.path().join("llm_output.txt");
 
     let spec = PrimitiveSpec {
         id: PrimitiveId("write-llm-test".to_string()),
         kind: PrimitiveKind::Write,
-        payload: json!({"path": path, "requires_llm": true}),
+        payload: json!({
+            "path": target.to_str().unwrap(),
+            "requires_llm": true,
+            "workspace": ws.path().to_str().unwrap(),
+        }),
     };
 
     let result = PrimitiveExecutor::execute("t1", &spec, "generate patch").unwrap();
     assert_eq!(result.status, "ok");
 
     // Verify the file was written with mock content
-    let content = std::fs::read_to_string(path).unwrap();
+    let content = std::fs::read_to_string(&target).unwrap();
     assert!(content.starts_with("mock-llm-response-to:"));
 }
 

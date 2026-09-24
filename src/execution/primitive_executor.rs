@@ -64,17 +64,60 @@ fn executor_prompt_for(step_kind: &str, detail: &str) -> String {
     }
 }
 
+/// Resolve the operator-authorized workspace for filesystem primitives.
+///
+/// Mirrors the pattern already used by `execute_apply_patch` and
+/// `execute_run_tests`: an explicit payload value wins, otherwise
+/// `DAK_CODEFIX_WORKSPACE`. `None` means no confinement is possible, and
+/// every caller must fail closed rather than touch the filesystem.
+fn authorized_workspace(payload: &serde_json::Value) -> Option<String> {
+    payload
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| std::env::var("DAK_CODEFIX_WORKSPACE").ok())
+}
+
+/// Confine a candidate path to the authorized workspace (audit H-1/H-2).
+///
+/// `resolve_safe` canonicalizes symlinks and rejects `..` escapes. A missing
+/// workspace or an escaping path is terminal: this executor used to read
+/// task-derived paths and write model-supplied content with no confinement at
+/// all, which is what made arbitrary file read and arbitrary file write
+/// reachable from `pipeline-run`.
+fn confined(candidate: &str, workspace: Option<&str>) -> Result<std::path::PathBuf> {
+    let ws = workspace.ok_or_else(|| {
+        anyhow!("fatal: filesystem step has no authorized workspace (set DAK_CODEFIX_WORKSPACE)")
+    })?;
+    crate::tools::file_tools::resolve_safe(candidate, ws)
+        .map_err(|e| anyhow!("fatal: path '{candidate}' rejected by workspace confinement: {e}"))
+}
+
 /// Build the grounding section with the real target file content for
-/// LocateBug/PatchCode prompts (P1, H-1 fix). Empty string when the task
-/// text does not name an existing file.
-fn grounded_file_section(task_payload: &str) -> String {
-    match patch_contract::extract_target_file(task_payload)
-        .and_then(|target| std::fs::read_to_string(&target).ok().map(|c| (target, c)))
-    {
-        Some((target, content)) => {
-            format!("\n\nFILE: {}\nFILE CONTENT:\n<<<\n{}\n>>>", target, content)
-        }
-        None => String::new(),
+/// LocateBug/PatchCode prompts (P1). Empty string when the task text does not
+/// name a file inside the authorized workspace.
+///
+/// Grounding is an enhancement, not a step requirement: when no workspace is
+/// authorized, or the named file escapes it, this returns "" and the prompt
+/// degrades to its pre-P1 form instead of reading an arbitrary path. Such a
+/// run still fails later — apply_patch and run_tests both require a
+/// workspace — so degrading here does not hide a misconfiguration.
+fn grounded_file_section(task_payload: &str, workspace: Option<&str>) -> String {
+    let target = match patch_contract::extract_target_file(task_payload) {
+        Some(t) => t,
+        None => return String::new(),
+    };
+    let canonical = match confined(&target, workspace) {
+        Ok(p) => p,
+        Err(_) => return String::new(),
+    };
+    match std::fs::read_to_string(&canonical) {
+        Ok(content) => format!(
+            "\n\nFILE: {}\nFILE CONTENT:\n<<<\n{}\n>>>",
+            canonical.display(),
+            content
+        ),
+        Err(_) => String::new(),
     }
 }
 
@@ -314,29 +357,35 @@ impl PrimitiveExecutor {
                     .get("path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("repository");
+                let workspace = authorized_workspace(payload);
 
-                // P1 grounding (H-1 fix): "repository" reads resolve the real
-                // target file named in the task payload when one exists;
-                // otherwise the legacy payload fallback is preserved.
+                // P1 grounding: "repository" reads resolve the real target
+                // file named in the task payload when one exists INSIDE the
+                // authorized workspace; otherwise the legacy payload fallback
+                // is preserved. A path that escapes confinement degrades to
+                // the fallback instead of being read (audit H-1).
                 let (resolved_path, content) = if path == "repository" {
-                    if let Some(target) = patch_contract::extract_target_file(task_payload) {
-                        if let Ok(c) = std::fs::read_to_string(&target) {
-                            (target, c)
-                        } else {
-                            ("repository".to_string(), task_payload.to_string())
-                        }
-                    } else {
-                        ("repository".to_string(), task_payload.to_string())
+                    match patch_contract::extract_target_file(task_payload)
+                        .and_then(|target| confined(&target, workspace.as_deref()).ok())
+                        .and_then(|canonical| {
+                            std::fs::read_to_string(&canonical).ok().map(|c| {
+                                (canonical.to_string_lossy().to_string(), c)
+                            })
+                        }) {
+                        Some(pair) => pair,
+                        None => ("repository".to_string(), task_payload.to_string()),
                     }
-                } else if std::path::Path::new(path).exists() {
-                    // Read actual file from filesystem
-                    (
-                        path.to_string(),
-                        providers::get_filesystem().read_to_string(path)?,
-                    )
                 } else {
-                    // File not found — return error context
-                    (path.to_string(), format!("[file not found: {}]", path))
+                    // Explicit-path reads are confined the same way. Without
+                    // an authorized workspace this is terminal: there is no
+                    // boundary to enforce, so no filesystem access at all.
+                    let canonical = confined(path, workspace.as_deref())?;
+                    let display = canonical.to_string_lossy().to_string();
+                    if canonical.exists() {
+                        (display.clone(), providers::get_filesystem().read_to_string(&display)?)
+                    } else {
+                        (display, format!("[file not found: {}]", canonical.display()))
+                    }
                 };
 
                 Ok(PrimitiveResult {
@@ -355,6 +404,7 @@ impl PrimitiveExecutor {
                     .get("path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("artifacts/final_patch.txt");
+                let workspace = authorized_workspace(payload);
 
                 let requires_llm = payload
                     .get("requires_llm")
@@ -381,10 +431,14 @@ impl PrimitiveExecutor {
                         .ok_or_else(|| {
                             anyhow!("fatal: malformed patch: no target file resolvable from task")
                         })?;
-                    let file_content = std::fs::read_to_string(&target).map_err(|_| {
+                    // Confine before reading: `target` may come straight from
+                    // the task payload through extract_target_file, which by
+                    // design yields absolute paths too (audit H-1).
+                    let canonical_target = confined(&target, workspace.as_deref())?;
+                    let file_content = std::fs::read_to_string(&canonical_target).map_err(|_| {
                         anyhow!(
                             "fatal: malformed patch: target file '{}' does not exist or is unreadable",
-                            target
+                            canonical_target.display()
                         )
                     })?;
                     let prompt = patch_prompt(&target, &file_content, task_payload);
@@ -471,10 +525,29 @@ impl PrimitiveExecutor {
                         .to_string()
                 };
 
-                providers::get_filesystem().write(path, &content)?;
+                // H-2: the destination is confined as well. `content` here can
+                // be raw model output (the requires_llm branches above), so an
+                // unvalidated `path` meant model-influenced writes to anywhere
+                // the process could reach. Note this also changes where the
+                // default "artifacts/final_patch.txt" lands: it is now relative
+                // to the authorized workspace instead of the ambient CWD.
+                let write_target = confined(path, workspace.as_deref())?;
+                let write_display = write_target.to_string_lossy().to_string();
+                // The confined destination is workspace-relative, so its parent
+                // may not exist yet. file_tools::write_file already creates it;
+                // do the same here instead of failing on a missing directory.
+                if let Some(parent) = write_target.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        anyhow!(
+                            "fatal: cannot create output directory '{}': {e}",
+                            parent.display()
+                        )
+                    })?;
+                }
+                providers::get_filesystem().write(&write_display, &content)?;
 
                 let mut output = serde_json::Map::new();
-                output.insert("path".to_string(), serde_json::json!(path));
+                output.insert("path".to_string(), serde_json::json!(write_display));
                 output.insert(
                     "written_bytes".to_string(),
                     serde_json::json!(content.len()),
@@ -592,9 +665,13 @@ impl PrimitiveExecutor {
                             .unwrap_or("ExecuteChanges");
                         let mut prompt = executor_prompt_for(step_kind, detail);
                         if step_kind == "LocateBug" {
-                            // P1 grounding (H-1 fix): the locator sees the
-                            // real file content, not only the task wording.
-                            prompt.push_str(&grounded_file_section(task_payload));
+                            // P1 grounding: the locator sees the real file
+                            // content, not only the task wording. The read is
+                            // confined to the authorized workspace (audit H-1).
+                            prompt.push_str(&grounded_file_section(
+                                task_payload,
+                                authorized_workspace(payload).as_deref(),
+                            ));
                         }
 
                         // R8: deterministic RAG for AnswerQuestion. Enabled
@@ -877,34 +954,125 @@ mod tests {
     }
 
     #[test]
-    fn grounded_file_section_reads_real_file() {
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    fn grounded_file_section_reads_file_inside_workspace() {
         use std::io::Write;
-        writeln!(tmp, "marker-content-123").unwrap();
-        let path = tmp.path().to_str().unwrap();
-        let section = grounded_file_section(&format!("fix the bug in {}", path));
-        assert!(section.contains("marker-content-123"));
-        assert!(section.contains(path));
+        let ws = tempfile::tempdir().unwrap();
+        let mut f = std::fs::File::create(ws.path().join("calc.py")).unwrap();
+        writeln!(f, "marker-content-123").unwrap();
+
+        let section = grounded_file_section("fix the bug in calc.py", ws.path().to_str());
+        assert!(
+            section.contains("marker-content-123"),
+            "grounding must read the workspace file, got: {section}"
+        );
+        assert!(section.contains("calc.py"));
     }
 
     #[test]
     fn grounded_file_section_is_empty_without_target() {
-        assert_eq!(grounded_file_section("fix the bug"), "");
+        let ws = tempfile::tempdir().unwrap();
+        assert_eq!(grounded_file_section("fix the bug", ws.path().to_str()), "");
+    }
+
+    /// H-1: an absolute path named in the task text must NOT be read when it
+    /// lies outside the authorized workspace. The previous implementation read
+    /// it unconditionally and fed the content into the model prompt.
+    #[test]
+    fn grounded_file_section_refuses_absolute_path_outside_workspace() {
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        let outside_path = outside.path().to_str().unwrap().to_string();
+        std::fs::write(&outside_path, b"secret-outside-marker").unwrap();
+
+        let ws = tempfile::tempdir().unwrap();
+        let section = grounded_file_section(
+            &format!("fix the bug in {outside_path}"),
+            ws.path().to_str(),
+        );
+        assert_eq!(
+            section, "",
+            "grounding must not read outside the workspace, got: {section}"
+        );
+    }
+
+    /// No authorized workspace means no filesystem access at all, so grounding
+    /// degrades to the pre-P1 prompt shape instead of reading an arbitrary path.
+    #[test]
+    fn grounded_file_section_is_empty_without_workspace() {
+        let named = tempfile::NamedTempFile::new().unwrap();
+        let path = named.path().to_str().unwrap().to_string();
+        std::fs::write(&path, b"marker-content-123").unwrap();
+
+        assert_eq!(
+            grounded_file_section(&format!("fix the bug in {path}"), None),
+            ""
+        );
     }
 
     #[test]
     fn write_without_llm_uses_payload_content() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let path = tmp.path().to_str().unwrap();
+        let ws = tempfile::tempdir().unwrap();
         let spec = spec_for(
             PrimitiveKind::Write,
-            json!({"path": path, "content": "patch data"}),
+            json!({
+                "path": "final_patch.txt",
+                "content": "patch data",
+                "workspace": ws.path().to_str().unwrap(),
+            }),
         );
         let result = PrimitiveExecutor::execute("t1", &spec, "ignored").unwrap();
         assert_eq!(result.status, "ok");
         assert_eq!(result.output["written_bytes"], 10);
-        let written = std::fs::read_to_string(path).unwrap();
+        let written = std::fs::read_to_string(ws.path().join("final_patch.txt")).unwrap();
         assert_eq!(written, "patch data");
+    }
+
+    /// H-2: a write whose destination escapes the authorized workspace must be
+    /// refused, and nothing may reach the disk outside it.
+    #[test]
+    fn write_refuses_path_outside_workspace() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("escaped.txt");
+        let spec = spec_for(
+            PrimitiveKind::Write,
+            json!({
+                "path": target.to_str().unwrap(),
+                "content": "malicious",
+                "workspace": ws.path().to_str().unwrap(),
+            }),
+        );
+        let err = PrimitiveExecutor::execute("t1", &spec, "ignored")
+            .expect_err("write outside the workspace must fail");
+        assert!(
+            err.to_string().contains("confinement"),
+            "expected a confinement error, got: {err}"
+        );
+        assert!(
+            !target.exists(),
+            "nothing may be written outside the workspace"
+        );
+    }
+
+    /// H-1: an explicit Read path outside the workspace must be refused rather
+    /// than returned as file content.
+    #[test]
+    fn read_refuses_path_outside_workspace() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), b"secret-outside-marker").unwrap();
+        let spec = spec_for(
+            PrimitiveKind::Read,
+            json!({
+                "path": outside.path().to_str().unwrap(),
+                "workspace": ws.path().to_str().unwrap(),
+            }),
+        );
+        let err = PrimitiveExecutor::execute("t1", &spec, "ignored")
+            .expect_err("read outside the workspace must fail");
+        assert!(
+            err.to_string().contains("confinement"),
+            "expected a confinement error, got: {err}"
+        );
     }
 
     #[test]
