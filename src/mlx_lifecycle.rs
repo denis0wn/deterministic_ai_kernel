@@ -403,6 +403,7 @@ impl MlxLifecycle {
         inner.base_url = Some(base_url.to_string());
 
         if probe_endpoint(base_url) {
+            let mut adopted_now = false;
             if inner.owned_pid.is_none() && !inner.external {
                 // A server is already serving. If our own persisted state
                 // says the kernel owns it (a prior process started it and
@@ -418,6 +419,7 @@ impl MlxLifecycle {
                 match adopted {
                     Some(pid) if process_alive(pid) => {
                         inner.owned_pid = Some(pid);
+                        adopted_now = true;
                     }
                     _ => {
                         inner.external = true;
@@ -430,6 +432,13 @@ impl MlxLifecycle {
             self.persist_locked(&inner);
             drop(inner);
             self.start_watcher();
+            // LC-1 fix: the in-process watcher dies with this process. An
+            // ADOPTING process must also guarantee a detached supervisor,
+            // otherwise a server whose original supervisor died becomes an
+            // orphan that nobody unloads after the last CLI exits.
+            if adopted_now {
+                self.ensure_supervisor();
+            }
             return Ok(());
         }
 
@@ -717,20 +726,30 @@ impl MlxLifecycle {
             let mut inner = self.lock();
             if inner.owned_pid.is_none() && !inner.external {
                 // Adoption path for orphaned owned servers.
+                // LC-1 fix: adopt when the persisted pid is alive and
+                // identifies as the managed server EVEN IF the ownership
+                // record was lost (owned=false with a live server is the
+                // orphan state; requiring p.owned made such orphans
+                // unstoppable except by manual kill). The pid-reuse guard
+                // (process_looks_like_server) is unchanged: an unrelated
+                // process can never be SIGTERMed via adoption.
+                // LC-1: scan fallback only when a persisted state EXISTS and
+                // says a server was loaded — a missing state file means
+                // nothing was ever owned (stop stays a noop).
                 if let Some(p) = read_state_file(&inner.cfg.state_file) {
-                    if p.owned && p.state != LifecycleState::Unloaded {
-                        if let Some(pid) = p.pid {
-                            // P4-D: before adopting (and later signaling) a
-                            // pid this process did not spawn, verify it
-                            // still identifies as the managed server. This
-                            // closes the pid-reuse / stale-state hazard: an
-                            // unrelated process can never be SIGTERMed via
-                            // lifecycle adoption.
-                            if process_alive(pid) && process_looks_like_server(pid, &inner.cfg) {
-                                inner.owned_pid = Some(pid);
-                                if inner.base_url.is_none() {
-                                    inner.base_url = Some(p.base_url.clone());
-                                }
+                    if p.state != LifecycleState::Unloaded {
+                        let alive_recorded = p.pid.filter(|pid| process_alive(*pid));
+                        let adopt_pid = match alive_recorded {
+                            Some(pid) if process_looks_like_server(pid, &inner.cfg) => Some(pid),
+                            // State lost the pid (or it went stale): last
+                            // resort — discover the single matching server
+                            // process in the process table.
+                            _ => find_likely_managed_server_pid(&inner.cfg),
+                        };
+                        if let Some(pid) = adopt_pid {
+                            inner.owned_pid = Some(pid);
+                            if inner.base_url.is_none() {
+                                inner.base_url = Some(p.base_url.clone());
                             }
                         }
                     }
@@ -1051,6 +1070,55 @@ pub fn process_looks_like_server(pid: u32, cfg: &LifecycleConfig) -> bool {
         .unwrap_or("mlx_lm.server")
         .to_lowercase();
     cmdline.contains(&want) || cmdline.contains("mlx_lm") || cmdline.contains("mlx")
+}
+
+/// LC-1: last-resort discovery for orphan adoption when the persisted state
+/// lost the pid (owned=false, pid=null while the server is alive). Scans
+/// the process table for python+mlx_lm processes and returns the pid ONLY
+/// when exactly one candidate exists — ambiguity refuses adoption rather
+/// than risking a wrong SIGTERM.
+fn find_likely_managed_server_pid(cfg: &LifecycleConfig) -> Option<u32> {
+    let out = std::process::Command::new("ps")
+        .args(["-eo", "pid=,command="])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    let want = cfg
+        .server_command
+        .split('/')
+        .next_back()
+        .unwrap_or("mlx_lm.server")
+        .to_lowercase();
+    let own_pid = std::process::id();
+    let mut candidates: Vec<u32> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let mut split = line.splitn(2, char::is_whitespace);
+        let pid_str = split.next().unwrap_or("");
+        let rest = split.next().unwrap_or("").trim();
+        // The EXECUTABLE must be a python interpreter; mlx markers must be
+        // in its ARGUMENTS. Matching the whole line lets shell wrappers
+        // whose command text merely mentions "python" and "mlx_lm" pose as
+        // candidates (that ambiguity once blocked a legitimate adoption).
+        let exe = rest.split_whitespace().next().unwrap_or("");
+        let exe_base = exe.split('/').next_back().unwrap_or("");
+        if !(exe_base.contains("python") && (rest.contains(&want) || rest.contains("mlx_lm"))) {
+            continue;
+        }
+        if let Ok(pid) = pid_str.parse::<u32>() {
+            if pid != own_pid && !process_is_zombie(pid) {
+                candidates.push(pid);
+            }
+        }
+    }
+    if candidates.len() == 1 {
+        Some(candidates[0])
+    } else {
+        None
+    }
 }
 
 /// P4-C: persist a truthful Unloaded marker when the owned server is already
@@ -1397,5 +1465,66 @@ mod tests {
         };
         let report = lc.stop_managed_server().expect("external stop is noop");
         assert!(!report.attempted, "external server must never be touched");
+    }
+
+    /// LC-1 regression: an ORPHANED server whose ownership record was lost
+    /// (owned=false, pid=null in the state file while the process is alive)
+    /// must still be stoppable via adoption — previously such orphans were
+    /// unstoppable except by manual kill.
+    #[test]
+    fn orphan_with_lost_ownership_is_still_stoppable() {
+        // Spawn a fake server process identifiable as python + mlx_lm.
+        let fake_script =
+            std::env::temp_dir().join(format!("dak_fake_mlx_lm_server_{}.py", std::process::id()));
+        std::fs::write(&fake_script, "import time\ntime.sleep(30)\n").unwrap();
+        let mut child = std::process::Command::new("python3")
+            .arg(&fake_script)
+            .spawn()
+            .expect("spawn fake server");
+        let fake_pid = child.id();
+
+        // Orphan state file: ownership lost (owned=false, pid=null) while
+        // the server is alive.
+        let cfg = isolated_test_cfg();
+        write_state_file(
+            &cfg.state_file,
+            &PersistedState {
+                pid: None,
+                owned: false,
+                state: LifecycleState::ModelLoaded,
+                model: "/tmp/nonexistent-model".to_string(),
+                base_url: String::new(),
+                started_unix: now_unix(),
+                last_activity_unix: now_unix(),
+                supervisor_pid: None,
+            },
+        );
+
+        let lc = MlxLifecycle {
+            inner: Mutex::new(Inner {
+                cfg: cfg.clone(),
+                state: LifecycleState::Idle,
+                child: None,
+                owned_pid: None,
+                external: false,
+                base_url: None,
+                last_activity: Instant::now(),
+                last_activity_unix: now_unix(),
+                last_failure: None,
+                supervisor_pid: None,
+            }),
+        };
+        let report = lc.stop_managed_server().expect("orphan stop must adopt");
+        let _ = child.wait(); // reap
+        let _ = std::fs::remove_file(&fake_script);
+        let _ = std::fs::remove_file(&cfg.state_file);
+
+        assert!(
+            report.attempted,
+            "orphan with lost ownership must be adopted and stopped (detail: {})",
+            report.detail
+        );
+        assert_eq!(report.pid, Some(fake_pid), "must stop the discovered pid");
+        assert!(report.process_gone, "fake server must be gone");
     }
 }

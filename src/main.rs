@@ -204,6 +204,47 @@ fn vacuum_db(db: &str) {
     println!("VACUUM OK");
 }
 
+/// PROGRESS UNTIL VERIFIED stage 3: record the terminal taxonomy
+/// assessment for the task's fingerprint group as an observation-only
+/// TASK_TERMINAL_ASSESSED event. Never fatal — a failed assessment
+/// must not mask the real task outcome.
+fn record_terminal_assessment(db: &str, task_id: &str) {
+    let conn = match deterministic_ai_kernel::providers::storage::open_initialized(db) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("progress: terminal assessment could not open db: {e}");
+            return;
+        }
+    };
+    match deterministic_ai_kernel::progress::terminal_assessment_for_task(
+        &conn,
+        std::path::Path::new("artifacts"),
+        task_id,
+    ) {
+        Ok(Some((fp, taxonomy, basis))) => {
+            let payload = serde_json::json!({
+                "task_id": task_id,
+                "payload_fingerprint": fp,
+                "taxonomy": serde_json::to_value(&taxonomy)
+                    .unwrap_or(serde_json::json!("InProgress")),
+                "basis": basis,
+                "policy": "progress_until_verified/stage3",
+            });
+            if let Err(e) = deterministic_ai_kernel::providers::storage_for(db).append_event(
+                task_id,
+                None,
+                "TASK_TERMINAL_ASSESSED",
+                &payload,
+            ) {
+                eprintln!("progress: failed to record TASK_TERMINAL_ASSESSED: {e}");
+            }
+            println!("TERMINAL_ASSESSMENT: {taxonomy:?} ({basis})");
+        }
+        Ok(None) => {}
+        Err(e) => eprintln!("progress: terminal assessment failed: {e}"),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     deterministic_ai_kernel::model_registry::validate().unwrap();
@@ -1041,6 +1082,8 @@ async fn main() {
             let mut payload: Option<String> = None;
             let mut seed: u64 = 42;
             let mut as_json = false;
+            // Stage 4 decomposition: operator-declared lemma registration.
+            let mut subtask_of: Option<String> = None;
             let mut i = 2usize;
             while i < args.len() {
                 match args[i].as_str() {
@@ -1055,6 +1098,10 @@ async fn main() {
                     "--seed" => {
                         i += 1;
                         seed = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(42);
+                    }
+                    "--subtask-of" => {
+                        i += 1;
+                        subtask_of = args.get(i).cloned();
                     }
                     "--json" => {
                         as_json = true;
@@ -1107,6 +1154,44 @@ async fn main() {
                 eprintln!("Failed to write pipeline input: {e}");
                 std::process::exit(1);
             });
+            // PROGRESS UNTIL VERIFIED — stage 2 (detect-only): if this exact
+            // payload already failed with a byte-identical failure
+            // signature, record a REPETITION observation event. Detection
+            // never blocks execution in stage 2; strategy selection is a
+            // later stage.
+            match deterministic_ai_kernel::providers::storage::open_initialized(db) {
+                Ok(conn) => {
+                    match deterministic_ai_kernel::progress::prior_failure_matches(
+                        &conn,
+                        std::path::Path::new("artifacts"),
+                        &resolved,
+                    ) {
+                        Ok(Some((prior_task, reason))) => {
+                            let strategies =
+                                deterministic_ai_kernel::strategy::admissible_strategies(&reason);
+                            let repetition_payload = serde_json::json!({
+                                "task_id": task_id,
+                                "repeats_task": prior_task,
+                                "payload_fingerprint":
+                                    deterministic_ai_kernel::progress::payload_fingerprint(&resolved),
+                                "failure_signature": reason,
+                                "admissible_strategies": strategies,
+                                "policy": "progress_until_verified/stage3_detect_only",
+                            });
+                            if let Err(e) = deterministic_ai_kernel::providers::storage_for(db)
+                                .append_event(&task_id, None, "REPETITION", &repetition_payload)
+                            {
+                                eprintln!("progress: failed to record REPETITION event: {e}");
+                            }
+                            println!("NOTE    : REPETITION DETECTED — this payload previously failed with an identical signature in task {prior_task}.");
+                            println!("NOTE    : Admissible strategies (kernel-enumerated): {strategies:?}. Re-running without new information or a new strategy is not progress (stage 3: detect-only, execution proceeds).");
+                        }
+                        Ok(None) => {}
+                        Err(e) => eprintln!("progress: repetition check failed: {e}"),
+                    }
+                }
+                Err(e) => eprintln!("progress: repetition check could not open db: {e}"),
+            }
             {
                 let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
                     .unwrap_or_else(|e| {
@@ -1145,6 +1230,30 @@ async fn main() {
                     std::process::exit(1);
                 });
             }
+            // PROGRESS UNTIL VERIFIED stage 4: operator-declared lemma
+            // registration. Kernel-owned event: only this CLI path can
+            // create subtask status, and only before dispatch. The
+            // completion gate reads it; the taxonomy excludes subtasks
+            // from VerifiedSuccess (lemmas are not theorems).
+            if let Some(carrier_label) = &subtask_of {
+                let subtask_payload = serde_json::json!({
+                    "task_id": task_id,
+                    "carrier_label": carrier_label,
+                    "role": "lemma",
+                    "composition_contract": "semantic verification delegated to the composition carrier's task-level tests",
+                    "policy": "progress_until_verified/stage4",
+                });
+                if let Err(e) = deterministic_ai_kernel::providers::storage_for(db).append_event(
+                    &task_id,
+                    None,
+                    "SUBTASK_OF",
+                    &subtask_payload,
+                ) {
+                    eprintln!("progress: failed to record SUBTASK_OF: {e}");
+                    std::process::exit(1);
+                }
+                println!("NOTE    : task {task_id} registered as decomposition subtask (lemma) of carrier '{carrier_label}'; semantic verification delegated to the carrier.");
+            }
             if let Err(e) = schedule(db, &task_id) {
                 eprintln!("schedule failed: {e}");
                 std::process::exit(1);
@@ -1156,9 +1265,11 @@ async fn main() {
                 // as a silent stall.
                 println!("TASK_STATE: failed");
                 println!("TASK_FAILED_REASON: {e}");
+                record_terminal_assessment(db, &task_id);
                 eprintln!("execute-effects failed: {e}");
                 std::process::exit(1);
             }
+            record_terminal_assessment(db, &task_id);
 
             let final_answer_path = format!(
                 "{}/artifacts/final_answer.{}.txt",
@@ -1330,6 +1441,276 @@ async fn main() {
             }
             println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
             println!("REPLAY OK: {}", ok);
+            return;
+        }
+        Some("verifier-gap") => {
+            // PROGRESS UNTIL VERIFIED stage 5: verifier-gap lifecycle.
+            //   verifier-gap prove   --task <id> --criterion <text> --uncovered <text>
+            //   verifier-gap grant   --task <id> --verifier-file <path>
+            //   verifier-gap decline --task <id> --reason <text>
+            // The kernel verifies the BASIS (attempt ledger, inventory,
+            // lifecycle) from its own data; criterion/uncovered are
+            // human-stated and recorded as such. The LLM's "I cannot
+            // verify" is never accepted as a gap. Grant/decline are
+            // human decisions; the kernel records them and shapes the
+            // terminal taxonomy (granted => resume; declined =>
+            // constructive NVPF).
+            let action = args.get(2).cloned().unwrap_or_default();
+            let mut task_id: Option<String> = None;
+            let mut criterion: Option<String> = None;
+            let mut uncovered: Option<String> = None;
+            let mut verifier_file: Option<String> = None;
+            let mut reason: Option<String> = None;
+            let mut i = 3usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--task" => {
+                        i += 1;
+                        task_id = args.get(i).cloned();
+                    }
+                    "--criterion" => {
+                        i += 1;
+                        criterion = args.get(i).cloned();
+                    }
+                    "--uncovered" => {
+                        i += 1;
+                        uncovered = args.get(i).cloned();
+                    }
+                    "--verifier-file" => {
+                        i += 1;
+                        verifier_file = args.get(i).cloned();
+                    }
+                    "--reason" => {
+                        i += 1;
+                        reason = args.get(i).cloned();
+                    }
+                    other => {
+                        eprintln!("unknown arg: {other}");
+                        std::process::exit(1);
+                    }
+                }
+                i += 1;
+            }
+            let task_id = task_id.unwrap_or_else(|| {
+                eprintln!("verifier-gap: --task is required");
+                std::process::exit(1);
+            });
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("verifier-gap: failed to open db: {e}");
+                    std::process::exit(1);
+                });
+            let store = deterministic_ai_kernel::providers::storage_for(db);
+            match action.as_str() {
+                "prove" => {
+                    let (criterion, uncovered) = match (criterion, uncovered) {
+                        (Some(c), Some(u)) => (c, u),
+                        _ => {
+                            eprintln!(
+                                "verifier-gap prove: --criterion and --uncovered are required"
+                            );
+                            std::process::exit(1);
+                        }
+                    };
+                    let proof = deterministic_ai_kernel::progress::gap_proof_payload(
+                        &conn,
+                        std::path::Path::new("artifacts"),
+                        &task_id,
+                        &criterion,
+                        &uncovered,
+                    )
+                    .unwrap_or_else(|e| {
+                        eprintln!("verifier-gap: proof construction failed: {e}");
+                        std::process::exit(1);
+                    })
+                    .unwrap_or_else(|| {
+                        eprintln!("verifier-gap: task '{task_id}' has no attempts — a gap proof requires an attempt basis");
+                        std::process::exit(1);
+                    });
+                    if let Err(e) = store.append_event(&task_id, None, "VERIFIER_GAP_PROOF", &proof)
+                    {
+                        eprintln!("verifier-gap: failed to record gap proof: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("VERIFIER GAP PROOF RECORDED for task {task_id}:");
+                    println!("  criterion (human-stated)  : {criterion}");
+                    println!("  uncovered (human-stated)  : {uncovered}");
+                    println!(
+                        "  verifier inventory        : {} primitives",
+                        deterministic_ai_kernel::progress::verifier_inventory().len()
+                    );
+                    println!("  status                    : pending human grant/decline");
+                }
+                "grant" => {
+                    if deterministic_ai_kernel::progress::gap_status(&conn, &task_id)
+                        != deterministic_ai_kernel::progress::GapStatus::Pending
+                    {
+                        eprintln!("verifier-gap grant: no PENDING gap proof for task '{task_id}'");
+                        std::process::exit(1);
+                    }
+                    let path = verifier_file.unwrap_or_else(|| {
+                        eprintln!("verifier-gap grant: --verifier-file is required");
+                        std::process::exit(1);
+                    });
+                    let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+                        eprintln!("verifier-gap grant: cannot read verifier file '{path}': {e}");
+                        std::process::exit(1);
+                    });
+                    let file_hash = blake3::hash(&bytes).to_hex().to_string();
+                    let payload = serde_json::json!({
+                        "task_id": task_id,
+                        "verifier_path": path,
+                        "verifier_blake3": file_hash,
+                        "source": "human-authored",
+                        "note": "kernel records provenance only; authority comes from human review",
+                        "policy": "progress_until_verified/stage5",
+                    });
+                    if let Err(e) = store.append_event(&task_id, None, "VERIFIER_GRANTED", &payload)
+                    {
+                        eprintln!("verifier-gap: failed to record grant: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("VERIFIER GRANTED for task {task_id}: {path} (blake3 {file_hash}). Resume with a new attempt.");
+                }
+                "decline" => {
+                    if deterministic_ai_kernel::progress::gap_status(&conn, &task_id)
+                        != deterministic_ai_kernel::progress::GapStatus::Pending
+                    {
+                        eprintln!(
+                            "verifier-gap decline: no PENDING gap proof for task '{task_id}'"
+                        );
+                        std::process::exit(1);
+                    }
+                    let reason = reason.unwrap_or_else(|| {
+                        eprintln!("verifier-gap decline: --reason is required");
+                        std::process::exit(1);
+                    });
+                    let payload = serde_json::json!({
+                        "task_id": task_id,
+                        "reason": reason,
+                        "decided_by": "human",
+                        "policy": "progress_until_verified/stage5",
+                    });
+                    if let Err(e) =
+                        store.append_event(&task_id, None, "VERIFIER_DECLINED", &payload)
+                    {
+                        eprintln!("verifier-gap: failed to record decline: {e}");
+                        std::process::exit(1);
+                    }
+                    println!("VERIFIER GAP DECLINED for task {task_id}: {reason}");
+                    println!("Terminal taxonomy: NO VERIFIED PATH FOUND (constructive; full ledger recorded).");
+                }
+                other => {
+                    eprintln!("verifier-gap: unknown action '{other}' (prove|grant|decline)");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Some("decomposition") => {
+            // PROGRESS UNTIL VERIFIED stage 4: finalize a decomposition
+            // record once the composition carrier has completed: emits
+            // TASK_DECOMPOSED on the carrier naming its subtask(s) and
+            // the composition contract. Observation-only.
+            // usage: decomposition --carrier <task_id> --subtask <task_id>
+            //        --target-file <path> [--acceptance <text>]
+            let mut carrier: Option<String> = None;
+            let mut subtask: Option<String> = None;
+            let mut target_file: Option<String> = None;
+            let mut acceptance = "carrier task-level tests".to_string();
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--carrier" => {
+                        i += 1;
+                        carrier = args.get(i).cloned();
+                    }
+                    "--subtask" => {
+                        i += 1;
+                        subtask = args.get(i).cloned();
+                    }
+                    "--target-file" => {
+                        i += 1;
+                        target_file = args.get(i).cloned();
+                    }
+                    "--acceptance" => {
+                        i += 1;
+                        if let Some(a) = args.get(i) {
+                            acceptance = a.clone();
+                        }
+                    }
+                    other => {
+                        eprintln!("unknown arg: {other}");
+                        std::process::exit(1);
+                    }
+                }
+                i += 1;
+            }
+            let (carrier, subtask, target_file) = match (carrier, subtask, target_file) {
+                (Some(c), Some(s), Some(t)) => (c, s, t),
+                _ => {
+                    eprintln!(
+                        "usage: decomposition --carrier <task_id> --subtask <task_id> --target-file <path> [--acceptance <text>]"
+                    );
+                    std::process::exit(1);
+                }
+            };
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("decomposition: failed to open db: {e}");
+                    std::process::exit(1);
+                });
+            for (name, id) in [("carrier", &carrier), ("subtask", &subtask)] {
+                let exists: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM tasks WHERE task_id = ?1", [id], |r| {
+                        r.get(0)
+                    })
+                    .unwrap_or(0);
+                if exists == 0 {
+                    eprintln!("decomposition: {name} task '{id}' does not exist");
+                    std::process::exit(1);
+                }
+            }
+            let payload = serde_json::json!({
+                "task_id": carrier,
+                "subtasks": [subtask],
+                "composition_contract": {
+                    "target_file": target_file,
+                    "regions": "disjoint (each subtask patch grounded exactly once at its apply moment)",
+                    "acceptance": acceptance,
+                },
+                "policy": "progress_until_verified/stage4",
+            });
+            if let Err(e) = deterministic_ai_kernel::providers::storage_for(db).append_event(
+                &carrier,
+                None,
+                "TASK_DECOMPOSED",
+                &payload,
+            ) {
+                eprintln!("decomposition: failed to record TASK_DECOMPOSED: {e}");
+                std::process::exit(1);
+            }
+            println!("DECOMPOSITION RECORDED: carrier {carrier} <- subtask {subtask} (target {target_file}; acceptance: {acceptance})");
+            return;
+        }
+        Some("progress") => {
+            // PROGRESS UNTIL VERIFIED — stage 2 ledger: attempts grouped
+            // by payload fingerprint with progress/repetition verdicts.
+            // Detect-only; prints the ledger and exits 0.
+            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+                .unwrap_or_else(|e| {
+                    eprintln!("progress: failed to open db: {e}");
+                    std::process::exit(1);
+                });
+            let report = deterministic_ai_kernel::progress::assess_db(
+                &conn,
+                std::path::Path::new("artifacts"),
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("progress: assessment failed: {e}");
+                std::process::exit(1);
+            });
+            print!("{}", deterministic_ai_kernel::progress::render(&report));
             return;
         }
         Some("stats") => {

@@ -49,6 +49,21 @@ pub struct TransitionRule {
     pub depends_on: Vec<String>,
 }
 
+/// G1 carried-patch composition (design: G1_CARRYOVER_DESIGN_REVIEW.md).
+/// A composition task rebuilds its target from the anchored pristine
+/// baseline by re-applying the CARRIED, already-validated patch
+/// artifacts of ORDERED member tasks — zero model involvement at
+/// composition time. Absent (`None`) ⇒ single-task behavior unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompositionSpec {
+    /// ORDERED member task ids (strict-lineage validated at apply).
+    pub members: Vec<String>,
+    /// BLAKE3 of the pristine target file (anchor; fail-closed check).
+    pub baseline_hash: String,
+    /// The composition target file (must equal every member's target).
+    pub target_file: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecSpec {
     pub version: u32,
@@ -58,6 +73,10 @@ pub struct ExecSpec {
     pub dependencies: Vec<Dependency>,
     pub policies: Vec<Policy>,
     pub artifact_schemas: BTreeMap<String, String>,
+    /// G1: optional carried-patch composition. `#[serde(default)]`
+    /// keeps every pre-G1 serialized spec deserializing as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<CompositionSpec>,
 }
 
 impl ExecSpec {
@@ -77,6 +96,7 @@ impl ExecSpec {
             dependencies,
             policies,
             artifact_schemas,
+            composition: None,
         };
         spec.spec_id = spec.calculate_hash();
         spec
@@ -92,6 +112,8 @@ impl ExecSpec {
             dependencies: &'a [Dependency],
             policies: &'a [Policy],
             artifact_schemas: &'a BTreeMap<String, String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            composition: &'a Option<CompositionSpec>,
         }
 
         let temp = HashingSpec {
@@ -101,6 +123,7 @@ impl ExecSpec {
             dependencies: &self.dependencies,
             policies: &self.policies,
             artifact_schemas: &self.artifact_schemas,
+            composition: &self.composition,
         };
 
         let bytes = serde_json::to_vec(&temp).unwrap_or_default();

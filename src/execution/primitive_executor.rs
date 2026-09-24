@@ -1,4 +1,5 @@
 use crate::execution::patch_contract;
+use crate::execution::patch_repair;
 use crate::execution_abi::primitives::{
     ArtifactSpec, PrimitiveKind, PrimitiveResult, PrimitiveSpec,
 };
@@ -88,17 +89,44 @@ fn patch_prompt(target: &str, content: &str, task: &str) -> String {
 /// Request a patch_v1 object from the LLM with one bounded repair retry
 /// (same posture as llm::chat_structured). Unparseable output after the
 /// retry is a terminal contract violation ("fatal: malformed patch").
-fn request_patch_v1(prompt: &str) -> Result<patch_contract::PatchV1> {
+///
+/// S3 escape repair (stage 3): when `file_content` is provided and the
+/// parse failure is an invalid-escape corruption, a deterministic
+/// ground-truth-validated repair (patch_repair) is attempted BEFORE the
+/// model retry — deterministic regeneration at temp 0 provably
+/// reproduces the same corruption, so the model retry cannot help this
+/// class. A successful repair returns its RepairReport for the audit
+/// record (D5). The fallback order and all downstream gates are
+/// unchanged (D3/D6).
+fn request_patch_v1(
+    prompt: &str,
+    file_content: Option<&str>,
+) -> Result<(patch_contract::PatchV1, Option<patch_repair::RepairReport>)> {
     let first = providers::get_llm().execute_llm(prompt, None)?.text;
     match patch_contract::parse_patch(&first) {
-        Ok(patch) => Ok(patch),
+        Ok(patch) => Ok((patch, None)),
         Err(first_error) => {
+            if patch_repair::repair_enabled() {
+                if let Some(content) = file_content {
+                    let extracted = crate::llm::extract_json(&first);
+                    match patch_repair::repair_patch_json(&extracted, content) {
+                        Ok((patch, report)) => return Ok((patch, Some(report))),
+                        Err(reason) => {
+                            eprintln!(
+                                "patch_repair: deterministic repair not applied ({reason}); falling back to model repair retry"
+                            );
+                        }
+                    }
+                }
+            }
             let repair_prompt = format!(
                 "{}\n\nYour previous reply violated the patch_v1 contract: {}\nReply with ONLY the corrected JSON object.",
                 prompt, first_error
             );
             let second = providers::get_llm().execute_llm(&repair_prompt, None)?.text;
-            patch_contract::parse_patch(&second).map_err(|e| anyhow!("fatal: malformed patch: {e}"))
+            patch_contract::parse_patch(&second)
+                .map(|p| (p, None))
+                .map_err(|e| anyhow!("fatal: malformed patch: {e}"))
         }
     }
 }
@@ -360,7 +388,27 @@ impl PrimitiveExecutor {
                         )
                     })?;
                     let prompt = patch_prompt(&target, &file_content, task_payload);
-                    let patch = request_patch_v1(&prompt)?;
+                    // Bounded target-correction: the initial attempt plus AT
+                    // MOST ONE corrective retry when the model returns the
+                    // wrong target_file. Every shape/context/target gate
+                    // below still applies unchanged to the final attempt,
+                    // and a persistent mismatch stays terminal — no gate is
+                    // weakened, the model is only given one explicit
+                    // correction chance.
+                    let (patch, repair_report) = {
+                        let (first, repair_first) = request_patch_v1(&prompt, Some(&file_content))?;
+                        if first.target_file == target {
+                            (first, repair_first)
+                        } else {
+                            let corrective = format!(
+                                "{}\n\nYour previous reply used the WRONG target_file: \"{}\". The target_file MUST be EXACTLY \"{}\" (same letters, same case). Reply with ONLY the corrected JSON object, changing ONLY the target_file field.",
+                                prompt, first.target_file, target
+                            );
+                            let (second, repair_second) =
+                                request_patch_v1(&corrective, Some(&file_content))?;
+                            (second, repair_second.or(repair_first))
+                        }
+                    };
                     patch_contract::validate_patch_shape(&patch)
                         .map_err(|e| anyhow!("fatal: malformed patch: {e}"))?;
                     if patch.target_file != target {
@@ -388,6 +436,21 @@ impl PrimitiveExecutor {
                         "patch_shape_validation".to_string(),
                         serde_json::json!("ok"),
                     );
+                    // D5 audit record: an applied S3 escape repair is
+                    // never invisible — sites plus raw/repaired hashes
+                    // ride the step artifact lineage.
+                    if let Some(rep) = &repair_report {
+                        extra_output.insert(
+                            "patch_repair".to_string(),
+                            serde_json::json!({
+                                "repaired": true,
+                                "mechanism": "escape_repair/R1",
+                                "sites": rep.sites,
+                                "raw_output_blake3": rep.raw_blake3,
+                                "repaired_blake3": rep.repaired_blake3,
+                            }),
+                        );
+                    }
                     canonical
                 } else if requires_llm {
                     // Non-CodeFix LLM writes keep the legacy free-text path.

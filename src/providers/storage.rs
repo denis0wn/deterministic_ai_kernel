@@ -435,6 +435,29 @@ fn canonical_event_kind(event_type: &str) -> &'static str {
         "LEASE_EXPIRED" => "LEASE_EXPIRED",
         "EFFECT_RESERVED" => "EFFECT_RESERVED",
         "ArtifactProduced" => "ArtifactProduced",
+        // PROGRESS UNTIL VERIFIED stage 2: kernel-owned observation that a
+        // new attempt repeats an earlier attempt's failure signature.
+        // Observation-only: never mutates step/task state in the fold.
+        "REPETITION" => "REPETITION",
+        // PROGRESS UNTIL VERIFIED stage 3: terminal taxonomy assessment
+        // (VerifiedSuccess / VerifiedFailure / NoVerifiedPathFound /
+        // InProgress) for the attempt's fingerprint group.
+        // Observation-only.
+        "TASK_TERMINAL_ASSESSED" => "TASK_TERMINAL_ASSESSED",
+        // PROGRESS UNTIL VERIFIED stage 4: decomposition records.
+        // SUBTASK_OF: kernel-owned registration of a lemma task whose
+        // semantic verification is delegated to the composition
+        // carrier. TASK_DECOMPOSED: the carrier's composition contract
+        // with its subtasks. Both observation-only.
+        "SUBTASK_OF" => "SUBTASK_OF",
+        "TASK_DECOMPOSED" => "TASK_DECOMPOSED",
+        // PROGRESS UNTIL VERIFIED stage 5: verifier-gap lifecycle.
+        // VERIFIER_GAP_PROOF (kernel-verified basis + human-stated
+        // criterion), VERIFIER_GRANTED / VERIFIER_DECLINED (human
+        // decision). All observation-only.
+        "VERIFIER_GAP_PROOF" => "VERIFIER_GAP_PROOF",
+        "VERIFIER_GRANTED" => "VERIFIER_GRANTED",
+        "VERIFIER_DECLINED" => "VERIFIER_DECLINED",
         "DONE" => "DONE",
         _ => "",
     }
@@ -515,7 +538,16 @@ impl TaskFold {
                 self.done = true;
                 return;
             }
-            "EFFECT_RESERVED" | "ArtifactProduced" | "" => return,
+            "EFFECT_RESERVED"
+            | "ArtifactProduced"
+            | "REPETITION"
+            | "TASK_TERMINAL_ASSESSED"
+            | "SUBTASK_OF"
+            | "TASK_DECOMPOSED"
+            | "VERIFIER_GAP_PROOF"
+            | "VERIFIER_GRANTED"
+            | "VERIFIER_DECLINED"
+            | "" => return,
             _ => {}
         }
 

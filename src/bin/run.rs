@@ -189,7 +189,7 @@ fn cmd_run_replay(args: &[String]) -> Result<()> {
                         println!("{}", serde_json::to_string_pretty(&out_json)?);
                     } else {
                         println!("Replaying task/plan: {} (seed={})", task_id, entry.seed);
-                        println!("Replay status : PASSED");
+                        println!("Plan tape status : STABLE (planner scope — plan stability of simulated runs only)");
                         println!("Drift         : 0");
                     }
                 }
@@ -203,7 +203,7 @@ fn cmd_run_replay(args: &[String]) -> Result<()> {
                         println!("{}", serde_json::to_string_pretty(&out_json)?);
                     } else {
                         println!("Replaying task/plan: {} (seed={})", task_id, entry.seed);
-                        println!("Replay status : FAILED");
+                        println!("Plan tape status : DRIFTED (planner scope — plan stability of simulated runs only)");
                         println!("{}", err);
                     }
                 }
@@ -267,15 +267,18 @@ fn cmd_run_status(args: &[String]) -> Result<()> {
         )
         .unwrap_or(0);
 
-    // Check replay valid
-    let replay_valid_count: i64 = conn
+    // MF-1 #2 (misfire audit): PLANNER_TAPE_CHECKED is the planner-scoped
+    // tape-stability check of a SIMULATED run. It is NOT the canonical
+    // kernel replay validation (storage.rs replay_validate) and must never
+    // be presented as such.
+    let planner_tape_checked_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = 'REPLAY_VALIDATED'",
+            "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = 'PLANNER_TAPE_CHECKED'",
             [task_id],
             |r| r.get(0),
         )
         .unwrap_or(0);
-    let replay_valid = replay_valid_count > 0;
+    let planner_tape_checked = planner_tape_checked_count > 0;
 
     if is_json {
         let out_json = serde_json::json!({
@@ -283,7 +286,7 @@ fn cmd_run_status(args: &[String]) -> Result<()> {
             "state": state_str,
             "steps": steps_list,
             "events_count": events_count,
-            "replay_valid": replay_valid
+            "planner_tape_checked": planner_tape_checked
         });
         println!("{}", serde_json::to_string_pretty(&out_json)?);
     } else {
@@ -370,13 +373,34 @@ fn cmd_run(args: &[String]) -> Result<()> {
     store.save_report(&report)?;
     store.save_tape(&tape)?;
 
+    // MF-1 #1 (misfire audit): this surface runs DefaultStepExecutor, which
+    // performs NO real effects. It must never present bare success
+    // semantics; canonical remediation runs use
+    // `deterministic_ai_kernel pipeline-run`.
     if is_json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        let out = serde_json::json!({
+            "simulated": true,
+            "writer": "planner_pipeline_simulated",
+            "note": "SIMULATED EXECUTION — no real effects performed; canonical remediation runs use `deterministic_ai_kernel pipeline-run`",
+            "report": report
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
+        println!("NOTE    : SIMULATED EXECUTION — this path performs no real effects.");
+        println!("NOTE    : Steps are only validated as non-empty descriptions; nothing is applied or tested.");
+        println!(
+            "NOTE    : Canonical remediation runs use `deterministic_ai_kernel pipeline-run`."
+        );
+        let steps_ok = report
+            .steps
+            .iter()
+            .filter(|s| matches!(s.status, StepStatus::Ok))
+            .count();
         println!("plan_id : {}", report.plan_id);
         println!("seed    : {}", report.seed);
         println!("steps   : {}", report.steps.len());
-        println!("success : {}", report.success);
+        println!("simulated : true (no real effects executed)");
+        println!("steps_ok  : {}/{}", steps_ok, report.steps.len());
         println!("time_ms : {}", report.total_duration_ms);
         println!();
         for s in &report.steps {
@@ -424,13 +448,14 @@ fn cmd_verify(args: &[String]) -> Result<()> {
     let tape = store.load_tape()?;
     let entries = tape.entries().to_vec();
 
-    println!("Replay Verification");
+    println!("Plan Tape Verification (planner scope — plan stability of simulated runs only;");
+    println!("NOT the canonical kernel replay validation)");
     println!("store : {store_dir}");
     println!("tape  : {} entries", entries.len());
     println!();
 
     if entries.is_empty() {
-        println!("Replay status : PASSED");
+        println!("Plan tape status : STABLE");
         println!("Drift         : 0");
         return Ok(());
     }
@@ -465,12 +490,12 @@ fn cmd_verify(args: &[String]) -> Result<()> {
     println!();
 
     if drift == 0 {
-        println!("Replay status : PASSED");
+        println!("Plan tape status : STABLE");
         println!("Drift         : 0");
         return Ok(());
     }
 
-    println!("Replay status : FAILED");
+    println!("Plan tape status : DRIFTED");
     println!("Drift         : {drift}");
     println!();
 

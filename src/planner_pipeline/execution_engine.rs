@@ -182,6 +182,9 @@ fn emit_event(
         .to_hex()[..16]
     );
 
+    // MF-1 #3 (misfire audit): every planner-layer event carries explicit
+    // simulated provenance. This writer never performs real effects; the
+    // canonical effect loop (effects.rs) is the only path that does.
     let payload = serde_json::json!({
         "event_id": event_id,
         "task_id": task_id,
@@ -191,6 +194,7 @@ fn emit_event(
         "payload_hash": payload_hash,
         "event_type": event_type,
         "deterministic": true,
+        "writer": "planner_pipeline_simulated",
         "details": details
     });
     if let Err(e) =
@@ -704,6 +708,9 @@ impl ExecutionEngine {
         }
 
         // Emit TASK_COMPLETED
+        // MF-1 #1 (misfire audit): the details mark this completion as
+        // simulated — this engine's default executor performs no real
+        // effects, so "success" here never means a real remediation ran.
         check_and_emit_transition(
             &self.db_path,
             &task_id,
@@ -712,7 +719,8 @@ impl ExecutionEngine {
             &plan.id,
             serde_json::json!({
                 "task_id": task_id,
-                "success": success
+                "success": success,
+                "simulated": true
             }),
         )?;
 
@@ -810,12 +818,16 @@ impl ExecutionEngine {
             report.final_answer = final_answer;
         }
 
-        // Emit REPLAY_VALIDATED
+        // MF-1 #2 (misfire audit): planner-scoped tape check only. The
+        // verdict term REPLAY_VALIDATED belongs exclusively to the canonical
+        // kernel replay validator (main.rs `replay` subcommand /
+        // storage.rs replay_validate). This check validates plan-tape
+        // stability of a SIMULATED run and nothing else.
         emit_event(
             &self.db_path,
             &task_id,
             None,
-            "REPLAY_VALIDATED",
+            "PLANNER_TAPE_CHECKED",
             &report.plan_id,
             serde_json::json!({
                 "plan_id": report.plan_id,
@@ -980,6 +992,83 @@ mod tests {
         eng.run_with_replay("step one\nstep two", &ctx(), &mut tape)
             .expect("test failure");
         assert_eq!(tape.len(), 1);
+    }
+
+    /// All (event_type, payload) rows of a scratch test database, in
+    /// insertion order.
+    fn event_rows(db: &str) -> Vec<(String, String)> {
+        let conn = rusqlite::Connection::open(db).expect("test failure");
+        let mut stmt = conn
+            .prepare("SELECT event_type, payload FROM event_log ORDER BY id")
+            .expect("test failure");
+        stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .expect("test failure")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("test failure")
+    }
+
+    /// MF-1 #3 (misfire audit): every planner-layer event must carry
+    /// explicit simulated provenance, so a simulated lifecycle can never
+    /// be mistaken for a canonical effect-loop lifecycle.
+    #[test]
+    fn planner_events_carry_simulated_writer_provenance() {
+        let guard = TestDbGuard::new("planner_events_provenance");
+        engine_db(&guard.db_path_str())
+            .run("step one\nstep two", &ctx())
+            .expect("test failure");
+        let events = event_rows(&guard.db_path_str());
+        assert!(!events.is_empty(), "engine must emit events");
+        for (event_type, payload) in &events {
+            let v: serde_json::Value = serde_json::from_str(payload).expect("test failure");
+            assert_eq!(
+                v.get("writer").and_then(|w| w.as_str()),
+                Some("planner_pipeline_simulated"),
+                "planner event {} must carry simulated writer provenance",
+                event_type
+            );
+        }
+    }
+
+    /// MF-1 #2 (misfire audit): the planner tape check must never use the
+    /// verdict term REPLAY_VALIDATED — that term belongs exclusively to the
+    /// canonical kernel replay validator.
+    #[test]
+    fn planner_tape_check_never_uses_canonical_replay_term() {
+        let guard = TestDbGuard::new("planner_tape_check_term");
+        let mut tape = ReplayTape::new();
+        engine_db(&guard.db_path_str())
+            .run_with_replay("step one", &ctx(), &mut tape)
+            .unwrap_or_else(|e| panic!("test failure: run_with_replay errored: {e}"));
+        let events = event_rows(&guard.db_path_str());
+        assert!(
+            events.iter().any(|(t, _)| t == "PLANNER_TAPE_CHECKED"),
+            "run_with_replay must emit PLANNER_TAPE_CHECKED"
+        );
+        assert!(
+            !events.iter().any(|(t, _)| t == "REPLAY_VALIDATED"),
+            "REPLAY_VALIDATED is owned by the canonical kernel replay validator"
+        );
+    }
+
+    /// MF-1 #1 (misfire audit): TASK_COMPLETED emitted by the simulated
+    /// engine must mark itself simulated — success here never means a real
+    /// remediation ran.
+    #[test]
+    fn task_completed_marks_simulated() {
+        let guard = TestDbGuard::new("task_completed_simulated");
+        engine_db(&guard.db_path_str())
+            .run("step one", &ctx())
+            .expect("test failure");
+        let completed = event_rows(&guard.db_path_str())
+            .into_iter()
+            .find(|(t, _)| t == "TASK_COMPLETED")
+            .expect("test failure");
+        let v: serde_json::Value = serde_json::from_str(&completed.1).expect("test failure");
+        assert_eq!(
+            v["details"]["simulated"],
+            serde_json::json!(true),
+            "simulated TASK_COMPLETED must mark details.simulated = true"
+        );
     }
 
     #[test]

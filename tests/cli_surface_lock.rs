@@ -21,6 +21,8 @@ const LOCKED_SUBCOMMANDS: &[&str] = &[
     "compare-capsules",
     "complete-step",
     "current-models",
+    // PROGRESS UNTIL VERIFIED stage 4: decomposition finalize record.
+    "decomposition",
     "doctor",
     "doctor-json",
     "embeddings-smoke",
@@ -49,6 +51,9 @@ const LOCKED_SUBCOMMANDS: &[&str] = &[
     "pipeline-run",
     "plan-task",
     "print-model-manifest",
+    // PROGRESS UNTIL VERIFIED stage 2: read-only progress ledger
+    // (attempts grouped by payload fingerprint; repetition detection).
+    "progress",
     "prompt",
     "reconcile",
     "replay",
@@ -69,6 +74,9 @@ const LOCKED_SUBCOMMANDS: &[&str] = &[
     "switch",
     "sync-all-model-roles",
     "vacuum",
+    // PROGRESS UNTIL VERIFIED stage 5: verifier-gap lifecycle
+    // (prove / grant / decline).
+    "verifier-gap",
 ];
 
 /// Discover subcommand match arms in main.rs: `Some("name") =>`.
@@ -82,7 +90,7 @@ fn discovered_subcommands() -> std::collections::BTreeSet<String> {
 fn cli_subcommand_count_is_locked() {
     assert_eq!(
         LOCKED_SUBCOMMANDS.len(),
-        56, // P0 MLX lifecycle: +1 for lm-lifecycle
+        59, // PROGRESS UNTIL VERIFIED stage 5: +1 for verifier-gap
         "CLI subcommand count changed — update LOCKED_SUBCOMMANDS and bump this assertion"
     );
 }

@@ -227,6 +227,115 @@ fn completion_without_test_evidence_is_impossible() {
 }
 
 #[test]
+fn registered_subtask_lemma_completes_with_apply_evidence_only() {
+    // Stage 4 decomposition: a task kernel-registered as SUBTASK_OF is
+    // a LEMMA — it may complete with verified apply evidence but no
+    // test report (semantic verification is delegated to the
+    // composition carrier). Registration is kernel-owned: this test
+    // emits SUBTASK_OF through the event bus, exactly as the
+    // pipeline-run --subtask-of path does.
+    let ws = fresh_dir("p3_lemma_ok");
+    python_project(
+        &ws,
+        "from calc import multiply\nassert multiply(2, 3) == 6\n",
+    );
+    let calc = ws.join("calc.py");
+
+    // Apply-only spec (no run_tests, no validate_patch).
+    let mut spec = steps_to_exec_spec(&[Step {
+        kind: StepKind::ApplyPatch,
+        detail: Some("apply patch".to_string()),
+    }]);
+    spec.steps[0]
+        .primitive
+        .as_mut()
+        .unwrap()
+        .payload
+        .as_object_mut()
+        .unwrap()
+        .insert("workspace".to_string(), json!(ws.to_str().unwrap()));
+
+    let task_id = unique("p3-lemma-ok");
+    let db = create_task(
+        &task_id,
+        &serde_json::to_string(&spec).unwrap(),
+        "lemma task",
+    );
+    seed_patch(&db, &task_id, calc.to_str().unwrap());
+
+    // Kernel-owned subtask registration BEFORE execution.
+    let bus = EventBus::new(&db).unwrap();
+    bus.append_event(
+        &task_id,
+        None,
+        "SUBTASK_OF",
+        &json!({
+            "task_id": task_id,
+            "carrier_label": "test-carrier",
+            "role": "lemma",
+            "policy": "progress_until_verified/stage4",
+        }),
+    )
+    .unwrap();
+
+    execute_effects(&db, &task_id).expect("registered lemma task must complete");
+
+    let conn = deterministic_ai_kernel::providers::storage::open_initialized(&db).unwrap();
+    let state: String = conn
+        .query_row(
+            "SELECT status FROM step_status WHERE task_id = ?1 AND step_id LIKE '%apply_patch'",
+            rusqlite::params![task_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(state, "committed");
+
+    cleanup_task_files(&task_id, &db);
+    let _ = std::fs::remove_dir_all(&ws);
+}
+
+#[test]
+fn unregistered_apply_only_task_is_still_blocked() {
+    // Matrix H must hold for every task WITHOUT a kernel-owned
+    // SUBTASK_OF registration: apply evidence without a passing test
+    // report can never complete.
+    let ws = fresh_dir("p3_nosub_blocked");
+    python_project(
+        &ws,
+        "from calc import multiply\nassert multiply(2, 3) == 6\n",
+    );
+    let calc = ws.join("calc.py");
+
+    let mut spec = steps_to_exec_spec(&[Step {
+        kind: StepKind::ApplyPatch,
+        detail: Some("apply patch".to_string()),
+    }]);
+    spec.steps[0]
+        .primitive
+        .as_mut()
+        .unwrap()
+        .payload
+        .as_object_mut()
+        .unwrap()
+        .insert("workspace".to_string(), json!(ws.to_str().unwrap()));
+
+    let task_id = unique("p3-nosub-blocked");
+    let db = create_task(
+        &task_id,
+        &serde_json::to_string(&spec).unwrap(),
+        "not a lemma",
+    );
+    seed_patch(&db, &task_id, calc.to_str().unwrap());
+
+    let err =
+        execute_effects(&db, &task_id).expect_err("unregistered apply-only task must stay blocked");
+    assert!(err.to_string().contains("completion blocked"), "got: {err}");
+
+    cleanup_task_files(&task_id, &db);
+    let _ = std::fs::remove_dir_all(&ws);
+}
+
+#[test]
 fn full_chain_completes_with_real_evidence() {
     // Matrix I/A: apply + REAL passing tests + deterministic gate =>
     // completed, with kernel-owned evidence artifacts.

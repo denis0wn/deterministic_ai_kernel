@@ -11,6 +11,7 @@ pub mod kernel_error;
 pub mod leases;
 pub mod llm;
 pub mod model_registry;
+pub mod progress;
 pub mod providers;
 pub mod rag;
 pub mod reconstruction;
@@ -18,6 +19,7 @@ pub mod replay;
 pub mod scheduler;
 pub mod schema;
 pub mod snapshot;
+pub mod strategy;
 pub mod workflow;
 
 pub mod worker;

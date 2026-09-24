@@ -55,6 +55,150 @@ fn find_latest_patch_v1(db: &str, task_id: &str) -> Result<Option<serde_json::Va
     Ok(None)
 }
 
+/// G1 STRICT LINEAGE member validation (design: G1_CARRYOVER_DESIGN_
+/// REVIEW.md §A4; owner decision: STRICT LINEAGE, fail-closed). Every
+/// member MUST, else fatal: (a) exist in tasks; (b) be CodeFix; (c)
+/// carry a validated patch_v1 artifact; (d) target the composition's
+/// target_file; (e) carry provenance (task_id match + source_generation).
+fn validate_member_lineage(
+    db: &str,
+    member: &str,
+    composition: &crate::exec_spec::CompositionSpec,
+) -> Result<()> {
+    let conn = rusqlite::Connection::open(db)
+        .map_err(|e| anyhow!("fatal: lineage check cannot open db: {e}"))?;
+    // (a) existence + (b) task class
+    let (count, class): (i64, String) = conn
+        .query_row(
+            "SELECT COUNT(*), COALESCE(MAX(task_class),'') FROM tasks WHERE task_id = ?1",
+            [member],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| anyhow!("fatal: lineage query failed for member {member}: {e}"))?;
+    if count == 0 {
+        return Err(anyhow!(
+            "fatal: composition member {member} does not exist (strict lineage)"
+        ));
+    }
+    if class != "CodeFix" {
+        return Err(anyhow!(
+            "fatal: composition member {member} is not a CodeFix task (strict lineage)"
+        ));
+    }
+    // (c) validated patch artifact + (d) target match + (e) provenance
+    let patch_value = find_latest_patch_v1(db, member)?.ok_or_else(|| {
+        anyhow!("fatal: composition member {member} has no validated patch_v1 artifact (strict lineage)")
+    })?;
+    let target = patch_value
+        .get("target_file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if target != composition.target_file {
+        return Err(anyhow!(
+            "fatal: composition member {member} targets '{target}' but composition targets '{}' (strict lineage)",
+            composition.target_file
+        ));
+    }
+    // provenance: the artifact row must belong to the member task with a
+    // source_generation (checked via the artifact query in
+    // find_latest_patch_v1 which is task-scoped) — additionally require a
+    // source_generation to be present on the member's artifact row.
+    let has_provenance: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM semantic_artifacts WHERE task_id = ?1 AND artifact_type = 'primitive_result_v1' AND payload LIKE '%\"patch_v1\"%' AND source_generation IS NOT NULL",
+            [member],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if has_provenance == 0 {
+        return Err(anyhow!(
+            "fatal: composition member {member} patch artifact lacks provenance (strict lineage)"
+        ));
+    }
+    Ok(())
+}
+
+/// G1 carried-patch composition (design: G1_CARRYOVER_DESIGN_REVIEW.md).
+/// Rebuilds the composition target from the anchored pristine baseline by
+/// re-applying the ORDERED, strict-lineage-validated member patches —
+/// zero model involvement. Fail-closed on any ambiguity. Records a
+/// combined apply-evidence artifact so the deterministic completion gate
+/// (apply evidence + passing tests) sees a single applied state.
+fn apply_composed_patches(
+    db: &str,
+    task_id: &str,
+    composition: &crate::exec_spec::CompositionSpec,
+    storage: &crate::providers::storage::DefaultStorage,
+) -> Result<()> {
+    use crate::providers::storage::StorageProvider;
+    // Workspace authorization: same source as the apply primitive.
+    let workspace = std::env::var("DAK_CODEFIX_WORKSPACE").map_err(|_| {
+        anyhow!("fatal: composition apply has no authorized workspace (set DAK_CODEFIX_WORKSPACE)")
+    })?;
+    // A3 baseline anchor: current target must equal the anchored baseline
+    // hash (BLAKE3). Mismatch ⇒ refuse (never trust unanchored bytes).
+    let target_path = crate::tools::file_tools::resolve_safe(&composition.target_file, &workspace)
+        .map_err(|e| anyhow!("fatal: composition target not confined to workspace: {e}"))?;
+    let current = std::fs::read_to_string(&target_path)
+        .map_err(|e| anyhow!("fatal: composition target unreadable: {e}"))?;
+    let current_hash = blake3::hash(current.as_bytes()).to_hex().to_string();
+    if current_hash != composition.baseline_hash {
+        return Err(anyhow!(
+            "fatal: composition baseline mismatch — refusing to apply on unanchored state (target {} hash {} != baseline {})",
+            composition.target_file, current_hash, composition.baseline_hash
+        ));
+    }
+    // A2: ordered members; zero members ⇒ refuse (no fabricated success).
+    if composition.members.is_empty() {
+        return Err(anyhow!(
+            "fatal: composition has no members (no fabricated success)"
+        ));
+    }
+    let mut member_evidence: Vec<serde_json::Value> = Vec::new();
+    let mut last_evidence: Option<crate::execution::patch_apply::PatchApplyEvidence> = None;
+    for member in &composition.members {
+        validate_member_lineage(db, member, composition)?;
+        let patch_value = find_latest_patch_v1(db, member)?.ok_or_else(|| {
+            anyhow!("fatal: composition member {member} has no validated patch_v1 artifact")
+        })?;
+        let patch: crate::execution::patch_contract::PatchV1 = serde_json::from_value(patch_value)
+            .map_err(|e| anyhow!("fatal: member {member} patch schema violation: {e}"))?;
+        // A5: apply each member patch IN ORDER via the existing machinery;
+        // each is re-grounded against the CURRENT composed content (overlap/
+        // no-op/stale/order all fail-closed there).
+        let evidence = crate::execution::patch_apply::apply_patch_v1(&patch, &workspace)
+            .map_err(|e| anyhow!("fatal: composition member {member} apply failed: {e}"))?;
+        member_evidence.push(serde_json::json!({
+            "member_task_id": member,
+            "pre_image_blake3": evidence.pre_image_blake3,
+            "post_image_blake3": evidence.post_image_blake3,
+            "applied": true,
+        }));
+        last_evidence = Some(evidence);
+    }
+    let last =
+        last_evidence.ok_or_else(|| anyhow!("fatal: composition produced no apply evidence"))?;
+    // Combined apply-evidence artifact (same shape the apply tool emits so
+    // the deterministic completion gate recognizes it).
+    let combined = serde_json::json!({
+        "tool": "apply_patch_v1",
+        "status": "applied",
+        "evidence": last,
+        "composition_members": member_evidence,
+        "composition_baseline_hash": composition.baseline_hash,
+        "composition_target_file": composition.target_file,
+    });
+    let generation = storage.latest_generation_for_task(task_id)?;
+    storage.append_semantic_artifact(
+        task_id,
+        "03_apply_patch",
+        generation,
+        "primitive_result_v1",
+        &combined,
+    )?;
+    Ok(())
+}
+
 /// P3: find the most recent verified patch-apply evidence (output of the
 /// apply_patch_v1 tool: {tool, status:"applied", evidence:{...}}).
 fn find_latest_apply_evidence(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
@@ -99,6 +243,25 @@ fn find_latest_test_report(db: &str, task_id: &str) -> Result<Option<serde_json:
     Ok(None)
 }
 
+/// Stage 4 decomposition: true iff the canonical event log carries a
+/// kernel-owned SUBTASK_OF registration for this task. Read straight
+/// from the append-only log — neither model output nor payload content
+/// can produce this status.
+fn is_registered_subtask(db: &str, task_id: &str) -> bool {
+    rusqlite::Connection::open(db)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM event_log WHERE task_id = ?1 AND event_type = 'SUBTASK_OF'",
+                [task_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .ok()
+        })
+        .map(|n| n > 0)
+        .unwrap_or(false)
+}
+
 pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
     providers::get_filesystem().create_dir_all("artifacts")?;
     let payload = payload_for_task(task_id)?;
@@ -140,16 +303,35 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                 // claims.
                 let enriched;
                 let slug = step_slug(&step_id);
+                // G1: a carried-patch composition applies its ORDERED,
+                // strict-lineage-validated member patches directly (zero
+                // model involvement) and records a combined apply-evidence
+                // artifact; the generic single-patch primitive path is
+                // skipped for this step.
+                let mut composition_handled = false;
                 let prim_ref = if slug == "apply_patch" {
-                    let mut p = prim.clone();
-                    let patch = find_latest_patch_v1(db, task_id)?.ok_or_else(|| {
-                        anyhow!(
-                            "fatal: apply_patch step has no validated patch_v1 artifact (PatchCode must run first)"
-                        )
-                    })?;
-                    p.payload["patch_v1"] = patch;
-                    enriched = p;
-                    &enriched
+                    if let Some(composition) = spec.composition.as_ref() {
+                        apply_composed_patches(db, task_id, composition, &storage)?;
+                        composition_handled = true;
+                        let mut p = prim.clone();
+                        p.payload["g1_composition"] = serde_json::json!({
+                            "members": composition.members,
+                            "baseline_hash": composition.baseline_hash,
+                            "target_file": composition.target_file,
+                        });
+                        enriched = p;
+                        &enriched
+                    } else {
+                        let mut p = prim.clone();
+                        let patch = find_latest_patch_v1(db, task_id)?.ok_or_else(|| {
+                            anyhow!(
+                                "fatal: apply_patch step has no validated patch_v1 artifact (PatchCode must run first)"
+                            )
+                        })?;
+                        p.payload["patch_v1"] = patch;
+                        enriched = p;
+                        &enriched
+                    }
                 } else if slug == "validate_patch" {
                     let mut p = prim.clone();
                     if let Some(ev) = find_latest_apply_evidence(db, task_id)? {
@@ -164,55 +346,61 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                     prim
                 };
 
-                match crate::execution::primitive_executor::PrimitiveExecutor::execute(
-                    task_id, prim_ref, &payload,
-                ) {
-                    Ok(result) => {
-                        // If it produced a text output (from Compute/Write), save it to final_answer for CLI compatibility
-                        if let Some(text) = result.output.get("result").and_then(|v| v.as_str()) {
-                            let answer_path = format!("artifacts/final_answer.{}.txt", task_id);
-                            providers::get_filesystem().write(&answer_path, text)?;
-                        }
+                if composition_handled {
+                    // Composition already applied + recorded evidence; the
+                    // step completes via complete_step below.
+                } else {
+                    match crate::execution::primitive_executor::PrimitiveExecutor::execute(
+                        task_id, prim_ref, &payload,
+                    ) {
+                        Ok(result) => {
+                            // If it produced a text output (from Compute/Write), save it to final_answer for CLI compatibility
+                            if let Some(text) = result.output.get("result").and_then(|v| v.as_str())
+                            {
+                                let answer_path = format!("artifacts/final_answer.{}.txt", task_id);
+                                providers::get_filesystem().write(&answer_path, text)?;
+                            }
 
-                        // Generic recording of returned artifacts
-                        let generation = storage.latest_generation_for_task(task_id)?;
-                        for artifact in result.artifacts {
+                            // Generic recording of returned artifacts
+                            let generation = storage.latest_generation_for_task(task_id)?;
+                            for artifact in result.artifacts {
+                                storage.append_semantic_artifact(
+                                    task_id,
+                                    &step_id,
+                                    generation,
+                                    &artifact.artifact_type,
+                                    &artifact.payload,
+                                )?;
+                            }
+
+                            // Record the raw primitive result as an evidence artifact
                             storage.append_semantic_artifact(
                                 task_id,
                                 &step_id,
                                 generation,
-                                &artifact.artifact_type,
-                                &artifact.payload,
+                                "primitive_result_v1",
+                                &result.output,
                             )?;
                         }
-
-                        // Record the raw primitive result as an evidence artifact
-                        storage.append_semantic_artifact(
-                            task_id,
-                            &step_id,
-                            generation,
-                            "primitive_result_v1",
-                            &result.output,
-                        )?;
+                        Err(e) => {
+                            // Kernel-detected contract violations (e.g. malformed
+                            // patches) carry an explicit "fatal:" prefix and must
+                            // reach classify_failure_outcome unprefixed so they
+                            // become TERMINAL failures — an invalid patch must
+                            // never be retryable forever or pass as success
+                            // (P1, H-1 fix). Infrastructure errors stay wrapped
+                            // and therefore retryable (fail-safe default).
+                            let msg = e.to_string();
+                            let reason = if msg.starts_with("fatal:") {
+                                msg
+                            } else {
+                                format!("primitive_execution_error: {e}")
+                            };
+                            let _ = worker::fail_step(db, task_id, &worker_id, &step_id, &reason);
+                            return Err(anyhow!("step {} failed: {}", step_id, reason));
+                        }
                     }
-                    Err(e) => {
-                        // Kernel-detected contract violations (e.g. malformed
-                        // patches) carry an explicit "fatal:" prefix and must
-                        // reach classify_failure_outcome unprefixed so they
-                        // become TERMINAL failures — an invalid patch must
-                        // never be retryable forever or pass as success
-                        // (P1, H-1 fix). Infrastructure errors stay wrapped
-                        // and therefore retryable (fail-safe default).
-                        let msg = e.to_string();
-                        let reason = if msg.starts_with("fatal:") {
-                            msg
-                        } else {
-                            format!("primitive_execution_error: {e}")
-                        };
-                        let _ = worker::fail_step(db, task_id, &worker_id, &step_id, &reason);
-                        return Err(anyhow!("step {} failed: {}", step_id, reason));
-                    }
-                }
+                } // end else (generic primitive execution)
             }
         }
 
@@ -253,12 +441,26 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                 let tests_passed = find_latest_test_report(db, task_id)?
                     .and_then(|r| r.get("passed").and_then(|p| p.as_bool()))
                     .unwrap_or(false);
-                if !applied || !tests_passed {
+                // PROGRESS UNTIL VERIFIED stage 4 — decomposition lemma:
+                // a task kernel-registered as SUBTASK_OF may complete with
+                // verified apply evidence but WITHOUT a passing test
+                // report: its semantic verification is delegated to the
+                // composition carrier's task-level tests (subtask proofs
+                // are lemmas; the carrier is the theorem). Registration
+                // is kernel-owned (SUBTASK_OF event), never model- or
+                // payload-derived. Unregistered tasks keep the full gate
+                // — matrix H remains impossible for them.
+                let is_subtask = is_registered_subtask(db, task_id);
+                if !applied || (!tests_passed && !is_subtask) {
                     return Err(anyhow!(
-                        "fatal: CodeFix completion blocked: apply_evidence={} passing_test_report={} — no fake success",
+                        "fatal: CodeFix completion blocked: apply_evidence={} passing_test_report={} subtask={} — no fake success",
                         applied,
-                        tests_passed
+                        tests_passed,
+                        is_subtask
                     ));
+                }
+                if is_subtask && !tests_passed {
+                    println!("NOTE    : SUBTASK (lemma) completion — patch applied and kernel-verified; semantic verification delegated to the composition carrier.");
                 }
             }
             storage.process_effects_ledger(task_id)?;
