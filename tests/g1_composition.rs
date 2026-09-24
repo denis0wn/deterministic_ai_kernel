@@ -299,3 +299,117 @@ fn composition_multi_member_ordered_apply() {
     assert!(applied.contains("return 20"), "member 2 applied");
     std::env::remove_var("DAK_CODEFIX_WORKSPACE");
 }
+
+/// G1 across the merge boundary: run a real composition through the kernel
+/// effect loop, then feed the artifact the kernel ACTUALLY persisted into the
+/// analyzer's v2 verifier.
+///
+/// The producer (`src/effects.rs`) and the verifier
+/// (`src/analyzer/evidence_chain_v2.rs`) lived on different branches until
+/// analyzer and orchestrator-rebuild were merged, and nothing exercised them
+/// together: the verifier's own tests used hand-built fixtures, while the
+/// kernel never emitted `composed_state_blake3`, so `parse_composition_inputs`
+/// refused real kernel output with "field 'composed_state_blake3' missing".
+/// This test is what keeps the two halves joined.
+#[test]
+fn kernel_composition_artifact_verifies_through_analyzer_v2() {
+    use deterministic_ai_kernel::analyzer::evidence_chain_v2::{
+        parse_composition_inputs, verify_composition_chain, OVERALL_EVIDENCED,
+    };
+
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = temp_dir("chain_e2e");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let baseline = "def f():\n    return 1\n";
+    std::fs::write(ws.join("calc.py"), baseline).unwrap();
+    std::fs::write(
+        ws.join("test_calc.py"),
+        "from calc import f\ndef test_f():\n    assert f() == 2\n",
+    )
+    .unwrap();
+    let db_path = root.join("chain.db");
+    let db_str = db_path.to_str().unwrap();
+    let conn = open_db(db_str);
+
+    let member = "chain_member_1";
+    let patch = json!({
+        "version": "patch_v1",
+        "target_file": ws.join("calc.py").to_str().unwrap(),
+        "context_before": "    return 1\n",
+        "replacement": "    return 2\n",
+        "reason": "fix f"
+    });
+    insert_member(&conn, member, &patch);
+    let target = ws.join("calc.py").to_str().unwrap().to_string();
+    let spec = comp_spec(vec![member.to_string()], &blake3_hex(baseline), &target);
+    insert_composition(&conn, "g1_chain", &spec);
+    drop(conn);
+
+    std::env::set_var("DAK_CODEFIX_WORKSPACE", ws.to_str().unwrap());
+    deterministic_ai_kernel::effects::execute_effects(db_str, "g1_chain")
+        .expect("composition should complete");
+
+    // Read back exactly what the kernel persisted — no hand-built fixture.
+    let conn = open_db(db_str);
+    let artifact: String = conn
+        .query_row(
+            "SELECT payload FROM semantic_artifacts \
+             WHERE task_id='g1_chain' AND step_id='03_apply_patch' \
+             ORDER BY rowid DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .expect("kernel must persist the combined apply-evidence artifact");
+
+    let inputs = parse_composition_inputs(&artifact)
+        .unwrap_or_else(|e| panic!("v2 verifier must accept real kernel output, got: {e}"));
+
+    assert_eq!(inputs.target_file, target);
+    assert_eq!(inputs.baseline_hash, blake3_hex(baseline));
+    assert_eq!(inputs.members.len(), 1);
+    assert_eq!(inputs.members[0].member_task_id, member);
+    assert!(inputs.members[0].applied);
+
+    // composed_state_blake3 is measured from the bytes on disk rather than
+    // copied from the member's self-report, so it must equal the real content
+    // AND agree with what apply_patch claimed.
+    let applied = std::fs::read_to_string(ws.join("calc.py")).unwrap();
+    assert_eq!(inputs.composed_state_blake3, blake3_hex(&applied));
+    assert_eq!(
+        inputs.composed_state_blake3, inputs.members[0].post_image_blake3,
+        "measured composed state must agree with the member's reported post image"
+    );
+
+    // The kernel persists the report wrapped as {"test_report_v1": {...}};
+    // the verifier validates the inner document, which is what
+    // `analyzer_chain_verify --composition --test-report <file>` is handed.
+    let wrapped: String = conn
+        .query_row(
+            "SELECT payload FROM semantic_artifacts \
+             WHERE task_id='g1_chain' AND step_id='04_run_tests' \
+             ORDER BY rowid DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .expect("kernel must persist a test report artifact");
+    let wrapped: serde_json::Value = serde_json::from_str(&wrapped).unwrap();
+    let report_bytes = serde_json::to_string(&wrapped["test_report_v1"]).unwrap();
+
+    let core = verify_composition_chain(&inputs, Some(&report_bytes));
+    let links: Vec<String> = core
+        .links
+        .iter()
+        .map(|l| format!("{}={}", l.name, l.status))
+        .collect();
+    assert_eq!(
+        core.overall, OVERALL_EVIDENCED,
+        "chain must verify end-to-end; links: {links:?}"
+    );
+    assert!(
+        core.links.iter().all(|l| l.status == "verified"),
+        "every link must verify positively, got: {links:?}"
+    );
+
+    std::env::remove_var("DAK_CODEFIX_WORKSPACE");
+}

@@ -178,6 +178,36 @@ fn apply_composed_patches(
     }
     let last =
         last_evidence.ok_or_else(|| anyhow!("fatal: composition produced no apply evidence"))?;
+
+    // Composed-state hash, measured independently from the bytes actually on
+    // disk after every member applied. Copying `last.post_image_blake3` here
+    // would make the analyzer's `composed_state` link tautological; measuring
+    // it keeps the link meaningful — a disagreement between what apply_patch
+    // reported and what the file really contains now surfaces as a chain
+    // inconsistency instead of verifying by construction.
+    //
+    // This is the field analyzer::evidence_chain_v2::parse_composition_inputs
+    // requires. Without it the v2 verifier refuses real kernel output with
+    // "field 'composed_state_blake3' missing": the producer lived on
+    // orchestrator-rebuild and the verifier on analyzer, and nothing exercised
+    // them together until the two branches were merged.
+    let composed_path =
+        crate::tools::file_tools::resolve_safe(&composition.target_file, &workspace).map_err(
+            |e| {
+                anyhow!(
+                    "fatal: composition target '{}' rejected by workspace confinement: {e}",
+                    composition.target_file
+                )
+            },
+        )?;
+    let composed_bytes = std::fs::read(&composed_path).map_err(|e| {
+        anyhow!(
+            "fatal: cannot read composed state '{}': {e}",
+            composed_path.display()
+        )
+    })?;
+    let composed_state_blake3 = blake3::hash(&composed_bytes).to_hex().to_string();
+
     // Combined apply-evidence artifact (same shape the apply tool emits so
     // the deterministic completion gate recognizes it).
     let combined = serde_json::json!({
@@ -187,6 +217,7 @@ fn apply_composed_patches(
         "composition_members": member_evidence,
         "composition_baseline_hash": composition.baseline_hash,
         "composition_target_file": composition.target_file,
+        "composed_state_blake3": composed_state_blake3,
     });
     let generation = storage.latest_generation_for_task(task_id)?;
     storage.append_semantic_artifact(
