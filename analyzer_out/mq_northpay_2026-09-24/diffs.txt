@@ -1,0 +1,40 @@
+# Applied changes to clearing/fees.py per run (original: 'return int(raw * 100) / 100')
+
+## seed42  (TASK_STATE: failed)
+25c25
+<     return int(raw * 100) / 100
+---
+>     return round(raw * 100 + 0.5) / 100
+  (unchanged)
+
+## seed100  (TASK_STATE: completed)
+25c25
+<     return int(raw * 100) / 100
+---
+>     return int(raw * 100 + 0.5) / 100
+  (unchanged)
+
+## seed101  (TASK_STATE: completed)
+25c25
+<     return int(raw * 100) / 100
+---
+>     return int(raw * 100 + 0.5) / 100
+  (unchanged)
+
+## seed102  (TASK_STATE: failed)
+25c25,26
+<     return int(raw * 100) / 100
+---
+>     from decimal import Decimal, ROUND_HALF_UP
+>     return Decimal(str(raw * 100)).quantize(Decimal('1'), rounding=ROUND_HALF_UP) / 100
+  (unchanged)
+
+## seed102_repairoff  (TASK_STATE: failed)
+25c25
+<     return int(raw * 100) / 100
+---
+>     return round(raw * 100) / 100
+  (unchanged)
+
+## probe_freeform  (TASK_STATE: completed)
+  (unchanged — routed to a non-mutating flow)
