@@ -16,7 +16,7 @@ fn doctor_json_contract_is_stable() {
 
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("\"free_gb\""), "{stdout}");
-    assert!(stdout.contains("\"lm_studio_models\""), "{stdout}");
+    assert!(stdout.contains("\"local_models_count\""), "{stdout}");
     assert!(stdout.contains("\"roles\""), "{stdout}");
     assert!(stdout.contains("\"task_planning\""), "{stdout}");
     assert!(

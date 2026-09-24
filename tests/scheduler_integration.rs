@@ -16,7 +16,7 @@ fn unique_db_path(test_name: &str) -> PathBuf {
 
 fn run(db: &Path, args: &[&str]) -> String {
     let out = Command::new("cargo")
-        .args(["run", "--quiet", "--"])
+        .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
         .args(args)
         .output()
@@ -32,7 +32,7 @@ fn run(db: &Path, args: &[&str]) -> String {
 
 fn run_expect_fail(db: &Path, args: &[&str]) -> String {
     let out = Command::new("cargo")
-        .args(["run", "--quiet", "--"])
+        .args(["run", "--quiet", "--bin", "deterministic_ai_kernel", "--"])
         .env("KERNEL_DB_PATH", db.as_os_str())
         .args(args)
         .output()

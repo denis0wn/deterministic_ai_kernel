@@ -6,7 +6,7 @@ fn doctor_contract_is_stable() {
     let report = doctor().unwrap();
 
     assert!(report.free_gb > 0.0);
-    assert!(report.lm_studio_models >= 1);
+    assert!(report.local_models_count >= 1);
     assert!(!report.roles.is_empty());
 
     let task = report

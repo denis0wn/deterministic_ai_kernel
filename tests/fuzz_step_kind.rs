@@ -208,7 +208,7 @@ proptest! {
         task_suffix in "[a-z]{4}",
     ) {
         // e.g. ["AnalyzeTask", "AnalyzeTask", ..., "AnalyzeTask"]
-        let steps: Vec<String> = std::iter::repeat(base.to_string()).take(repeat_count).collect();
+        let steps: Vec<String> = vec![base.to_string(); repeat_count];
 
         let task = format!("task-fuzz-dup-{task_suffix}");
         let db = unique_db(&task);

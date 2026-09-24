@@ -14,7 +14,7 @@ fn live_lmstudio_is_reachable_when_explicitly_enabled() {
 
     let report = doctor().expect("doctor() should succeed against live LM Studio");
     assert!(
-        report.lm_studio_models >= 1,
+        report.local_models_count >= 1,
         "expected at least one live model"
     );
     assert!(

@@ -55,19 +55,20 @@ impl std::fmt::Display for StablePlannerId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "source")]
 pub enum StepProvenance {
+    #[default]
     Unknown,
-    TaskParser { task_id: String },
-    CriticRecovery { rule: String },
-    Replay { capsule_id: String },
-}
-
-impl Default for StepProvenance {
-    fn default() -> Self {
-        Self::Unknown
-    }
+    TaskParser {
+        task_id: String,
+    },
+    CriticRecovery {
+        rule: String,
+    },
+    Replay {
+        capsule_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

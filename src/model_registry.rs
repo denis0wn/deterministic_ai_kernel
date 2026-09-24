@@ -1,3 +1,4 @@
+use crate::ai::capabilities::{ModelCapability, ModelModalityProfile};
 use anyhow::{anyhow, Result};
 
 #[cfg(test)]
@@ -53,7 +54,7 @@ fn resolve_model_from_values(
     let api_key = values
         .get("OPENAI_API_KEY")
         .cloned()
-        .unwrap_or_else(|| "lm-studio".to_string());
+        .unwrap_or_else(|| "local-llm".to_string());
 
     let default_model = required_from_map(values, "OPENAI_MODEL")?;
 
@@ -73,7 +74,7 @@ fn resolve_model_from_values(
 
 pub fn resolve_model(purpose: ModelPurpose) -> Result<ModelConfig> {
     let base_url = env_required("OPENAI_BASE_URL")?;
-    let api_key = env_with_default("OPENAI_API_KEY", "lm-studio");
+    let api_key = env_with_default("OPENAI_API_KEY", "local-llm");
 
     let default_model = env_required("OPENAI_MODEL")?;
 
@@ -93,6 +94,45 @@ pub fn resolve_model(purpose: ModelPurpose) -> Result<ModelConfig> {
     })
 }
 
+pub fn capability_profile_for_model(model_id: &str) -> ModelModalityProfile {
+    let lower = model_id.to_ascii_lowercase();
+
+    let capabilities = if lower.contains("whisper") {
+        ModelCapability {
+            audio: true,
+            ..Default::default()
+        }
+    } else if lower.contains("vision")
+        || lower.contains("gemma4-unified")
+        || lower.contains("gemma-4-12b-coder-fable5-composer2.5-4bit")
+    {
+        ModelCapability {
+            text: true,
+            vision: true,
+            audio: true,
+            code: true,
+            reasoning: true,
+        }
+    } else {
+        ModelCapability {
+            text: true,
+            code: true,
+            reasoning: true,
+            ..Default::default()
+        }
+    };
+
+    ModelModalityProfile {
+        model_id: model_id.to_string(),
+        capabilities,
+    }
+}
+
+pub fn capability_profile_for_purpose(purpose: ModelPurpose) -> Result<ModelModalityProfile> {
+    let cfg = resolve_model(purpose)?;
+    Ok(capability_profile_for_model(&cfg.model))
+}
+
 pub fn validate() -> Result<()> {
     let _ = resolve_model(ModelPurpose::CodingAssistant)?;
     let _ = resolve_model(ModelPurpose::TaskPlanning)?;
@@ -105,7 +145,7 @@ mod tests {
 
     fn base_values() -> HashMap<&'static str, String> {
         HashMap::from([
-            ("OPENAI_BASE_URL", "http://localhost:1234/v1".to_string()),
+            ("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1".to_string()),
             ("OPENAI_MODEL", "default-model".to_string()),
         ])
     }
@@ -132,7 +172,7 @@ mod tests {
         let cfg = resolve_model_from_values(ModelPurpose::CodingAssistant, &values).unwrap();
 
         assert_eq!(cfg.model, "default-model");
-        assert_eq!(cfg.api_key, "lm-studio");
+        assert_eq!(cfg.api_key, "local-llm");
     }
 
     #[test]
@@ -141,7 +181,7 @@ mod tests {
         let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values).unwrap();
 
         assert_eq!(cfg.model, "default-model");
-        assert_eq!(cfg.api_key, "lm-studio");
+        assert_eq!(cfg.api_key, "local-llm");
     }
 
     #[test]
@@ -160,6 +200,22 @@ mod tests {
 
         let cfg = resolve_model_from_values(ModelPurpose::TaskPlanning, &values).unwrap();
         assert_eq!(cfg.model, "planner-model");
+    }
+
+    #[test]
+    fn whisper_profiles_as_audio_model() {
+        let profile = capability_profile_for_model("faster-whisper-large-v3");
+        assert!(profile.capabilities.audio);
+        assert!(!profile.capabilities.text);
+    }
+
+    #[test]
+    fn generic_text_model_profiles_as_reasoning_text_model() {
+        let profile = capability_profile_for_model("huihui-gemma-4-e2b-it-abliterated-mlx");
+        assert!(profile.capabilities.text);
+        assert!(profile.capabilities.code);
+        assert!(profile.capabilities.reasoning);
+        assert!(!profile.capabilities.vision);
     }
 
     #[test]

@@ -40,6 +40,7 @@ impl std::fmt::Display for PlanFingerprint {
 // StepDelta
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "delta")]
 pub enum StepDelta {
@@ -64,16 +65,19 @@ pub enum StepDelta {
 // PlanDiff
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanDiff {
     pub deltas: Vec<StepDelta>,
 }
 
 impl PlanDiff {
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.deltas.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn compute(before: &[PlannerStep], after: &[PlannerStep]) -> Self {
         let before_ids: Vec<&StablePlannerId> = before.iter().map(|ps| &ps.id).collect();
         let after_ids: Vec<&StablePlannerId> = after.iter().map(|ps| &ps.id).collect();
@@ -151,10 +155,12 @@ impl PipelineReport {
         }
     }
 
+    #[allow(dead_code)]
     pub fn to_json(&self) -> anyhow::Result<String> {
         Ok(serde_json::to_string(self)?)
     }
 
+    #[allow(dead_code)]
     pub fn from_json(s: &str) -> anyhow::Result<Self> {
         Ok(serde_json::from_str(s)?)
     }

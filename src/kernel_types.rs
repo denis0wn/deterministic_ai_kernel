@@ -103,3 +103,76 @@ impl ReplayCapsule {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Modality {
+    Text,
+    Vision,
+    Audio,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AIInput {
+    Text {
+        prompt: String,
+    },
+    Vision {
+        prompt: Option<String>,
+        image_refs: Vec<String>,
+    },
+    Audio {
+        prompt: Option<String>,
+        audio_refs: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AIRequest {
+    pub request_id: String,
+    pub modality: Modality,
+    pub input: AIInput,
+    pub model: Option<String>,
+    pub deterministic: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AIResponse {
+    pub request_id: String,
+    pub model_id: String,
+    pub output_text: String,
+    pub finish_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AITrace {
+    pub model_id: String,
+    pub model_hash: String,
+    pub prompt_hash: String,
+    pub sampling_config: String,
+    pub timestamp: u64,
+    pub output_hash: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AILifecycleEvent {
+    InvocationStarted {
+        request_id: String,
+        model_id: String,
+        trace_id: String,
+    },
+    ChunkProduced {
+        request_id: String,
+        sequence: u64,
+        content_hash: String,
+    },
+    InvocationCompleted {
+        request_id: String,
+        output_hash: String,
+        duration_ms: u64,
+    },
+    InvocationFailed {
+        request_id: String,
+        error: String,
+    },
+}

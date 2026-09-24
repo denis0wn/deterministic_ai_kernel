@@ -6,7 +6,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::kernel_types::{
-    ExecutionEvent, StateGraph, StateGraphEdge, StateGraphNode, TrustContext, TrustLevel,
+    AILifecycleEvent, AIRequest, AIResponse, AITrace, ExecutionEvent, StateGraph, StateGraphEdge,
+    StateGraphNode, TrustContext, TrustLevel,
 };
 
 #[derive(Debug, Clone)]
@@ -80,6 +81,36 @@ impl EventBus {
 
         tx.commit()?;
         Ok(unit_gen)
+    }
+
+    pub fn append_ai_request(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+        request: &AIRequest,
+        trace: &AITrace,
+    ) -> Result<i64> {
+        let payload = serde_json::json!({
+            "kind": "AI_REQUEST",
+            "request": request,
+            "trace": trace,
+        });
+        self.append_event(task_id, step_id, "AI_REQUEST", &payload)
+    }
+
+    pub fn append_ai_response(
+        &self,
+        task_id: &str,
+        step_id: Option<&str>,
+        response: &AIResponse,
+        trace: &AITrace,
+    ) -> Result<i64> {
+        let payload = serde_json::json!({
+            "kind": "AI_RESPONSE",
+            "response": response,
+            "trace": trace,
+        });
+        self.append_event(task_id, step_id, "AI_RESPONSE", &payload)
     }
 
     pub fn append_semantic_artifact(
@@ -389,5 +420,302 @@ impl EventBus {
         } else {
             serde_json::to_string(value).unwrap()
         }
+    }
+}
+
+pub fn stable_event_hash(input: &str) -> String {
+    let mut h: u64 = 1469598103934665603;
+    for b in input.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    format!("{:016x}", h)
+}
+
+impl EventBus {
+    #[allow(dead_code)]
+    pub fn record_ai_event(
+        &self,
+        task_id: &str,
+        event: &AILifecycleEvent,
+        trace: Option<&AITrace>,
+    ) -> Result<ExecutionEvent> {
+        let payload = serde_json::json!({
+            "ai_event": event,
+            "trace": trace,
+        });
+
+        let execution_event = ExecutionEvent {
+            id: format!(
+                "ai-{}",
+                stable_event_hash(&serde_json::to_string(&payload)?)
+            ),
+            task_id: task_id.to_string(),
+            timestamp: format!(
+                "{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or_default()
+            ),
+            event_type: match event {
+                AILifecycleEvent::InvocationStarted { .. } => "AIInvocationStarted",
+                AILifecycleEvent::ChunkProduced { .. } => "AIChunkProduced",
+                AILifecycleEvent::InvocationCompleted { .. } => "AIInvocationCompleted",
+                AILifecycleEvent::InvocationFailed { .. } => "AIInvocationFailed",
+            }
+            .to_string(),
+            payload,
+            caused_by: None,
+            trust_context: TrustContext {
+                source: "ai_worker".to_string(),
+                trust_level: TrustLevel::Medium,
+                verification_status: "recorded".to_string(),
+                policy_version: "phase1".to_string(),
+            },
+        };
+
+        Ok(execution_event)
+    }
+
+    #[allow(dead_code)]
+    pub fn replay_ai_event(&self, event: &ExecutionEvent) -> Result<AILifecycleEvent> {
+        let ai_event = event
+            .payload
+            .get("ai_event")
+            .ok_or_else(|| anyhow!("missing ai_event payload"))?
+            .clone();
+
+        let decoded: AILifecycleEvent = serde_json::from_value(ai_event)?;
+        Ok(decoded)
+    }
+}
+
+#[cfg(test)]
+mod ai_event_tests {
+    use super::*;
+    use crate::kernel_types::{AILifecycleEvent, AITrace};
+
+    fn sample_trace() -> AITrace {
+        AITrace {
+            model_id: "model-x".to_string(),
+            model_hash: "hash-model".to_string(),
+            prompt_hash: "hash-prompt".to_string(),
+            sampling_config: "temperature=0".to_string(),
+            timestamp: 123456789,
+            output_hash: "hash-output".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_ai_invocation_emits_started_event() {
+        let bus = EventBus::new(std::env::temp_dir().join("event_bus_ai_test_started.sqlite"))
+            .expect("event bus");
+        let evt = AILifecycleEvent::InvocationStarted {
+            request_id: "req-1".to_string(),
+            model_id: "model-x".to_string(),
+            trace_id: "trace-1".to_string(),
+        };
+
+        let recorded = bus
+            .record_ai_event("task-1", &evt, Some(&sample_trace()))
+            .expect("record event");
+
+        assert_eq!(recorded.task_id, "task-1");
+        assert_eq!(recorded.event_type, "AIInvocationStarted");
+        assert!(recorded.payload.get("ai_event").is_some());
+    }
+
+    #[test]
+    fn test_ai_invocation_replay_roundtrip() {
+        let bus = EventBus::new(std::env::temp_dir().join("event_bus_ai_test_replay.sqlite"))
+            .expect("event bus");
+        let evt = AILifecycleEvent::InvocationCompleted {
+            request_id: "req-2".to_string(),
+            output_hash: "out-1".to_string(),
+            duration_ms: 42,
+        };
+
+        let recorded = bus
+            .record_ai_event("task-2", &evt, Some(&sample_trace()))
+            .expect("record event");
+
+        let replayed = bus.replay_ai_event(&recorded).expect("replay event");
+        assert_eq!(replayed, evt);
+    }
+
+    #[test]
+    fn test_ai_trace_is_deterministic() {
+        let trace_a = sample_trace();
+        let trace_b = sample_trace();
+
+        let a = stable_event_hash(&serde_json::to_string(&trace_a).unwrap());
+        let b = stable_event_hash(&serde_json::to_string(&trace_b).unwrap());
+
+        assert_eq!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod ai_helper_usage_tests {
+    use super::*;
+    use crate::ai::protocol::{
+        AIInput, AIRequest, AIResponse, GenerationConfig, Modality, ResponseChunk, TraceContext,
+    };
+    use crate::ai::trace::AITrace;
+    use crate::kernel_types::{AILifecycleEvent, ExecutionEvent};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_db_path(name: &str) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("{name}-{nanos}.db"))
+            .display()
+            .to_string()
+    }
+
+    fn sample_request() -> AIRequest {
+        AIRequest {
+            request_id: "req-evt".to_string(),
+            workflow_id: "wf-evt".to_string(),
+            modality: Modality::Text,
+            input: AIInput::Text {
+                prompt: "hello".to_string(),
+            },
+            input_artifacts: Vec::new(),
+            prompt: Some("hello".to_string()),
+            model: Some("model-x".to_string()),
+            generation_config: GenerationConfig::default(),
+            trace_context: TraceContext::default(),
+            deterministic: true,
+        }
+    }
+
+    fn sample_response() -> AIResponse {
+        AIResponse {
+            request_id: "req-evt".to_string(),
+            model_id: "model-x".to_string(),
+            output_text: "world".to_string(),
+            finish_reason: Some("stop".to_string()),
+            chunks: vec![ResponseChunk {
+                sequence: 0,
+                text: "world".to_string(),
+                done: true,
+            }],
+            generated_artifacts: Vec::new(),
+            execution_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn sample_trace() -> AITrace {
+        AITrace {
+            request_id: "req-evt".to_string(),
+            workflow_id: "wf-evt".to_string(),
+            model_id: "model-x".to_string(),
+            model_version: None,
+            model_hash: stable_event_hash("model-x"),
+            prompt_hash: stable_event_hash("hello"),
+            input_artifact_hashes: Vec::new(),
+            generation_config_hash: stable_event_hash("{}"),
+            sampling_config: "temperature_milli=0".to_string(),
+            seed: Some(0),
+            timestamp: 0,
+            output_hash: stable_event_hash("world"),
+        }
+    }
+
+    #[test]
+    fn stable_event_hash_is_deterministic() {
+        let a = stable_event_hash("alpha");
+        let b = stable_event_hash("alpha");
+        let c = stable_event_hash("beta");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn record_and_replay_ai_helpers_are_exercised() -> Result<()> {
+        let db = temp_db_path("event-bus-ai-helpers");
+        let bus = EventBus::new(&db)?;
+
+        let request = sample_request();
+        let _response = sample_response();
+        let trace = sample_trace();
+
+        let started = AILifecycleEvent::InvocationStarted {
+            request_id: request.request_id.clone(),
+            model_id: trace.model_id.clone(),
+            trace_id: trace.output_hash.clone(),
+        };
+        let completed = AILifecycleEvent::InvocationCompleted {
+            request_id: request.request_id.clone(),
+            output_hash: trace.output_hash.clone(),
+            duration_ms: 0,
+        };
+
+        let event_trace = crate::kernel_types::AITrace {
+            model_id: trace.model_id.clone(),
+            model_hash: trace.model_hash.clone(),
+            prompt_hash: trace.prompt_hash.clone(),
+            sampling_config: trace.sampling_config.clone(),
+            timestamp: trace.timestamp,
+            output_hash: trace.output_hash.clone(),
+        };
+
+        bus.record_ai_event("task-evt", &started, Some(&event_trace))?;
+        bus.record_ai_event("task-evt", &completed, Some(&event_trace))?;
+
+        let started_exec = ExecutionEvent {
+            id: "e1".to_string(),
+            task_id: "task-evt".to_string(),
+            timestamp: "0".to_string(),
+            event_type: "AIInvocationStarted".to_string(),
+            payload: json!({
+                "ai_event": started,
+                "trace": trace.clone(),
+            }),
+            caused_by: None,
+            trust_context: TrustContext {
+                source: "ai_worker".to_string(),
+                trust_level: TrustLevel::Medium,
+                verification_status: "recorded".to_string(),
+                policy_version: "phase1".to_string(),
+            },
+        };
+
+        let completed_exec = ExecutionEvent {
+            id: "e2".to_string(),
+            task_id: "task-evt".to_string(),
+            timestamp: "0".to_string(),
+            event_type: "AIInvocationCompleted".to_string(),
+            payload: json!({
+                "ai_event": completed,
+                "trace": trace,
+            }),
+            caused_by: None,
+            trust_context: TrustContext {
+                source: "ai_worker".to_string(),
+                trust_level: TrustLevel::Medium,
+                verification_status: "recorded".to_string(),
+                policy_version: "phase1".to_string(),
+            },
+        };
+
+        match bus.replay_ai_event(&started_exec)? {
+            AILifecycleEvent::InvocationStarted { .. } => {}
+            _ => panic!("expected started event"),
+        }
+
+        match bus.replay_ai_event(&completed_exec)? {
+            AILifecycleEvent::InvocationCompleted { .. } => {}
+            _ => panic!("expected completed event"),
+        }
+
+        Ok(())
     }
 }

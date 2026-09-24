@@ -71,7 +71,7 @@ proptest! {
     fn prop_repeat_emit_is_idempotent(steps in arb_steps(1, 6), task_suffix in "[a-z]{4}") {
         let task = format!("task-idem-{task_suffix}");
         let db = unique_db(&task); cleanup(&db);
-        let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
+        let step_refs: Vec<&str> = steps.to_vec();
         let first  = emit_and_fetch(&db, &task, "step-idem", &step_refs);
         let second = emit_and_fetch(&db, &task, "step-idem", &step_refs);
         prop_assert_eq!(&first, &second);
@@ -87,7 +87,7 @@ proptest! {
     fn prop_snapshot_restore_preserves_payload(steps in arb_steps(1, 8), task_suffix in "[a-z]{4}") {
         let task = format!("task-snap-{task_suffix}");
         let db = unique_db(&task); cleanup(&db);
-        let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
+        let step_refs: Vec<&str> = steps.to_vec();
         let before = emit_and_fetch(&db, &task, "step-snap", &step_refs);
         let _ = run_ok(&db, &["snapshot", &task]);
         let _ = run_ok(&db, &["restore",  &task]);
@@ -124,7 +124,7 @@ proptest! {
     fn prop_batch_structural_invariants(steps in arb_steps(1, 5), task_suffix in "[a-z0-9]{6}") {
         let task = format!("task-batch-{task_suffix}");
         let db = unique_db(&task); cleanup(&db);
-        let step_refs: Vec<&str> = steps.iter().map(|s| *s).collect();
+        let step_refs: Vec<&str> = steps.to_vec();
         let payload = emit_and_fetch(&db, &task, "step-batch", &step_refs);
         prop_assert_eq!(&payload["version"], 1);
         prop_assert_eq!(&payload["seed"], 0);

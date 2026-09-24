@@ -21,7 +21,7 @@ struct ModelInfo {
 #[derive(Debug, serde::Serialize)]
 pub struct DoctorReport {
     pub free_gb: f64,
-    pub lm_studio_models: usize,
+    pub local_models_count: usize,
     pub roles: Vec<DoctorRoleReport>,
 }
 
@@ -85,17 +85,38 @@ pub fn list_models() -> Result<Vec<String>> {
             .collect());
     }
 
-    let output = Command::new("sh")
-        .arg("-lc")
-        .arg("curl -s http://127.0.0.1:1234/v1/models")
-        .output()?;
-
-    if !output.status.success() {
-        return Err(anyhow!("failed to query LM Studio models endpoint"));
+    let mut base_url = std::env::var("OPENAI_BASE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434/v1".to_string());
+    base_url = base_url.trim_end_matches('/').to_string();
+    if !base_url.ends_with("/v1") {
+        base_url = format!("{}/v1", base_url);
     }
+    let url = format!("{}/models", base_url);
 
-    let parsed: ModelsResponse = serde_json::from_slice(&output.stdout)?;
-    Ok(parsed.data.into_iter().map(|m| m.id).collect())
+    // Spawn in a plain OS thread so this works whether called from a sync
+    // context or from inside a tokio async runtime (reqwest::blocking would
+    // panic if nested inside an existing tokio executor).
+    let result = std::thread::spawn(move || -> anyhow::Result<Vec<String>> {
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(&url)
+            .send()
+            .map_err(|e| anyhow::anyhow!("failed to query local LLM models endpoint: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "failed to query local LLM models endpoint: HTTP {}",
+                response.status()
+            ));
+        }
+
+        let parsed: ModelsResponse = response.json()?;
+        Ok(parsed.data.into_iter().map(|m| m.id).collect())
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("HTTP thread panicked while querying models endpoint"))??;
+
+    Ok(result)
 }
 
 pub fn print_memory(threshold_gb: Option<f64>) -> Result<()> {
@@ -195,7 +216,7 @@ pub fn doctor() -> Result<DoctorReport> {
 
     Ok(DoctorReport {
         free_gb,
-        lm_studio_models: models.len(),
+        local_models_count: models.len(),
         roles,
     })
 }
@@ -243,7 +264,7 @@ pub fn doctor_json_report() -> Result<serde_json::Value> {
 pub fn print_doctor_text() -> Result<()> {
     let report = doctor()?;
     println!("FREE_GB={:.2}", report.free_gb);
-    println!("LM_STUDIO_MODELS={}", report.lm_studio_models);
+    println!("LOCAL_MODELS_COUNT={}", report.local_models_count);
     println!();
 
     for row in report.roles {
@@ -275,7 +296,7 @@ mod tests {
         // The interface layer (main.rs / cli_json) is responsible for wrapping.
         let raw = doctor_json_report().unwrap();
         assert!(raw.get("free_gb").is_some());
-        assert!(raw.get("lm_studio_models").is_some());
+        assert!(raw.get("local_models_count").is_some());
         assert!(raw.get("roles").is_some());
         assert!(raw["roles"].is_array());
 
