@@ -1,0 +1,15 @@
+{
+  "run_id": "billing_python_1786825852",
+  "ts_unix": 1786825852,
+  "workspace": "analyzer_examples/billing_python",
+  "files_scanned": 4,
+  "candidates_found": 3,
+  "findings_count": 3,
+  "tasks_emitted": [
+    "MONEY-TRUNCATION-FEES-29",
+    "OFFBYONE-RANGE-FEES-23",
+    "NONE-ARITH-FEES-34"
+  ],
+  "analyzer_version": "0.1.0",
+  "duration_ms": 1
+}

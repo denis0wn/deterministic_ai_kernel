@@ -1,0 +1,41 @@
+[
+  {
+    "id": "MONEY-TRUNCATION-FEES-29",
+    "severity": "critical",
+    "description": "money amount truncated via int() — sub-cent fractions lost",
+    "evidence": [
+      "billing/fees.py:29-29"
+    ],
+    "provenance": {
+      "detector": "static",
+      "confidence": 0.7,
+      "analyzer_version": "0.1.0"
+    }
+  },
+  {
+    "id": "OFFBYONE-RANGE-FEES-23",
+    "severity": "high",
+    "description": "range starts at 1 over len() — first element may be skipped",
+    "evidence": [
+      "billing/fees.py:23-23"
+    ],
+    "provenance": {
+      "detector": "static",
+      "confidence": 0.65,
+      "analyzer_version": "0.1.0"
+    }
+  },
+  {
+    "id": "NONE-ARITH-FEES-34",
+    "severity": "high",
+    "description": "arithmetic on dict.get() result without default — possible None crash",
+    "evidence": [
+      "billing/fees.py:34-34"
+    ],
+    "provenance": {
+      "detector": "static",
+      "confidence": 0.6,
+      "analyzer_version": "0.1.0"
+    }
+  }
+]

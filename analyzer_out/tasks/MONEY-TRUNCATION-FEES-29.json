@@ -1,0 +1,29 @@
+{
+  "task_kind": "codefix",
+  "workspace": "analyzer_examples/billing_python",
+  "target_files": [
+    "billing/fees.py"
+  ],
+  "finding": {
+    "id": "MONEY-TRUNCATION-FEES-29",
+    "severity": "critical",
+    "description": "money amount truncated via int() — sub-cent fractions lost",
+    "evidence": [
+      "billing/fees.py:29-29"
+    ]
+  },
+  "codefix_steps": [
+    "Step 1 read repository analyzer_examples/billing_python/billing/fees.py",
+    "Step 2 find bug",
+    "Step 3 patch code",
+    "Step 4 apply patch",
+    "Step 5 run tests",
+    "Step 6 validate patch"
+  ],
+  "tests_contract": "existing module tests + one new test reproducing this finding",
+  "provenance": {
+    "detector": "static",
+    "confidence": 0.7,
+    "analyzer_version": "0.1.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "run_id": "b2_1787137597",
+  "ts_unix": 1787137597,
+  "workspace": "/tmp/replay_audit/ws/b2",
+  "files_scanned": 1,
+  "candidates_found": 2,
+  "findings_count": 2,
+  "tasks_emitted": [
+    "MONEY-TRUNCATION-LEDGER-15",
+    "TODO-MARKER-LEDGER-23"
+  ],
+  "analyzer_version": "0.4.1",
+  "duration_ms": 1
+}

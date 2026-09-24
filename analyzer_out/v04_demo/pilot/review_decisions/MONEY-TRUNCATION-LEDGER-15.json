@@ -1,0 +1,19 @@
+{
+  "schema_version": "review_decision_v1",
+  "decision_id": "e7332f36ee9fd870ecb10d9cb2391b540fd1a29436145e7cda07de9bb9a4bb39",
+  "decision_core": {
+    "finding_id": "MONEY-TRUNCATION-LEDGER-15",
+    "decision": "approve",
+    "contract_blake3": "1e8ccfbf7777660b8bc4838188f060014701ef1f2c5dd323fc0ffcd1ce21d6d5",
+    "package_manifest_blake3": "1396826743bbb8520e2a0f86f495c0968ff099e4c120b275f2df09af779ebaa4",
+    "workspace_snapshot_blake3": "3ad6d6316471f31333efc6cd9d1750d7b40c524d8d2fe906860b420298291a0d",
+    "override_candidate_only": false,
+    "repro_test_path": "test_ledger.py",
+    "reviewer": "pilot-operator",
+    "rationale": "truncation evidence reviewed; repro test provided"
+  },
+  "operational": {
+    "recorded_at_iso": "2026-08-16T14:06:20Z",
+    "ts_unix": 1786889180
+  }
+}

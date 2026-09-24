@@ -1,0 +1,14 @@
+{
+  "run_id": "g4_1787137767",
+  "ts_unix": 1787137767,
+  "workspace": "/tmp/replay_audit/ws/g4",
+  "files_scanned": 1,
+  "candidates_found": 2,
+  "findings_count": 2,
+  "tasks_emitted": [
+    "FLOOR-DIV-MONEY-FEES-31",
+    "FLOAT-EQUALITY-FEES-37"
+  ],
+  "analyzer_version": "0.4.1",
+  "duration_ms": 0
+}

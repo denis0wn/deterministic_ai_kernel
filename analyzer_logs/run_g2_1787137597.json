@@ -1,0 +1,11 @@
+{
+  "run_id": "g2_1787137597",
+  "ts_unix": 1787137597,
+  "workspace": "/tmp/replay_audit/ws/g2",
+  "files_scanned": 1,
+  "candidates_found": 0,
+  "findings_count": 0,
+  "tasks_emitted": [],
+  "analyzer_version": "0.4.1",
+  "duration_ms": 0
+}

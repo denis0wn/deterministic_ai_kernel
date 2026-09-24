@@ -1,0 +1,57 @@
+{
+  "schema_version": "evidence_chain_v1",
+  "chain_id": "401f0ff6564d7b49113637cf1db9b4dc3f64d56b4631a48ce932d2745cf1f2a0",
+  "core": {
+    "overall": "chain_inconsistent",
+    "links": [
+      {
+        "name": "contract_integrity",
+        "status": "verified",
+        "expected": "1e8ccfbf7777660b8bc4838188f060014701ef1f2c5dd323fc0ffcd1ce21d6d5",
+        "actual": "1e8ccfbf7777660b8bc4838188f060014701ef1f2c5dd323fc0ffcd1ce21d6d5",
+        "detail": "decision matches the current package (manifest, snapshot, contract)"
+      },
+      {
+        "name": "pre_state_matches_snapshot",
+        "status": "verified",
+        "expected": "pre-state hashes equal to snapshot",
+        "actual": "equal",
+        "detail": "1 target file(s) match the snapshot"
+      },
+      {
+        "name": "post_state_present_and_changed",
+        "status": "verified",
+        "expected": "post-state present",
+        "actual": "present, changed",
+        "detail": "at least one target file differs from pre-state"
+      },
+      {
+        "name": "test_report_passed",
+        "status": "mismatch",
+        "expected": "test_report_v1 with tests_passed semantics",
+        "actual": "validation failed",
+        "detail": "classification is 'tests_failed', not tests_passed"
+      }
+    ],
+    "inputs": {
+      "package_manifest_blake3": "1396826743bbb8520e2a0f86f495c0968ff099e4c120b275f2df09af779ebaa4",
+      "decision_id": "e7332f36ee9fd870ecb10d9cb2391b540fd1a29436145e7cda07de9bb9a4bb39",
+      "contract_blake3": "1e8ccfbf7777660b8bc4838188f060014701ef1f2c5dd323fc0ffcd1ce21d6d5",
+      "test_report_blake3": "c83e4e22f907a430995fdf62213c7d8e9e8e3d9101b2216f6523ffcca38738e1",
+      "event_log_blake3": null,
+      "targets": [
+        {
+          "path": "billing/ledger.py",
+          "snapshot_blake3": "e92c388f131d4103238b25aa328ff484feabd470661a3dc57bbade93384b1985",
+          "pre_blake3": "e92c388f131d4103238b25aa328ff484feabd470661a3dc57bbade93384b1985",
+          "post_blake3": "159e3a7813b09d1e4c4e5ddd1f9a67d1a86477905658f833ddc982521d4cb9b4",
+          "changed": true
+        }
+      ]
+    }
+  },
+  "operational": {
+    "recorded_at_iso": "2026-08-16T14:07:27Z",
+    "ts_unix": 1786889247
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "schema_version": "evidence_manifest_v1",
+  "analyzer_version": "0.4.0",
+  "workspace": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech",
+  "workspace_snapshot_blake3": "3ad6d6316471f31333efc6cd9d1750d7b40c524d8d2fe906860b420298291a0d",
+  "inventory": {
+    "file_count": 5,
+    "included_files": [
+      {
+        "path": "README.md",
+        "language": "text",
+        "bytes": 1065,
+        "blake3": "ed4da2e577e90b8871a0b5c49fcbd8dd16869cc9320e280b3c0def9f172d6e6e"
+      },
+      {
+        "path": "billing/__init__.py",
+        "language": "python",
+        "bytes": 25,
+        "blake3": "d65f522eb3cd0974864f5cbb2224b9cac4ecaa112dd38e4dcf994000b1b23415"
+      },
+      {
+        "path": "billing/ledger.py",
+        "language": "python",
+        "bytes": 677,
+        "blake3": "e92c388f131d4103238b25aa328ff484feabd470661a3dc57bbade93384b1985"
+      },
+      {
+        "path": "billing/safe_pricing.py",
+        "language": "python",
+        "bytes": 756,
+        "blake3": "7e55485f43832d43c41144294553a039cd5a522d8145cc4e7d72be9a7df89192"
+      },
+      {
+        "path": "test_ledger.py",
+        "language": "python",
+        "bytes": 817,
+        "blake3": "50e89cddbd39bc7f7e548151759adbc957fd300963324e95565a59dead05047e"
+      }
+    ]
+  },
+  "ruleset": {
+    "version": "python-fintech-rules/0.2.0",
+    "rule_ids": [
+      "dangerous-eval",
+      "money-round-bare",
+      "money-truncation",
+      "none-arith",
+      "offbyone-range",
+      "todo-marker"
+    ]
+  },
+  "external_sources": [],
+  "run": {
+    "run_id": "6a0e39d486f06084e52f2841c38dcdc0bd1310bf35879b5fa0ee728461446b55"
+  }
+}

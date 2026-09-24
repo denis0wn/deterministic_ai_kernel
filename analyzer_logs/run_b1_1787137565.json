@@ -1,0 +1,14 @@
+{
+  "run_id": "b1_1787137565",
+  "ts_unix": 1787137565,
+  "workspace": "/tmp/replay_audit/ws/b1",
+  "files_scanned": 1,
+  "candidates_found": 2,
+  "findings_count": 2,
+  "tasks_emitted": [
+    "MONEY-TRUNCATION-CHARGES-11",
+    "FLOAT-EQUALITY-CHARGES-11"
+  ],
+  "analyzer_version": "0.4.1",
+  "duration_ms": 0
+}

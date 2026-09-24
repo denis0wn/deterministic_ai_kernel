@@ -1,0 +1,86 @@
+[
+  {
+    "id": "MONEY-TRUNCATION-LEDGER-15",
+    "rule_id": "money-truncation",
+    "severity": "critical",
+    "candidate_statement": "money amount truncated via int() — sub-cent fractions lost",
+    "description": "money amount truncated via int() — sub-cent fractions lost",
+    "evidence": [
+      "billing/ledger.py:15-15"
+    ],
+    "evidence_locations": [
+      {
+        "file": "billing/ledger.py",
+        "line_start": 15,
+        "line_end": 15,
+        "file_blake3": "e92c388f131d4103238b25aa328ff484feabd470661a3dc57bbade93384b1985"
+      }
+    ],
+    "limitations": [
+      "false positives: int(x * 100) used for non-monetary scaling (percent formatting, basis points display)",
+      "false negatives: truncation via // operator, math.floor, format specs, or Decimal(int(...)) is not matched"
+    ],
+    "provenance": {
+      "detector": "static",
+      "confidence": 0.7,
+      "analyzer_version": "0.4.0",
+      "model_hint_unverified": false
+    }
+  },
+  {
+    "id": "MONEY-ROUND-BARE-LEDGER-20",
+    "rule_id": "money-round-bare",
+    "severity": "critical",
+    "candidate_statement": "bare round() without explicit rounding policy — banker's-rounding surprises on money",
+    "description": "bare round() without explicit rounding policy — banker's-rounding surprises on money",
+    "evidence": [
+      "billing/ledger.py:20-20"
+    ],
+    "evidence_locations": [
+      {
+        "file": "billing/ledger.py",
+        "line_start": 20,
+        "line_end": 20,
+        "file_blake3": "e92c388f131d4103238b25aa328ff484feabd470661a3dc57bbade93384b1985"
+      }
+    ],
+    "limitations": [
+      "false positives: round() on non-monetary values inside a finance-named file",
+      "false negatives: rounding hidden in format()/f-strings, numpy, or Decimal local contexts is not matched"
+    ],
+    "provenance": {
+      "detector": "static",
+      "confidence": 0.7,
+      "analyzer_version": "0.4.0",
+      "model_hint_unverified": false
+    }
+  },
+  {
+    "id": "TODO-MARKER-LEDGER-23",
+    "rule_id": "todo-marker",
+    "severity": "low",
+    "candidate_statement": "TODO/FIXME marker left in a money/risk/limit/fee/settlement path",
+    "description": "TODO/FIXME marker left in a money/risk/limit/fee/settlement path",
+    "evidence": [
+      "billing/ledger.py:23-23"
+    ],
+    "evidence_locations": [
+      {
+        "file": "billing/ledger.py",
+        "line_start": 23,
+        "line_end": 23,
+        "file_blake3": "e92c388f131d4103238b25aa328ff484feabd470661a3dc57bbade93384b1985"
+      }
+    ],
+    "limitations": [
+      "false positives: informational comments mentioning TODO without unfinished work",
+      "false negatives: alternate spellings (To Do, XXX, HACK) are not matched"
+    ],
+    "provenance": {
+      "detector": "static",
+      "confidence": 0.3,
+      "analyzer_version": "0.4.0",
+      "model_hint_unverified": false
+    }
+  }
+]

@@ -1,0 +1,125 @@
+[
+  {
+    "contract": {
+      "task_kind": "codefix",
+      "workspace": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech",
+      "target_files": [
+        "billing/ledger.py"
+      ],
+      "finding": {
+        "id": "MONEY-TRUNCATION-LEDGER-15",
+        "severity": "critical",
+        "description": "money amount truncated via int() — sub-cent fractions lost",
+        "evidence": [
+          "billing/ledger.py:15-15"
+        ]
+      },
+      "codefix_steps": [
+        "Step 1 read repository /Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech/billing/ledger.py",
+        "Step 2 find bug",
+        "Step 3 patch code",
+        "Step 4 apply patch",
+        "Step 5 run tests",
+        "Step 6 validate patch"
+      ],
+      "tests_contract": "existing module tests + one new test reproducing this finding",
+      "provenance": {
+        "detector": "static",
+        "confidence": 0.7,
+        "analyzer_version": "0.2.0"
+      }
+    },
+    "readiness": {
+      "readiness": "candidate_only",
+      "criteria": {
+        "reproducible_test_present": false,
+        "target_file_snapshot_matches": true,
+        "evidence_complete": true,
+        "manual_review_required": true
+      },
+      "policy": "static finding without an operator-provided reproducible failing test is candidate_only; the analyzer never claims fix readiness on its own; manual review is always required"
+    }
+  },
+  {
+    "contract": {
+      "task_kind": "codefix",
+      "workspace": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech",
+      "target_files": [
+        "billing/ledger.py"
+      ],
+      "finding": {
+        "id": "MONEY-ROUND-BARE-LEDGER-20",
+        "severity": "critical",
+        "description": "bare round() without explicit rounding policy — banker's-rounding surprises on money",
+        "evidence": [
+          "billing/ledger.py:20-20"
+        ]
+      },
+      "codefix_steps": [
+        "Step 1 read repository /Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech/billing/ledger.py",
+        "Step 2 find bug",
+        "Step 3 patch code",
+        "Step 4 apply patch",
+        "Step 5 run tests",
+        "Step 6 validate patch"
+      ],
+      "tests_contract": "existing module tests + one new test reproducing this finding",
+      "provenance": {
+        "detector": "static",
+        "confidence": 0.7,
+        "analyzer_version": "0.2.0"
+      }
+    },
+    "readiness": {
+      "readiness": "candidate_only",
+      "criteria": {
+        "reproducible_test_present": false,
+        "target_file_snapshot_matches": true,
+        "evidence_complete": true,
+        "manual_review_required": true
+      },
+      "policy": "static finding without an operator-provided reproducible failing test is candidate_only; the analyzer never claims fix readiness on its own; manual review is always required"
+    }
+  },
+  {
+    "contract": {
+      "task_kind": "codefix",
+      "workspace": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech",
+      "target_files": [
+        "billing/ledger.py"
+      ],
+      "finding": {
+        "id": "TODO-MARKER-LEDGER-23",
+        "severity": "low",
+        "description": "TODO/FIXME marker left in a money/risk/limit/fee/settlement path",
+        "evidence": [
+          "billing/ledger.py:23-23"
+        ]
+      },
+      "codefix_steps": [
+        "Step 1 read repository /Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech/billing/ledger.py",
+        "Step 2 find bug",
+        "Step 3 patch code",
+        "Step 4 apply patch",
+        "Step 5 run tests",
+        "Step 6 validate patch"
+      ],
+      "tests_contract": "existing module tests + one new test reproducing this finding",
+      "provenance": {
+        "detector": "static",
+        "confidence": 0.3,
+        "analyzer_version": "0.2.0"
+      }
+    },
+    "readiness": {
+      "readiness": "candidate_only",
+      "criteria": {
+        "reproducible_test_present": false,
+        "target_file_snapshot_matches": true,
+        "evidence_complete": true,
+        "manual_review_required": true
+      },
+      "policy": "static finding without an operator-provided reproducible failing test is candidate_only; the analyzer never claims fix readiness on its own; manual review is always required"
+    }
+  }
+]

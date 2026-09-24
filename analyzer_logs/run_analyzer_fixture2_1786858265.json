@@ -1,0 +1,16 @@
+{
+  "run_id": "analyzer_fixture2_1786858265",
+  "ts_unix": 1786858265,
+  "workspace": "/tmp/analyzer_fixture2",
+  "files_scanned": 3,
+  "candidates_found": 4,
+  "findings_count": 4,
+  "tasks_emitted": [
+    "DANGEROUS-EVAL-LEDGER-13",
+    "MONEY-TRUNCATION-LEDGER-5",
+    "NONE-ARITH-LEDGER-9",
+    "TODO-MARKER-LEDGER-1"
+  ],
+  "analyzer_version": "0.1.0",
+  "duration_ms": 1
+}

@@ -1,0 +1,13 @@
+{
+  "run_id": "b4_1787137597",
+  "ts_unix": 1787137597,
+  "workspace": "/tmp/replay_audit/ws/b4",
+  "files_scanned": 1,
+  "candidates_found": 1,
+  "findings_count": 1,
+  "tasks_emitted": [
+    "TODO-MARKER-LEDGER-23"
+  ],
+  "analyzer_version": "0.4.1",
+  "duration_ms": 0
+}

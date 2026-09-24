@@ -1,0 +1,26 @@
+{
+  "started_at_iso": "2026-08-16T14:06:20Z",
+  "ts_unix": 1786889180,
+  "duration_ms": 2,
+  "record": {
+    "run_id": "6a0e39d486f06084e52f2841c38dcdc0bd1310bf35879b5fa0ee728461446b55",
+    "ts_unix": 1786889180,
+    "workspace": "/Users/denissmoliakov/projects/deterministic_ai_kernel_clean_2/analyzer_examples/pilot_fintech",
+    "files_scanned": 5,
+    "candidates_found": 3,
+    "findings_count": 3,
+    "tasks_emitted": [
+      "MONEY-TRUNCATION-LEDGER-15",
+      "MONEY-ROUND-BARE-LEDGER-20",
+      "TODO-MARKER-LEDGER-23"
+    ],
+    "analyzer_version": "0.4.0",
+    "duration_ms": 2
+  },
+  "artifacts": {
+    "PILOT_REPORT.md": "b24555af17552adf64edecd8b193d37a45935c7fb138ceedc0cdcf6f510e1735",
+    "evidence_manifest_v1.json": "1396826743bbb8520e2a0f86f495c0968ff099e4c120b275f2df09af779ebaa4",
+    "findings_v1.json": "387df0eb90e57579bc33defa48d22158d9cf92206dee2e2c2f8ca67d990efd29",
+    "task_contracts_v0.json": "b6e3573b6499add05e6d71805c61807021d5f9ce250cbb9eec2a6fdaa295be07"
+  }
+}

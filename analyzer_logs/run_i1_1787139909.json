@@ -1,0 +1,14 @@
+{
+  "run_id": "i1_1787139909",
+  "ts_unix": 1787139909,
+  "workspace": "scan/i1",
+  "files_scanned": 1,
+  "candidates_found": 2,
+  "findings_count": 2,
+  "tasks_emitted": [
+    "MONEY-TRUNCATION-CHARGES-11",
+    "FLOOR-DIV-MONEY-CHARGES-16"
+  ],
+  "analyzer_version": "0.4.1",
+  "duration_ms": 10
+}

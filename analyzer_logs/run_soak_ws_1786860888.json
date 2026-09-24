@@ -1,0 +1,11 @@
+{
+  "run_id": "soak_ws_1786860888",
+  "ts_unix": 1786860888,
+  "workspace": "/tmp/soak_ws",
+  "files_scanned": 2,
+  "candidates_found": 0,
+  "findings_count": 0,
+  "tasks_emitted": [],
+  "analyzer_version": "0.1.0",
+  "duration_ms": 0
+}
