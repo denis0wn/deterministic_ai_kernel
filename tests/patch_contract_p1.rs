@@ -179,6 +179,24 @@ fn patch_code_happy_path_produces_validated_patch_v1() {
     );
     assert!(patch.replacement.ends_with("// fixed"));
 
+    // C2: the model call behind the patch is recorded with full
+    // prompt/response provenance (seed absent — DAK_KERNEL_SEED is not
+    // set in this binary).
+    let calls = result.output["llm_calls"]
+        .as_array()
+        .expect("llm_calls must be recorded");
+    assert_eq!(calls.len(), 1, "happy path makes exactly one call");
+    assert_eq!(calls[0]["model_name"], "scripted-patch-mock");
+    assert!(calls[0]["prompt"]
+        .as_str()
+        .unwrap()
+        .contains(&fixture_path()));
+    assert!(calls[0]["response_text"]
+        .as_str()
+        .unwrap()
+        .contains("patch_v1"));
+    assert!(calls[0].get("seed").is_none());
+
     // The canonical patch JSON (not raw model text) is what gets persisted.
     let written = std::fs::read_to_string(&out).unwrap();
     let reparsed: PatchV1 = serde_json::from_str(&written).expect("persisted patch parses");

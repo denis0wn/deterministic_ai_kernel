@@ -96,6 +96,16 @@ pub fn llm_stall_retries() -> u64 {
         .min(3)
 }
 
+/// C2: kernel seed for the current task process, stamped onto every
+/// ChatRequest (wire-visible) and into recorded model calls. Set once by
+/// the CLI entry point (`pipeline-run --seed`); absent in contexts without
+/// a task seed. Env-configured like every other DAK_* knob.
+pub fn kernel_seed() -> Option<u64> {
+    std::env::var("DAK_KERNEL_SEED")
+        .ok()
+        .and_then(|v| v.parse().ok())
+}
+
 /// Signature of an idle-stall error (see consume_sse_response) — the only
 /// failure class eligible for R7 stall-retry on a fresh connection.
 fn is_idle_stall_error(msg: &str) -> bool {
@@ -320,6 +330,10 @@ struct ChatRequest {
     temperature: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    /// C2: kernel task seed, carried on the wire for provenance. Servers
+    /// that ignore it are unaffected; absent when no task seed exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seed: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -492,6 +506,7 @@ pub async fn chat_with_model_override(
         ],
         temperature: 0.0,
         max_tokens: Some(4096),
+        seed: kernel_seed(),
     };
 
     let mut last_err = None;
@@ -807,6 +822,34 @@ pub async fn planner_smoke() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chat_request_seed_wire_format() {
+        // C2: seed rides the wire only when a task seed exists.
+        let mk = |seed: Option<u64>| ChatRequest {
+            model: "m".to_string(),
+            messages: vec![],
+            temperature: 0.0,
+            max_tokens: None,
+            seed,
+        };
+        let with = serde_json::to_value(mk(Some(7))).unwrap();
+        assert_eq!(with["seed"], serde_json::json!(7));
+        let without = serde_json::to_value(mk(None)).unwrap();
+        assert!(without.get("seed").is_none(), "seed must be omitted, not null");
+    }
+
+    #[test]
+    fn kernel_seed_parses_env() {
+        // DAK_KERNEL_SEED is process-global; this binary does not set it
+        // elsewhere, so unset -> None is the stable expectation here.
+        std::env::remove_var("DAK_KERNEL_SEED");
+        assert_eq!(kernel_seed(), None);
+        std::env::set_var("DAK_KERNEL_SEED", "1042");
+        assert_eq!(kernel_seed(), Some(1042));
+        std::env::remove_var("DAK_KERNEL_SEED");
+        assert_eq!(kernel_seed(), None);
+    }
 
     #[test]
     fn extract_json_from_markdown_fence() {

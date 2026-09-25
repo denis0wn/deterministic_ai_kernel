@@ -141,19 +141,44 @@ fn patch_prompt(target: &str, content: &str, task: &str) -> String {
 /// class. A successful repair returns its RepairReport for the audit
 /// record (D5). The fallback order and all downstream gates are
 /// unchanged (D3/D6).
+/// C2: one model call made while producing a patch — full prompt and
+/// response, plus the kernel seed that was on the wire. Provenance for
+/// the feedback loop: every patch artifact can be traced to the exact
+/// call that produced it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LlmCallRecord {
+    pub model_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    pub prompt: String,
+    pub response_text: String,
+}
+
 fn request_patch_v1(
     prompt: &str,
     file_content: Option<&str>,
-) -> Result<(patch_contract::PatchV1, Option<patch_repair::RepairReport>)> {
-    let first = providers::get_llm().execute_llm(prompt, None)?.text;
+) -> Result<(
+    patch_contract::PatchV1,
+    Option<patch_repair::RepairReport>,
+    Vec<LlmCallRecord>,
+)> {
+    let mut calls = Vec::new();
+    let first_res = providers::get_llm().execute_llm(prompt, None)?;
+    calls.push(LlmCallRecord {
+        model_name: first_res.model_name.clone(),
+        seed: crate::llm::kernel_seed(),
+        prompt: prompt.to_string(),
+        response_text: first_res.text.clone(),
+    });
+    let first = first_res.text;
     match patch_contract::parse_patch(&first) {
-        Ok(patch) => Ok((patch, None)),
+        Ok(patch) => Ok((patch, None, calls)),
         Err(first_error) => {
             if patch_repair::repair_enabled() {
                 if let Some(content) = file_content {
                     let extracted = crate::llm::extract_json(&first);
                     match patch_repair::repair_patch_json(&extracted, content) {
-                        Ok((patch, report)) => return Ok((patch, Some(report))),
+                        Ok((patch, report)) => return Ok((patch, Some(report), calls)),
                         Err(reason) => {
                             eprintln!(
                                 "patch_repair: deterministic repair not applied ({reason}); falling back to model repair retry"
@@ -166,9 +191,20 @@ fn request_patch_v1(
                 "{}\n\nYour previous reply violated the patch_v1 contract: {}\nReply with ONLY the corrected JSON object.",
                 prompt, first_error
             );
-            let second = providers::get_llm().execute_llm(&repair_prompt, None)?.text;
+            let second_res = providers::get_llm().execute_llm(&repair_prompt, None)?;
+            calls.push(LlmCallRecord {
+                model_name: second_res.model_name.clone(),
+                seed: crate::llm::kernel_seed(),
+                prompt: repair_prompt.clone(),
+                response_text: second_res.text.clone(),
+            });
+            let second = second_res.text;
+            // Note: on terminal parse failure the calls made so far are
+            // dropped with the error — the feedback loop only re-enters on
+            // tests_failed, where the patch was well-formed and calls are
+            // persisted via the step artifact.
             patch_contract::parse_patch(&second)
-                .map(|p| (p, None))
+                .map(|p| (p, None, calls))
                 .map_err(|e| anyhow!("fatal: malformed patch: {e}"))
         }
     }
@@ -469,8 +505,11 @@ impl PrimitiveExecutor {
                     // and a persistent mismatch stays terminal — no gate is
                     // weakened, the model is only given one explicit
                     // correction chance.
+                    let mut llm_calls: Vec<LlmCallRecord> = Vec::new();
                     let (patch, repair_report) = {
-                        let (first, repair_first) = request_patch_v1(&prompt, Some(&file_content))?;
+                        let (first, repair_first, mut calls) =
+                            request_patch_v1(&prompt, Some(&file_content))?;
+                        llm_calls.append(&mut calls);
                         if first.target_file == target {
                             (first, repair_first)
                         } else {
@@ -478,8 +517,9 @@ impl PrimitiveExecutor {
                                 "{}\n\nYour previous reply used the WRONG target_file: \"{}\". The target_file MUST be EXACTLY \"{}\" (same letters, same case). Reply with ONLY the corrected JSON object, changing ONLY the target_file field.",
                                 prompt, first.target_file, target
                             );
-                            let (second, repair_second) =
+                            let (second, repair_second, mut calls) =
                                 request_patch_v1(&corrective, Some(&file_content))?;
+                            llm_calls.append(&mut calls);
                             (second, repair_second.or(repair_first))
                         }
                     };
@@ -509,6 +549,12 @@ impl PrimitiveExecutor {
                     extra_output.insert(
                         "patch_shape_validation".to_string(),
                         serde_json::json!("ok"),
+                    );
+                    // C2: every model call behind this patch — full prompt,
+                    // full response, wire seed.
+                    extra_output.insert(
+                        "llm_calls".to_string(),
+                        serde_json::to_value(&llm_calls).expect("LlmCallRecord serializes"),
                     );
                     // D5 audit record: an applied S3 escape repair is
                     // never invisible — sites plus raw/repaired hashes

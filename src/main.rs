@@ -1122,6 +1122,9 @@ async fn main() {
                 eprintln!("   or: pipeline-run --payload [id]...[id] [--seed <u64>] [--json]");
                 std::process::exit(1);
             }
+            // C2: stamp the kernel seed onto this process so every model
+            // call carries it on the wire and into recorded llm_calls.
+            std::env::set_var("DAK_KERNEL_SEED", seed.to_string());
             let resolved = if let Some(p) = payload {
                 p
             } else {
