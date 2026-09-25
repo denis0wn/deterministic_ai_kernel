@@ -524,7 +524,18 @@ fn codefix_chain_is_deterministic_across_identical_runs() {
             "field {f} must be deterministic"
         );
     }
-    assert_eq!(reports_a[0]["argv"], reports_b[0]["argv"]);
+    // argv contains the per-run workspace path via the sandbox's -D DAK_WS
+    // parameter (M-2) — compare with each run's workspace normalized out.
+    let norm_argv = |r: &serde_json::Value| {
+        let ws = r["workspace"].as_str().unwrap_or("");
+        r["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap().replace(ws, "<WS>"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(norm_argv(&reports_a[0]), norm_argv(&reports_b[0]));
     assert_eq!(
         reports_a[0]["stdout_tail"], reports_b[0]["stdout_tail"],
         "identical test project must produce identical stdout"

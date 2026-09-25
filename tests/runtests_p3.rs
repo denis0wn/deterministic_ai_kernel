@@ -591,7 +591,15 @@ fn evidence_is_deterministic_for_identical_inputs() {
     assert_eq!(reports[0].command_id, reports[1].command_id);
     assert_eq!(reports[0].exit_code, reports[1].exit_code);
     assert_eq!(reports[0].passed, reports[1].passed);
-    assert_eq!(reports[0].argv, reports[1].argv);
+    // argv embeds the per-run workspace path via the sandbox's -D DAK_WS
+    // (M-2) — compare with each run's workspace normalized out.
+    let norm = |r: &deterministic_ai_kernel::tools::test_runner::TestReportV1| {
+        r.argv
+            .iter()
+            .map(|a| a.replace(&r.workspace, "<WS>"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(norm(&reports[0]), norm(&reports[1]));
 }
 
 #[tokio::test]

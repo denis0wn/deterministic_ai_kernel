@@ -323,6 +323,79 @@ pub fn derive_test_command(workspace: &Path) -> Result<DerivedTestCommand, Strin
     ))
 }
 
+/// M-2: Seatbelt profile for the `python_test_file` runner (macOS only).
+/// The harness executes workspace code in-process; this profile bounds the
+/// blast radius of model-written code: no network, no writes outside the
+/// canonicalized workspace, no reads of common credential stores. The
+/// workspace path is passed canonicalized because Seatbelt subpath rules
+/// match literally (and /tmp is a symlink on macOS).
+///
+/// Out of scope: python_pytest and cargo_test runners (they need broader
+/// filesystem access; documented in LAYER2_SECURITY_REVIEW.md F4). The
+/// verdict-integrity ceiling (in-process forgery of the OK marker) is
+/// unaffected by sandboxing — that is the residual documented there.
+const SANDBOX_PROFILE: &str = "(version 1)\
+    (allow default)\
+    (deny network*)\
+    (deny file-write*)\
+    (allow file-write* (subpath (param \"DAK_WS\")))\
+    (deny file-read* (subpath (param \"DAK_SSH\")))\
+    (deny file-read* (subpath (param \"DAK_AWS\")))\
+    (deny file-read* (subpath (param \"DAK_GNUPG\")))\
+    (deny file-read* (subpath (param \"DAK_KUBE\")))\
+    (deny file-read* (subpath (param \"DAK_NETRC\")))";
+
+/// DAK_TEST_SANDBOX=off|0|false disables sandboxing (operator escape hatch).
+pub fn sandbox_enabled() -> bool {
+    !matches!(
+        std::env::var("DAK_TEST_SANDBOX").ok().as_deref(),
+        Some("off") | Some("0") | Some("false")
+    )
+}
+
+fn sandbox_exec_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| Path::new("/usr/bin/sandbox-exec").exists())
+}
+
+/// Wrap the python_test_file harness invocation in sandbox-exec (M-2).
+/// Returns the (possibly wrapped) program/argv. Non-macOS, other runners,
+/// missing sandbox-exec, or the env kill switch all pass through unchanged.
+fn maybe_sandbox(
+    command_id: &str,
+    program: &str,
+    argv: &[String],
+    ws: &Path,
+) -> (String, Vec<String>) {
+    if !cfg!(target_os = "macos")
+        || command_id != "python_test_file"
+        || !sandbox_enabled()
+        || !sandbox_exec_available()
+    {
+        return (program.to_string(), argv.to_vec());
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut wrapped: Vec<String> = vec![
+        "-D".into(),
+        format!("DAK_WS={}", ws.display()),
+        "-D".into(),
+        format!("DAK_SSH={home}/.ssh"),
+        "-D".into(),
+        format!("DAK_AWS={home}/.aws"),
+        "-D".into(),
+        format!("DAK_GNUPG={home}/.gnupg"),
+        "-D".into(),
+        format!("DAK_KUBE={home}/.kube"),
+        "-D".into(),
+        format!("DAK_NETRC={home}/.netrc"),
+        "-p".into(),
+        SANDBOX_PROFILE.to_string(),
+        program.to_string(),
+    ];
+    wrapped.extend(argv.iter().cloned());
+    ("/usr/bin/sandbox-exec".to_string(), wrapped)
+}
+
 fn tail(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         s.to_string()
@@ -354,8 +427,13 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
 
     let started = Instant::now();
     let needs_stdin = derived.stdin_program.is_some();
-    let spawn_result = Command::new(&derived.program)
-        .args(&derived.argv)
+    // M-2: on macOS the python_test_file harness runs under sandbox-exec
+    // (network denied, writes confined to the workspace). The report's argv
+    // records the actual wrapped command — evidence stays honest.
+    let (program, run_argv) =
+        maybe_sandbox(&derived.command_id, &derived.program, &derived.argv, &ws);
+    let spawn_result = Command::new(&program)
+        .args(&run_argv)
         .current_dir(&ws)
         .stdin(if needs_stdin {
             Stdio::piped()
@@ -366,9 +444,7 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
         .stderr(Stdio::piped())
         .spawn();
 
-    let argv: Vec<String> = std::iter::once(derived.program.clone())
-        .chain(derived.argv.clone())
-        .collect();
+    let argv: Vec<String> = std::iter::once(program).chain(run_argv).collect();
     let report_tail = |stdout: String,
                        stderr: String,
                        exit_code: i32,
@@ -1151,6 +1227,111 @@ mod tests {
             report.passed,
             "stale bytecode must not shadow the re-patched source: {}",
             report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    // ── M-2: Seatbelt sandbox around the python_test_file harness ──────
+    // (macOS only; other platforms pass through unsandboxed)
+    // These tests share the process-global DAK_TEST_SANDBOX env — serialize them.
+    #[cfg(target_os = "macos")]
+    static SANDBOX_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_wraps_command_and_preserves_pass_fail() {
+        let _g = SANDBOX_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let ws = unique_dir("m2_wrap");
+        std::fs::write(ws.join("test_x.py"), "def test_ok():\n    assert True\n").unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(report.passed);
+        assert_eq!(
+            report.argv.first().map(String::as_str),
+            Some("/usr/bin/sandbox-exec"),
+            "evidence argv must show the sandbox wrapper"
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_denies_network() {
+        let _g = SANDBOX_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let ws = unique_dir("m2_net");
+        std::fs::write(
+            ws.join("test_x.py"),
+            "import socket\n\ndef test_net():\n    socket.create_connection(('127.0.0.1', 9), timeout=2)\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert!(
+            report.stderr_tail.contains("PermissionError")
+                || report.stderr_tail.contains("Operation not permitted"),
+            "expected sandbox EPERM, got: {}",
+            report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_denies_write_outside_workspace() {
+        let _g = SANDBOX_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let ws = unique_dir("m2_write");
+        let escape = std::env::temp_dir().join(format!(
+            "m2_escape_probe_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let escape_str = escape.to_string_lossy().into_owned();
+        let test = format!(
+            "def test_escape():\n    open({escape_str:?}, 'w').write('x')\n"
+        );
+        std::fs::write(ws.join("test_x.py"), test).unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed, "write outside workspace must fail");
+        assert!(!escape.exists(), "escape file must not be created");
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_denies_credential_read() {
+        let _g = SANDBOX_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let ws = unique_dir("m2_read");
+        std::fs::write(
+            ws.join("test_x.py"),
+            "import os\n\ndef test_creds():\n    os.listdir(os.path.expanduser('~/.ssh'))\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed, "~/.ssh read must be denied");
+        assert!(
+            report.stderr_tail.contains("PermissionError")
+                || report.stderr_tail.contains("Operation not permitted"),
+            "expected sandbox EPERM, got: {}",
+            report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_kill_switch() {
+        let _g = SANDBOX_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("DAK_TEST_SANDBOX", "off");
+        let ws = unique_dir("m2_off");
+        std::fs::write(ws.join("test_x.py"), "def test_ok():\n    assert True\n").unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        std::env::remove_var("DAK_TEST_SANDBOX");
+        assert!(report.passed);
+        assert_eq!(
+            report.argv.first().map(String::as_str),
+            Some("python3"),
+            "kill switch must bypass the wrapper"
         );
         let _ = std::fs::remove_dir_all(&ws);
     }
