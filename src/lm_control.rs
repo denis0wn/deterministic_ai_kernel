@@ -46,44 +46,58 @@ pub struct DoctorRoleReport {
 }
 
 pub fn memory_snapshot() -> Result<String> {
-    let output = Command::new("sh")
-        .arg("-lc")
-        .arg("vm_stat | head -n 20")
-        .output()?;
+    // No shell: argv spawn + Rust-side truncation (was `sh -lc "vm_stat | head"`).
+    let output = Command::new("vm_stat").output()?;
 
     if !output.status.success() {
         return Err(anyhow!("vm_stat failed"));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(text.lines().take(20).collect::<Vec<_>>().join("\n"))
+}
+
+/// Rust port of the former awk pipeline: free+inactive+speculative pages
+/// times 16384-byte page size, in GiB. vm_stat prints "Pages free:  12345."
+/// — field 3 carries a trailing dot.
+fn vm_stat_free_gb(text: &str) -> Result<f64> {
+    let mut pages: u64 = 0;
+    let mut seen = 0u32;
+    for line in text.lines() {
+        let lower = line.to_lowercase();
+        let matched = (lower.contains("free") && !lower.contains("fault"))
+            || lower.contains("inactive")
+            || lower.contains("speculative");
+        if !matched {
+            continue;
+        }
+        let num = lower
+            .split_whitespace()
+            .nth(2)
+            .map(|t| t.trim_end_matches('.').to_string())
+            .and_then(|t| t.parse::<u64>().ok())
+            .ok_or_else(|| anyhow!("vm_stat: unparseable line: {line}"))?;
+        pages += num;
+        seen += 1;
+    }
+    if seen == 0 {
+        return Err(anyhow!("vm_stat: no free/inactive/speculative lines"));
+    }
+    Ok(pages as f64 * 16384.0 / 1024.0 / 1024.0 / 1024.0)
 }
 
 pub fn free_memory_gb_estimate() -> Result<f64> {
     if let Ok(val) = std::env::var("DAK_FREE_GB_OVERRIDE") {
         return Ok(val.trim().parse::<f64>()?);
     }
-    let output = Command::new("sh")
-        .arg("-lc")
-        .arg(
-            r#"vm_stat | awk '
-            /free/ {free=$3}
-            /inactive/ {inactive=$3}
-            /speculative/ {spec=$3}
-            END {
-                gsub("\\.", "", free); gsub("\\.", "", inactive); gsub("\\.", "", spec);
-                pagesize=16384;
-                total=(free+inactive+spec)*pagesize;
-                printf "%.2f", total/1024/1024/1024;
-            }'"#,
-        )
-        .output()?;
+    let output = Command::new("vm_stat").output()?;
 
     if !output.status.success() {
         return Err(anyhow!("failed to estimate memory"));
     }
 
-    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(s.parse::<f64>()?)
+    let s = String::from_utf8_lossy(&output.stdout);
+    vm_stat_free_gb(&s)
 }
 
 /// Probe the MLX runtime via OPENAI_BASE_URL/v1/models.
@@ -429,6 +443,27 @@ mod tests {
     #[test]
     fn parse_gb_helper_works() {
         assert!(free_memory_gb_estimate().is_ok());
+    }
+
+    #[test]
+    fn vm_stat_parser_matches_awk_reference() {
+        // Real macOS vm_stat fixture (M4 Pro, page size 16384). Reference
+        // value computed by the former awk pipeline on this exact text:
+        // (30970 + 600138 + 6266) * 16384 / 2^30 = 9.7255…
+        let fixture = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n\
+Pages free:                                    30970.\n\
+Pages active:                                 600964.\n\
+Pages inactive:                               600138.\n\
+Pages speculative:                              6266.\n\
+Pages wired down:                             200946.\n\
+\"Translation faults\":                      273392692.\n";
+        let gb = vm_stat_free_gb(fixture).unwrap();
+        assert!((gb - 9.7255).abs() < 0.001, "got {gb}");
+    }
+
+    #[test]
+    fn vm_stat_parser_fail_closed_on_garbage() {
+        assert!(vm_stat_free_gb("no memory fields here").is_err());
     }
 
     #[test]

@@ -551,7 +551,7 @@ impl App {
             }
             PaletteAction::RunDiagnostics(cmd) => {
                 self.current_screen = Screen::Diagnostics;
-                self.run_command_streaming(&cmd);
+                self.run_command_streaming(&[&cmd]);
             }
             PaletteAction::RunTask => {
                 self.current_screen = Screen::RunTask;
@@ -856,8 +856,8 @@ impl App {
                 self.output_lines.clear();
                 self.active_panel = ActivePanel::LeftNav;
             }
-            KeyCode::Char('1') => self.run_command_streaming("doctor"),
-            KeyCode::Char('2') => self.run_command_streaming("doctor-json"),
+            KeyCode::Char('1') => self.run_command_streaming(&["doctor"]),
+            KeyCode::Char('2') => self.run_command_streaming(&["doctor-json"]),
             _ => {}
         }
     }
@@ -1178,8 +1178,8 @@ impl App {
 
     fn execute_workflow_action(&mut self) {
         if let Some(action) = self.confirm_action.take() {
-            let cmd = format!("{} {}", action, self.workflow_task_id);
-            self.run_command_streaming(&cmd);
+            let task_id = self.workflow_task_id.clone();
+            self.run_command_streaming(&[action.as_str(), task_id.as_str()]);
         }
     }
 
@@ -1266,7 +1266,13 @@ impl App {
         self.start_time = Some(Instant::now());
         self.last_output_line = None;
         self.output_lines.push(format!("$ {}", cmd));
-        if let Some(pid) = super::runtime::spawn_shell(cmd, tx) {
+        // No shell: fixed palette strings ("cargo test [--lib]") split into
+        // argv directly. Removes the sh -c remnant of shell_execute.
+        let argv: Vec<&str> = cmd.split_whitespace().collect();
+        let pid = argv
+            .split_first()
+            .and_then(|(prog, args)| super::runtime::spawn_streaming(prog, args, tx));
+        if let Some(pid) = pid {
             self.child_pid = Some(pid);
         } else {
             self.set_status("Failed to spawn process", true);
@@ -1275,8 +1281,7 @@ impl App {
         }
     }
 
-    fn run_command_streaming(&mut self, cmd: &str) {
-        let full_cmd = format!("cargo run --bin deterministic_ai_kernel -- {}", cmd);
+    fn run_command_streaming(&mut self, args: &[&str]) {
         let (tx, rx) = mpsc::channel();
         self.test_running = true;
         self.task_running = true;
@@ -1286,8 +1291,14 @@ impl App {
         self.event_rx = Some(rx);
         self.start_time = Some(Instant::now());
         self.last_output_line = None;
-        self.output_lines.push(format!("$ {}", full_cmd));
-        if let Some(pid) = super::runtime::spawn_shell(&full_cmd, tx) {
+        self.output_lines
+            .push(format!("$ deterministic_ai_kernel {}", args.join(" ")));
+        // No shell: argv is built structurally; the user-typed task id is a
+        // single argv element, never re-parsed by a shell.
+        let mut argv: Vec<&str> = vec!["run", "--bin", "deterministic_ai_kernel", "--"];
+        argv.extend_from_slice(args);
+        let pid = super::runtime::spawn_streaming("cargo", &argv, tx);
+        if let Some(pid) = pid {
             self.child_pid = Some(pid);
         } else {
             self.set_status("Failed to spawn process", true);

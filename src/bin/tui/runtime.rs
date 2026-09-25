@@ -525,16 +525,6 @@ pub fn spawn_plan_only(payload: &str, seed: u64, tx: mpsc::Sender<StreamEvent>) 
     )
 }
 
-#[allow(dead_code)]
-pub fn spawn_dak_command(cmd: &str, tx: mpsc::Sender<StreamEvent>) -> Option<u32> {
-    let full_cmd = format!("cargo run --bin deterministic_ai_kernel -- {}", cmd);
-    spawn_streaming("sh", &["-c", &full_cmd], tx)
-}
-
-pub fn spawn_shell(cmd: &str, tx: mpsc::Sender<StreamEvent>) -> Option<u32> {
-    spawn_streaming("sh", &["-c", cmd], tx)
-}
-
 pub fn kill_process(pid: u32) {
     #[cfg(unix)]
     {
