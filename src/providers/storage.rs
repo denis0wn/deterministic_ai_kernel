@@ -66,6 +66,17 @@ pub trait StorageProvider: Send + Sync {
     fn reset_db(&self) -> Result<()>;
     fn vacuum_db(&self) -> Result<()>;
     fn insert_task(&self, task_id: &str, task_class: &str, exec_spec: &str) -> Result<()>;
+    /// Fill in the exec spec/classification of an existing stub task, or
+    /// insert it (the pipeline-run / plan-task CLI form).
+    fn upsert_task_exec_spec(&self, task_id: &str, task_class: &str, exec_spec: &str)
+        -> Result<()>;
+    /// Persist the task input representation (analyze-task CLI form).
+    fn insert_semantic_bias_artifact(&self, task_id: &str, input_representation: &str)
+        -> Result<()>;
+    /// Task row exists?
+    fn task_exists(&self, task_id: &str) -> Result<bool>;
+    /// (committed, rejected) counts from effect_ledger for a task.
+    fn effect_ledger_counts(&self, task_id: &str) -> Result<(i64, i64)>;
     fn get_semantic_bias_payload(&self, task_id: &str) -> Result<String>;
     fn emit_bias_artifact(
         &self,
@@ -2940,6 +2951,10 @@ impl StorageProvider for DefaultStorage {
 
     fn reset_db(&self) -> Result<()> {
         let conn = self.conn()?;
+        // Full reset: every kernel table is cleared so no orphaned leases,
+        // artifacts, tasks, capsules, or cache entries survive a reset
+        // (audit finding M2). This is the single implementation — the CLI
+        // used to carry its own wider copy in main.rs.
         conn.execute_batch(
             r#"
             PRAGMA wal_checkpoint(FULL);
@@ -2949,6 +2964,13 @@ impl StorageProvider for DefaultStorage {
             DELETE FROM step_status;
             DELETE FROM state_snapshots;
             DELETE FROM generations;
+            DELETE FROM leases;
+            DELETE FROM tasks;
+            DELETE FROM semantic_artifacts;
+            DELETE FROM external_effects;
+            DELETE FROM replay_capsules;
+            DELETE FROM execution_cache;
+            DELETE FROM bias_artifacts;
             VACUUM;
             "#,
         )?;
@@ -2973,6 +2995,64 @@ impl StorageProvider for DefaultStorage {
             params![task_id, task_class, exec_spec],
         )?;
         Ok(())
+    }
+
+    fn upsert_task_exec_spec(
+        &self,
+        task_id: &str,
+        task_class: &str,
+        exec_spec: &str,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?2, ?3)
+             ON CONFLICT(task_id) DO UPDATE SET exec_spec = excluded.exec_spec
+             WHERE tasks.exec_spec IS NULL OR tasks.exec_spec = ''",
+            params![task_id, task_class, exec_spec],
+        )?;
+        Ok(())
+    }
+
+    fn insert_semantic_bias_artifact(
+        &self,
+        task_id: &str,
+        input_representation: &str,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO semantic_bias_artifacts (task_id, input_representation) VALUES (?1, ?2)",
+            params![task_id, input_representation],
+        )?;
+        Ok(())
+    }
+
+    fn task_exists(&self, task_id: &str) -> Result<bool> {
+        let conn = self.conn()?;
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE task_id = ?1",
+            params![task_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    fn effect_ledger_counts(&self, task_id: &str) -> Result<(i64, i64)> {
+        let conn = self.conn()?;
+        let committed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'committed'",
+                params![task_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let rejected: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'rejected'",
+                params![task_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        Ok((committed, rejected))
     }
 
     fn get_semantic_bias_payload(&self, task_id: &str) -> Result<String> {

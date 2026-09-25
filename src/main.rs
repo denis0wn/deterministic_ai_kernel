@@ -27,37 +27,13 @@ fn cli_expect<T>(op: &str, result: anyhow::Result<T>) -> T {
 }
 
 fn print_stats(db: &str) {
-    let conn =
-        deterministic_ai_kernel::providers::storage::open_initialized(db).unwrap_or_else(|e| {
-            eprintln!("stats failed: {e}");
-            std::process::exit(1);
-        });
-
-    let events: i64 = conn
-        .query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get(0))
-        .unwrap_or(0);
-
-    let causal_units: i64 = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT causal_unit_id) FROM event_log",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-
-    let max_generation: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(system_generation), 0) FROM event_log",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-
-    let tasks: i64 = conn
-        .query_row("SELECT COUNT(DISTINCT task_id) FROM event_log", [], |r| {
-            r.get(0)
-        })
-        .unwrap_or(0);
+    let (events, causal_units, max_generation, tasks) =
+        deterministic_ai_kernel::providers::storage_for(db)
+            .print_stats()
+            .unwrap_or_else(|e| {
+                eprintln!("stats failed: {e}");
+                std::process::exit(1);
+            });
 
     println!("EVENTS: {}", events);
     println!("CAUSAL_UNITS: {}", causal_units);
@@ -66,26 +42,12 @@ fn print_stats(db: &str) {
 }
 
 fn table_exists(db: &str, table: &str) -> bool {
-    use rusqlite::{Connection, OpenFlags};
-
+    // Preserve the old behavior: a missing db file is "no table" — never
+    // create/initialize one as a side effect of asking.
     if !std::path::Path::new(db).exists() {
         return false;
     }
-
-    let conn = match Connection::open_with_flags(
-        db,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    conn.query_row(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1 LIMIT 1",
-        [table],
-        |_r| Ok(()),
-    )
-    .is_ok()
+    deterministic_ai_kernel::providers::storage_for(db).table_exists(table)
 }
 
 fn reset_db(db: &str) {
@@ -94,40 +56,17 @@ fn reset_db(db: &str) {
         return;
     }
 
-    let conn =
-        deterministic_ai_kernel::providers::storage::open_initialized(db).unwrap_or_else(|e| {
-            eprintln!("reset failed: {e}");
-            std::process::exit(1);
+    // The full 13-table reset (audit finding M2) lives in the storage
+    // layer — no SQL in the CLI.
+    deterministic_ai_kernel::providers::storage_for(db)
+        .reset_db()
+        .unwrap_or_else(|e| {
+            deterministic_ai_kernel::kernel_error::exit_with_error(
+                &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
+                    "reset_db execution failed: {e}"
+                )),
+            );
         });
-    // Full reset: every kernel table is cleared so no orphaned leases,
-    // artifacts, tasks, capsules, or cache entries survive a reset
-    // (audit finding M2).
-    conn.execute_batch(
-        r#"
-        PRAGMA wal_checkpoint(FULL);
-        DELETE FROM event_log;
-        DELETE FROM effect_ledger;
-        DELETE FROM step_dependencies;
-        DELETE FROM step_status;
-        DELETE FROM state_snapshots;
-        DELETE FROM generations;
-        DELETE FROM leases;
-        DELETE FROM tasks;
-        DELETE FROM semantic_artifacts;
-        DELETE FROM external_effects;
-        DELETE FROM replay_capsules;
-        DELETE FROM execution_cache;
-        DELETE FROM bias_artifacts;
-        VACUUM;
-        "#,
-    )
-    .unwrap_or_else(|e| {
-        deterministic_ai_kernel::kernel_error::exit_with_error(
-            &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
-                "reset_db execution failed: {e}"
-            )),
-        );
-    });
 
     println!("RESET OK");
 }
@@ -182,24 +121,15 @@ fn vacuum_db(db: &str) {
         return;
     }
 
-    let conn =
-        deterministic_ai_kernel::providers::storage::open_initialized(db).unwrap_or_else(|e| {
-            eprintln!("vacuum failed: {e}");
-            std::process::exit(1);
+    deterministic_ai_kernel::providers::storage_for(db)
+        .vacuum_db()
+        .unwrap_or_else(|e| {
+            deterministic_ai_kernel::kernel_error::exit_with_error(
+                &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
+                    "VACUUM failed: {e}"
+                )),
+            );
         });
-    conn.execute_batch(
-        r#"
-        PRAGMA wal_checkpoint(FULL);
-        VACUUM;
-        "#,
-    )
-    .unwrap_or_else(|e| {
-        deterministic_ai_kernel::kernel_error::exit_with_error(
-            &deterministic_ai_kernel::kernel_error::CliError::Database(format!(
-                "VACUUM failed: {e}"
-            )),
-        );
-    });
 
     println!("VACUUM OK");
 }
@@ -896,31 +826,23 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+            let storage = deterministic_ai_kernel::providers::storage_for(db);
+            storage
+                .insert_task(&task_id, "Generic", "")
                 .unwrap_or_else(|e| {
-                    eprintln!("analyze-task failed: {e}");
+                    eprintln!("Failed to insert task: {e}");
                     std::process::exit(1);
                 });
-            conn.execute(
-                "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
-                rusqlite::params![task_id],
-            )
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to insert task: {e}");
-                std::process::exit(1);
-            });
             // Persist the input representation so `pipeline-run --task-id`
             // can resolve it. ANALYZE_TASK_OK is only printed after the
             // payload is durably stored (audit finding C6: the previous
             // implementation printed OK after a silent no-op).
-            conn.execute(
-                "INSERT INTO semantic_bias_artifacts (task_id, input_representation) VALUES (?1, ?2)",
-                rusqlite::params![task_id, detail],
-            )
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to store input representation: {e}");
-                std::process::exit(1);
-            });
+            storage
+                .insert_semantic_bias_artifact(&task_id, &detail)
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to store input representation: {e}");
+                    std::process::exit(1);
+                });
             println!("ANALYZE_TASK_OK task_id={}", task_id);
             return;
         }
@@ -1128,19 +1050,16 @@ async fn main() {
             let resolved = if let Some(p) = payload {
                 p
             } else {
-                let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
-                    .unwrap_or_else(|e| {
-                        eprintln!("pipeline-run failed: {e}");
-                        std::process::exit(1);
-                    });
                 let id = task_id.unwrap_or_else(|| {
                     eprintln!("task_id is missing");
                     std::process::exit(1);
                 });
-                conn.query_row(
-                    "SELECT input_representation FROM semantic_bias_artifacts WHERE task_id = ?1 ORDER BY artifact_id DESC LIMIT 1",
-                    [&id], |r| r.get::<_, String>(0)
-                ).unwrap_or_else(|_| { eprintln!("pipeline-run: no payload for task_id={id}"); std::process::exit(1); })
+                deterministic_ai_kernel::providers::storage_for(db)
+                    .get_semantic_bias_payload(&id)
+                    .unwrap_or_else(|_| {
+                        eprintln!("pipeline-run: no payload for task_id={id}");
+                        std::process::exit(1);
+                    })
             };
             let report = match deterministic_ai_kernel::planner_pipeline::build_plan_and_publish(
                 &resolved, seed, db,
@@ -1200,11 +1119,6 @@ async fn main() {
                 Err(e) => eprintln!("progress: repetition check could not open db: {e}"),
             }
             {
-                let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
-                    .unwrap_or_else(|e| {
-                        eprintln!("pipeline-run failed: {e}");
-                        std::process::exit(1);
-                    });
                 // Persist the planner's canonical ExecSpec with the task.
                 // The scheduler must execute the planned graph, not a
                 // regenerated TaskClass default; the spec is only filled in
@@ -1226,16 +1140,12 @@ async fn main() {
                         }
                         _ => "Generic",
                     };
-                conn.execute(
-                    "INSERT INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?3, ?2)
-                     ON CONFLICT(task_id) DO UPDATE SET exec_spec = excluded.exec_spec
-                     WHERE tasks.exec_spec IS NULL OR tasks.exec_spec = ''",
-                    rusqlite::params![task_id.as_str(), spec_json, task_class_str],
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to insert task: {e}");
-                    std::process::exit(1);
-                });
+                deterministic_ai_kernel::providers::storage_for(db)
+                    .upsert_task_exec_spec(task_id.as_str(), task_class_str, &spec_json)
+                    .unwrap_or_else(|e| {
+                        eprintln!("Failed to insert task: {e}");
+                        std::process::exit(1);
+                    });
             }
             // PROGRESS UNTIL VERIFIED stage 4: operator-declared lemma
             // registration. Kernel-owned event: only this CLI path can
@@ -1391,21 +1301,12 @@ async fn main() {
                 &blake3::hash(format!("{}:{}", class_name, task.trim()).as_bytes()).to_hex()[..12]
             );
 
-            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
+            deterministic_ai_kernel::providers::storage_for(db)
+                .upsert_task_exec_spec(&task_id, class_name, &spec_json)
                 .unwrap_or_else(|e| {
-                    eprintln!("plan-task failed: {e}");
+                    eprintln!("Failed to insert task: {e}");
                     std::process::exit(1);
                 });
-            conn.execute(
-                "INSERT INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(task_id) DO UPDATE SET exec_spec = excluded.exec_spec
-                 WHERE tasks.exec_spec IS NULL OR tasks.exec_spec = ''",
-                rusqlite::params![task_id, class_name, spec_json],
-            )
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to insert task: {e}");
-                std::process::exit(1);
-            });
 
             println!("TASK_ID: {}", task_id);
             println!("TASK_CLASS: {}", class_name);
@@ -1428,24 +1329,11 @@ async fn main() {
                 eprintln!("{v}");
             }
             let ok = replay_validate(db, task_id);
-            if let Ok(conn) = rusqlite::Connection::open(db) {
-                let committed: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'committed'",
-                        [task_id],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or(0);
-                let rejected: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM effect_ledger WHERE task_id = ?1 AND state = 'rejected'",
-                        [task_id],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or(0);
-                println!("COMMITTED_EFFECTS: {committed}");
-                println!("REJECTED_EFFECTS: {rejected}");
-            }
+            let (committed, rejected) = deterministic_ai_kernel::providers::storage_for(db)
+                .effect_ledger_counts(task_id)
+                .unwrap_or((0, 0));
+            println!("COMMITTED_EFFECTS: {committed}");
+            println!("REJECTED_EFFECTS: {rejected}");
             println!("REPLAY {}", if ok { "VALID" } else { "INVALID" });
             println!("REPLAY OK: {}", ok);
             return;
@@ -1662,18 +1550,13 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
-            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
-                .unwrap_or_else(|e| {
-                    eprintln!("decomposition: failed to open db: {e}");
+            let storage = deterministic_ai_kernel::providers::storage_for(db);
+            for (name, id) in [("carrier", &carrier), ("subtask", &subtask)] {
+                let exists = storage.task_exists(id).unwrap_or_else(|e| {
+                    eprintln!("decomposition: task lookup failed: {e}");
                     std::process::exit(1);
                 });
-            for (name, id) in [("carrier", &carrier), ("subtask", &subtask)] {
-                let exists: i64 = conn
-                    .query_row("SELECT COUNT(*) FROM tasks WHERE task_id = ?1", [id], |r| {
-                        r.get(0)
-                    })
-                    .unwrap_or(0);
-                if exists == 0 {
+                if !exists {
                     eprintln!("decomposition: {name} task '{id}' does not exist");
                     std::process::exit(1);
                 }
@@ -1770,18 +1653,11 @@ async fn main() {
                 return;
             }
 
-            let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
-                .unwrap_or_else(|e| {
-                    eprintln!("snapshot-artifacts failed: {e}");
-                    std::process::exit(1);
-                });
-            let payload: String = match conn.query_row(
-                "SELECT payload FROM state_snapshots WHERE task_id = ?1 ORDER BY snapshot_id DESC LIMIT 1",
-                [task_id],
-                |r| r.get(0),
-            ) {
-                Ok(p) => p,
-                Err(_) => {
+            let payload: String = match deterministic_ai_kernel::providers::storage_for(db)
+                .get_latest_snapshot_payload(task_id)
+            {
+                Ok(Some(p)) => p,
+                _ => {
                     eprintln!("snapshot-artifacts: no snapshot for task_id={}", task_id);
                     std::process::exit(1);
                 }
@@ -1828,21 +1704,12 @@ async fn main() {
         }
         Some("submit-task") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
-            {
-                let conn = deterministic_ai_kernel::providers::storage::open_initialized(db)
-                    .unwrap_or_else(|e| {
-                        eprintln!("submit-task failed: {e}");
-                        std::process::exit(1);
-                    });
-                conn.execute(
-                    "INSERT OR IGNORE INTO tasks (task_id, task_class) VALUES (?1, 'Generic')",
-                    rusqlite::params![task_id],
-                )
+            deterministic_ai_kernel::providers::storage_for(db)
+                .insert_task(task_id, "Generic", "")
                 .unwrap_or_else(|e| {
                     eprintln!("submit-task failed: {e}");
                     std::process::exit(1);
                 });
-            }
             cli_expect(
                 "schedule",
                 deterministic_ai_kernel::scheduler::schedule(db, task_id),
