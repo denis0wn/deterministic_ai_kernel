@@ -154,6 +154,25 @@ pub struct LlmCallRecord {
     pub response_text: String,
 }
 
+/// C2-gap fix: a terminally malformed patch attempt still carries its
+/// model calls as evidence — the corrupted raw response is the only
+/// source of truth for designing repair patterns (R1 was built from such
+/// evidence; R2 needs the same). Display is exactly `reason` (fatal:...
+/// wording unchanged for log scanners).
+#[derive(Debug)]
+pub struct PatchFailure {
+    pub reason: String,
+    pub llm_calls: Vec<LlmCallRecord>,
+}
+
+impl std::fmt::Display for PatchFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for PatchFailure {}
+
 fn request_patch_v1(
     prompt: &str,
     file_content: Option<&str>,
@@ -199,13 +218,35 @@ fn request_patch_v1(
                 response_text: second_res.text.clone(),
             });
             let second = second_res.text;
-            // Note: on terminal parse failure the calls made so far are
-            // dropped with the error — the feedback loop only re-enters on
-            // tests_failed, where the patch was well-formed and calls are
-            // persisted via the step artifact.
-            patch_contract::parse_patch(&second)
-                .map(|p| (p, None, calls))
-                .map_err(|e| anyhow!("fatal: malformed patch: {e}"))
+            // Terminal contract violation — but the calls ride along as
+            // evidence (C2-gap fix): the corrupted raw response is the
+            // input for designing the next repair pattern.
+            //
+            // The deterministic repair also runs on the retry's response
+            // (evidence 2026-09-25: a retry produced R1-repairable output
+            // and died unrepaired). Same bounded rules, same grounding
+            // anchor — acceptance still requires the repaired context to
+            // match the file byte-for-byte exactly once.
+            match patch_contract::parse_patch(&second) {
+                Ok(p) => Ok((p, None, calls)),
+                Err(e) => {
+                    if patch_repair::repair_enabled() {
+                        if let Some(content) = file_content {
+                            let extracted = crate::llm::extract_json(&second);
+                            if let Ok((patch, report)) =
+                                patch_repair::repair_patch_json(&extracted, content)
+                            {
+                                return Ok((patch, Some(report), calls));
+                            }
+                        }
+                    }
+                    Err(PatchFailure {
+                        reason: format!("fatal: malformed patch: {e}"),
+                        llm_calls: calls,
+                    }
+                    .into())
+                }
+            }
         }
     }
 }

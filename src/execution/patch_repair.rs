@@ -1,11 +1,17 @@
 //! S3 escape repair (PROGRESS UNTIL VERIFIED stage 3).
 //!
-//! Deterministic, kernel-owned repair of ONE corruption class in
-//! model-produced patch_v1 JSON: at a serde "invalid escape" site, a
-//! backslash followed by one or more spaces/tabs is repaired to the
-//! `\n` escape, preserving the following whitespace (observed NorthPay
-//! corruption: hard-wrap points copied as `\` + indent instead of
-//! `\n` + indent).
+//! Deterministic, kernel-owned repair of escape-corruption classes in
+//! model-produced patch_v1 JSON:
+//!
+//! - R1: at a serde "invalid escape" site, a backslash followed by one or
+//!   more spaces/tabs is repaired to the `\n` escape, preserving the
+//!   following whitespace (observed NorthPay corruption: hard-wrap points
+//!   copied as `\` + indent instead of `\n` + indent).
+//! - R2 (evidence 2026-09-25, captured llm_calls of a failing NorthPay
+//!   run): a backslash followed by a RAW newline — a C-style line
+//!   continuation the model emits instead of the `\n` escape — is
+//!   repaired to `\n` (the raw LF becomes the escape letter;
+//!   length-preserving).
 //!
 //! Design-review conditions honored (DESIGN_REVIEW_ESCAPE_REPAIR.md):
 //! - D1: scope frozen at pattern R1; extension only on new evidence.
@@ -127,8 +133,10 @@ pub fn repair_patch_json(
                 let idx = position_to_byte_offset(&work, line, col);
                 // The serde invalid-escape position points at the escaped
                 // character; the offending backslash is immediately before
-                // it (checked at idx-1, then idx defensively).
-                let bs = [idx.saturating_sub(1), idx.min(work.len().saturating_sub(1))]
+                // it. For the R2 shape (backslash + RAW LF) the LF itself
+                // advances serde's line counter, so the position lands one
+                // byte further — the backslash is then at idx-2.
+                let bs = [idx.saturating_sub(1), idx, idx.saturating_sub(2)]
                     .into_iter()
                     .find(|&cand| {
                         cand < work.len()
@@ -136,27 +144,44 @@ pub fn repair_patch_json(
                             && work[cand + 1..]
                                 .chars()
                                 .next()
-                                .map(|c| c == ' ' || c == '\t')
+                                .map(|c| c == ' ' || c == '\t' || c == '\n')
                                 .unwrap_or(false)
                     })
-                    .ok_or_else(|| format!("unsupported escape near byte {idx} (no R1 pattern)"))?;
-                // R1 (single-valued): backslash + [ \t]+  →  \n + same
-                // whitespace. The whitespace itself is preserved.
-                let ws_len = work[bs + 1..]
-                    .chars()
-                    .take_while(|c| *c == ' ' || *c == '\t')
-                    .map(|c| c.len_utf8())
-                    .sum::<usize>();
-                let tail = work[bs + 1..(bs + 1 + ws_len).min(bs + 5)].to_string();
-                let before = format!("\\{tail}");
-                let after = format!("\\n{tail}");
-                work.replace_range(bs..bs + 1, "\\n");
-                sites.push(RepairSite {
-                    byte_offset: bs,
-                    before,
-                    after,
-                    pattern: "R1".to_string(),
-                });
+                    .ok_or_else(|| format!("unsupported escape near byte {idx} (no R1/R2 pattern)"))?;
+                match work.as_bytes()[bs + 1] {
+                    b'\n' => {
+                        // R2 (single-valued): backslash + raw LF (C-style
+                        // line continuation) → the `\n` escape. Length-
+                        // preserving: the LF byte becomes the letter 'n'.
+                        let before = work[bs..bs + 2].to_string();
+                        work.replace_range(bs..bs + 2, "\\n");
+                        sites.push(RepairSite {
+                            byte_offset: bs,
+                            before,
+                            after: "\\n".to_string(),
+                            pattern: "R2".to_string(),
+                        });
+                    }
+                    _ => {
+                        // R1 (single-valued): backslash + [ \t]+  →  \n + same
+                        // whitespace. The whitespace itself is preserved.
+                        let ws_len = work[bs + 1..]
+                            .chars()
+                            .take_while(|c| *c == ' ' || *c == '\t')
+                            .map(|c| c.len_utf8())
+                            .sum::<usize>();
+                        let tail = work[bs + 1..(bs + 1 + ws_len).min(bs + 5)].to_string();
+                        let before = format!("\\{tail}");
+                        let after = format!("\\n{tail}");
+                        work.replace_range(bs..bs + 1, "\\n");
+                        sites.push(RepairSite {
+                            byte_offset: bs,
+                            before,
+                            after,
+                            pattern: "R1".to_string(),
+                        });
+                    }
+                }
             }
         }
     };
@@ -213,6 +238,74 @@ mod tests {
     /// becomes `\` + indent (the 'n' is dropped).
     fn corrupt(json: &str) -> String {
         json.replace("\\n    ", "\\    ")
+    }
+
+    /// R2 corruption (evidence 2026-09-25): the `\n` escape becomes
+    /// backslash + RAW newline + indent (C-style line continuation).
+    fn corrupt_r2(json: &str) -> String {
+        json.replace("\\n    ", "\\\n    ")
+    }
+
+    #[test]
+    fn r2_repairs_backslash_raw_newline_continuation() {
+        let context = "Doc line one wraps\n    here on line two.";
+        let clean = good_patch_json(context, "REPLACEMENT");
+        let corrupted = corrupt_r2(&clean);
+        assert!(serde_json::from_str::<serde_json::Value>(&corrupted).is_err());
+        let (patch, report) = repair_patch_json(&corrupted, FILE).expect("test failure");
+        assert_eq!(patch.context_before, context);
+        assert_eq!(patch.replacement, "REPLACEMENT");
+        assert_eq!(report.sites.len(), 1);
+        assert_eq!(report.sites[0].pattern, "R2");
+        // R2 is length-preserving: backslash + LF (2 bytes) -> `\n` (2 bytes)
+        assert_eq!(report.sites[0].before.len(), report.sites[0].after.len());
+    }
+
+    #[test]
+    fn mixed_r1_and_r2_sites_repair_in_one_pass() {
+        let context = "line a wraps\n    to b\n    then c.";
+        let file = format!("def f():\n    {context}\n");
+        let clean = good_patch_json(context, "R");
+        // first wrap → R2 (backslash + raw LF), second wrap → R1
+        let corrupted = clean
+            .replacen("\\n    ", "\\\n    ", 1)
+            .replacen("\\n    ", "\\    ", 1);
+        assert!(serde_json::from_str::<serde_json::Value>(&corrupted).is_err());
+        let (patch, report) = repair_patch_json(&corrupted, &file).expect("test failure");
+        assert_eq!(patch.context_before, context);
+        let mut patterns: Vec<&str> = report.sites.iter().map(|s| s.pattern.as_str()).collect();
+        patterns.sort();
+        assert_eq!(patterns, ["R1", "R2"]);
+    }
+
+    #[test]
+    fn r2_ungrounded_context_still_rejected() {
+        let context = "not in the file\n    at all.";
+        let clean = good_patch_json(context, "x");
+        let corrupted = corrupt_r2(&clean);
+        let err = repair_patch_json(&corrupted, FILE).unwrap_err();
+        assert!(err.contains("not grounded"), "got: {err}");
+    }
+
+    /// The real captured model response from a failing NorthPay run
+    /// (llm_calls evidence, 2026-09-25): 7 R1 sites + 1 R2 site, produced
+    /// by live gemma4-reasoning on the canonical payload. Repair must
+    /// succeed AND stay grounded in the real fixture file.
+    #[test]
+    fn repairs_real_captured_northpay_response() {
+        let raw = include_str!("../../tests/fixtures/northpay_malformed_patch_2026-09-25.txt");
+        let file = include_str!("../../analyzer_examples/client_northpay/clearing/fees.py");
+        let extracted = crate::llm::extract_json(raw);
+        assert!(serde_json::from_str::<serde_json::Value>(&extracted).is_err());
+        let (patch, report) = repair_patch_json(&extracted, file).expect("test failure");
+        assert_eq!(patch.target_file, "/tmp/dek_mq25_hints2/seed102/clearing/fees.py");
+        assert!(report.sites.iter().any(|s| s.pattern == "R2"), "{report:?}");
+        assert!(report.sites.iter().any(|s| s.pattern == "R1"), "{report:?}");
+        // the repaired context is grounded in the real file exactly once
+        // (else repair_patch_json would have rejected it), and the patch
+        // content is the hints-v2 recipe:
+        assert!(patch.replacement.contains("quantize"));
+        assert!(patch.replacement.contains("ROUND_HALF_UP"));
     }
 
     #[test]

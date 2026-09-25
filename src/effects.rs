@@ -469,6 +469,26 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                                     }
                                 }
                             }
+                            // C2-gap fix: a terminally malformed patch
+                            // persists its model calls (the corrupted raw
+                            // response is the evidence base for repair
+                            // patterns).
+                            if let Some(pf) = e.downcast_ref::<crate::execution::primitive_executor::PatchFailure>()
+                            {
+                                let generation =
+                                    storage.latest_generation_for_task(task_id)?;
+                                storage.append_semantic_artifact(
+                                    task_id,
+                                    &step_id,
+                                    generation,
+                                    "primitive_result_v1",
+                                    &serde_json::json!({
+                                        "step_id": step_id,
+                                        "patch_failed": true,
+                                        "llm_calls": pf.llm_calls,
+                                    }),
+                                )?;
+                            }
                             // Kernel-detected contract violations (e.g. malformed
                             // patches) carry an explicit "fatal:" prefix and must
                             // reach classify_failure_outcome unprefixed so they
