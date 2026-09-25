@@ -22,7 +22,10 @@ struct ModelInfo {
 
 #[derive(Debug, serde::Serialize)]
 pub struct DoctorReport {
-    pub free_gb: f64,
+    /// None = unknown (no vm_stat on this platform, e.g. Linux CI).
+    /// Fail-closed everywhere it gates: unknown memory never passes a
+    /// threshold check.
+    pub free_gb: Option<f64>,
     pub mlx_models: usize,
     pub roles: Vec<DoctorRoleReport>,
 }
@@ -221,7 +224,9 @@ pub fn dry_run_switch(role: &str) -> Result<()> {
 }
 
 pub fn doctor() -> Result<DoctorReport> {
-    let free_gb = free_memory_gb_estimate()?;
+    // Memory is best-effort: platforms without vm_stat report "unknown"
+    // (null in JSON) instead of failing the whole diagnostic report.
+    let free_gb = free_memory_gb_estimate().ok();
     let (runtime_ready, runtime_ids) = probe_mlx_runtime();
     let present = model_path_present();
     let rows = model_manifest::current_model_statuses()?;
@@ -263,7 +268,7 @@ pub fn doctor() -> Result<DoctorReport> {
             runtime_ready,
             model_id_match,
             model_available,
-            switch_ready: free_gb >= threshold && model_available,
+            switch_ready: free_gb.map(|f| f >= threshold).unwrap_or(false) && model_available,
             threshold_gb: threshold,
         });
     }
@@ -296,19 +301,28 @@ pub fn auto_route(role: &str) -> Result<()> {
 
     if !row.switch_ready && !already_loaded {
         return Err(anyhow!(
-            "auto-route blocked: role {:?} is not ready, free_gb={:.2}, threshold_gb={:.2}",
+            "auto-route blocked: role {:?} is not ready, free_gb={}, threshold_gb={:.2}",
             role,
-            report.free_gb,
+            fmt_gb(report.free_gb),
             row.threshold_gb
         ));
     }
 
     let synced_model = model_manifest::sync_env_for_role(role)?;
     println!(
-        "AUTO_ROUTE_OK role={} model={} free_gb={:.2} threshold_gb={:.2}",
-        role, synced_model, report.free_gb, row.threshold_gb
+        "AUTO_ROUTE_OK role={} model={} free_gb={} threshold_gb={:.2}",
+        role,
+        synced_model,
+        fmt_gb(report.free_gb),
+        row.threshold_gb
     );
     Ok(())
+}
+
+fn fmt_gb(free_gb: Option<f64>) -> String {
+    free_gb
+        .map(|f| format!("{f:.2}"))
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Returns the doctor report as a JSON Value.
@@ -320,7 +334,7 @@ pub fn doctor_json_report() -> Result<serde_json::Value> {
 
 pub fn print_doctor_text() -> Result<()> {
     let report = doctor()?;
-    println!("FREE_GB={:.2}", report.free_gb);
+    println!("FREE_GB={}", fmt_gb(report.free_gb));
     println!("MLX_MODELS={}", report.mlx_models);
     let r0 = report.roles.first();
     if let Some(r) = r0 {

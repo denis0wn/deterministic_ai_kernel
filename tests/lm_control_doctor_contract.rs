@@ -14,7 +14,7 @@ fn doctor_contract_is_stable() {
     }
     let report = doctor().expect("test failure");
 
-    assert!(report.free_gb > 0.0);
+    assert!(report.free_gb > Some(0.0));
     let _ = report.mlx_models; // mlx_models is usize, always valid
     assert!(!report.roles.is_empty());
 

@@ -2,7 +2,8 @@ use deterministic_ai_kernel::lm_control::doctor;
 
 #[test]
 fn doctor_returns_roles_and_ram_state() {
+    std::env::set_var("DAK_FREE_GB_OVERRIDE", "16.0");
     let report = doctor().expect("test failure");
-    assert!(report.free_gb >= 0.0);
+    assert!(report.free_gb >= Some(0.0));
     assert!(!report.roles.is_empty());
 }
