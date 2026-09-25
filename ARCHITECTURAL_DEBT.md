@@ -5,7 +5,8 @@
 ---
 
 ## 1. Прямой доступ к БД из воркера в обход шины событий
-*   **Модули:** `worker.rs`, `leases.rs`
+*   **Статус: ЗАКРЫТО.** Проверено 2026-09-24 (в `worker.rs`/`leases.rs` ноль SQL-ключевых слов) и доочищено 2026-09-25 (`c744602`): реальный остаток сидел в `src/main.rs` — операторские `reset_db` (13× DELETE + VACUUM) и INSERT-сайты задач. Весь SQL перенесён в `StorageProvider` (trait `reset_db` расширен до полного 13-табличного M2-списка; добавлены `upsert_task_exec_spec`, `insert_semantic_bias_artifact`, `task_exists`, `effect_ledger_counts`). `grep -E 'query_row|execute_batch|INSERT|DELETE' src/main.rs` = 0.
+*   **Модули:** ~~`worker.rs`, `leases.rs`~~ → фактически `src/main.rs`
 *   **Проблема:** Воркер напрямую выполняет SQL-запросы `INSERT` и `UPDATE` в таблицы `leases` и `step_status`.
 *   **Нарушение:** Нарушает инвариант каноничности шины событий и скрывает переходы состояний от `EventBus` (раздел 3.1 `ARCHITECTURE_INVARIANTS.md`).
 *   **Сложность миграции:** Medium.
