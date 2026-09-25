@@ -1,0 +1,5 @@
+25c25,26
+<     return int(raw * 100) / 100
+---
+>     from decimal import Decimal, ROUND_HALF_UP
+>     return Decimal(str(raw * 100)).quantize(Decimal('1'), rounding=ROUND_HALF_UP) / 100
