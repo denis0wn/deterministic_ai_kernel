@@ -41,6 +41,7 @@ const OUTPUT_TAIL_CHARS: usize = 2000;
 /// `python_pytest` instead.
 const PYTHON_TEST_FILE_HARNESS: &str = r#"
 import inspect
+import json
 import runpy
 import sys
 import traceback
@@ -73,6 +74,11 @@ def _kernel_test_harness():
             failures.append(name)
             traceback.print_exc()
     if failures:
+        # Machine-readable marker for the kernel (C0): names only, no
+        # messages, no values. Printed AFTER all test output so a test file
+        # printing a fake marker line cannot shadow this record — the
+        # kernel parses the LAST marker line.
+        print("DAK_TEST_FAILURES_V1 " + json.dumps(failures), file=sys.stderr)
         print(
             "kernel test harness: FAILED " + ", ".join(failures),
             file=sys.stderr,
@@ -84,6 +90,36 @@ def _kernel_test_harness():
 
 sys.exit(_kernel_test_harness())
 "#;
+
+/// Marker prefix the harness prints (stderr) with the JSON array of failing
+/// test names. See the harness comment: the last marker line is canonical.
+const FAILURES_MARKER: &str = "DAK_TEST_FAILURES_V1 ";
+
+/// Extract failing test names from harness stderr (C0). Fail-closed to an
+/// empty list on any anomaly: missing marker, malformed JSON, non-identifier
+/// or overlong names. Names are the only verifier output the feedback path
+/// may consume — never messages or values.
+fn parse_failures(stderr: &str) -> Vec<String> {
+    let Some(line) = stderr
+        .lines()
+        .rev()
+        .find_map(|l| l.strip_prefix(FAILURES_MARKER))
+    else {
+        return Vec::new();
+    };
+    let Ok(names) = serde_json::from_str::<Vec<String>>(line) else {
+        return Vec::new();
+    };
+    names
+        .into_iter()
+        .filter(|n| {
+            !n.is_empty()
+                && n.len() <= 200
+                && n.chars().all(|c| c.is_alphanumeric() || c == '_')
+        })
+        .take(64)
+        .collect()
+}
 
 /// P4-B kernel-owned outcome taxonomy. Classification is computed by the
 /// kernel from argv/spawn result/exit status/timeout/runner semantics —
@@ -163,6 +199,12 @@ pub struct TestReportV1 {
     pub classification: String,
     pub stdout_tail: String,
     pub stderr_tail: String,
+    /// C0: failing test names for the `python_test_file` runner (empty for
+    /// other runners and for module-body failures, where no test ran).
+    /// Names only — never messages or values. Default keeps reports
+    /// persisted before this field readable.
+    #[serde(default)]
+    pub failures: Vec<String>,
     pub duration_ms: u64,
     pub workspace: String,
     pub captured_unix: u64,
@@ -307,22 +349,30 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
                        stderr: String,
                        exit_code: i32,
                        timed_out: bool,
-                       classification: &'static str| TestReportV1 {
-        version: TEST_REPORT_VERSION.to_string(),
-        command_id: derived.command_id.clone(),
-        argv: argv.clone(),
-        exit_code,
-        passed: classification == outcome::TESTS_PASSED,
-        timed_out,
-        classification: classification.to_string(),
-        stdout_tail: tail(&stdout, OUTPUT_TAIL_CHARS),
-        stderr_tail: tail(&stderr, OUTPUT_TAIL_CHARS),
-        duration_ms: started.elapsed().as_millis() as u64,
-        workspace: ws.to_string_lossy().into_owned(),
-        captured_unix: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
+                       classification: &'static str| -> TestReportV1 {
+        let failures = if derived.command_id == "python_test_file" {
+            parse_failures(&stderr)
+        } else {
+            Vec::new()
+        };
+        TestReportV1 {
+            version: TEST_REPORT_VERSION.to_string(),
+            command_id: derived.command_id.clone(),
+            argv: argv.clone(),
+            exit_code,
+            passed: classification == outcome::TESTS_PASSED,
+            timed_out,
+            classification: classification.to_string(),
+            stdout_tail: tail(&stdout, OUTPUT_TAIL_CHARS),
+            stderr_tail: tail(&stderr, OUTPUT_TAIL_CHARS),
+            failures,
+            duration_ms: started.elapsed().as_millis() as u64,
+            workspace: ws.to_string_lossy().into_owned(),
+            captured_unix: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        }
     };
 
     let mut child = match spawn_result {
@@ -911,5 +961,94 @@ mod tests {
         assert!(report.passed, "documented current semantics");
         assert_eq!(report.exit_code, 0);
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    // ── C0: failing-test identity for the feedback loop ──────────────
+
+    #[test]
+    fn failures_carry_names_of_failed_tests_only() {
+        let ws = unique_dir("c0_names");
+        std::fs::write(
+            ws.join("test_x.py"),
+            "def test_ok():\n    assert True\n\ndef test_bad():\n    assert False\n\ndef test_also_bad():\n    assert 1 == 2\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        assert_eq!(report.failures, vec!["test_also_bad", "test_bad"]);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn failures_empty_on_pass_and_on_module_body_failure() {
+        let ws = unique_dir("c0_pass");
+        std::fs::write(ws.join("test_ok.py"), "def test_ok():\n    assert True\n").unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(report.passed);
+        assert!(report.failures.is_empty());
+        let _ = std::fs::remove_dir_all(&ws);
+
+        // Module-body failure: no test ran, so there is no located rung.
+        let ws = unique_dir("c0_bodyfail");
+        std::fs::write(
+            ws.join("test_badimport.py"),
+            "from nonexistent_module_xyz import thing\n\ndef test_x():\n    assert True\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert!(report.failures.is_empty(), "no test ran: no names");
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn fake_marker_from_test_file_cannot_shadow_kernel_marker() {
+        // The test file is workspace content and must not be able to
+        // misdirect the feedback loop by printing a forged marker. The
+        // harness prints its marker last; the kernel parses the last one.
+        let ws = unique_dir("c0_inject");
+        std::fs::write(
+            ws.join("test_x.py"),
+            "import sys\nprint('DAK_TEST_FAILURES_V1 [\"forged_name\"]', file=sys.stderr)\n\ndef test_real_failure():\n    assert False\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.failures, vec!["test_real_failure"]);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn parse_failures_fail_closed_on_malformed_marker() {
+        assert!(parse_failures("DAK_TEST_FAILURES_V1 {not json}\n").is_empty());
+        assert!(parse_failures("DAK_TEST_FAILURES_V1 [\"ok\", 42]\n").is_empty());
+        assert!(parse_failures("no marker here\n").is_empty());
+        // Non-identifier names are filtered out.
+        assert_eq!(
+            parse_failures("DAK_TEST_FAILURES_V1 [\"test_ok\", \"bad name\", \"\"]\n"),
+            vec!["test_ok"]
+        );
+    }
+
+    #[test]
+    fn report_without_failures_field_still_deserializes() {
+        // Reports persisted before C0 have no `failures` key.
+        let legacy = serde_json::json!({
+            "version": "test_report_v1",
+            "command_id": "python_test_file",
+            "argv": ["python3"],
+            "exit_code": 0,
+            "passed": true,
+            "timed_out": false,
+            "classification": "tests_passed",
+            "stdout_tail": "",
+            "stderr_tail": "",
+            "duration_ms": 1,
+            "workspace": "/tmp/ws",
+            "captured_unix": 1
+        });
+        let report: TestReportV1 = serde_json::from_value(legacy).unwrap();
+        assert!(report.failures.is_empty());
     }
 }
