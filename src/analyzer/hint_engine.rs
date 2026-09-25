@@ -18,13 +18,13 @@ pub fn generate_hints(rule_id: &str) -> Vec<String> {
     let hints: &[&str] = match rule_id {
         "money-truncation" => &[
             "The defect truncates money (e.g. int() drops sub-cent fractions). The fix needs exact decimal arithmetic: use the `decimal` module (`Decimal`, `ROUND_HALF_UP`).",
-            "To keep your patch in a single contiguous region, you may add `from decimal import Decimal, ROUND_HALF_UP` INSIDE the function you are fixing.",
-            "Compute the exact value first, then round HALF-UP to the cent ONCE at the end. Do not truncate or round each item separately.",
+            "Preserve the function's existing return type: if it returned `float`, convert the decimal result back with `float(...)` before returning — a `Decimal` return breaks equality checks and callers.",
+            "Round HALF-UP to the cent via `Decimal.quantize(..., rounding=ROUND_HALF_UP)` — builtin `round()` has no `rounding` keyword (`round(x, 2, rounding=...)` raises TypeError). You may add `from decimal import Decimal, ROUND_HALF_UP` INSIDE the function you are fixing.",
         ],
         "money-round-bare" => &[
             "The defect is a bare round() with no rounding policy. Use an explicit policy, e.g. `decimal` with `ROUND_HALF_UP`.",
-            "To keep your patch in a single contiguous region, you may add `from decimal import Decimal, ROUND_HALF_UP` INSIDE the function you are fixing.",
-            "Round HALF-UP to the cent; do not rely on the built-in round() (banker's rounding).",
+            "Preserve the function's existing return type: if it returned `float`, convert the decimal result back with `float(...)` before returning — a `Decimal` return breaks equality checks and callers.",
+            "Round HALF-UP to the cent via `Decimal.quantize(..., rounding=ROUND_HALF_UP)`; builtin `round()` has no `rounding` keyword. You may add the import INSIDE the function you are fixing.",
         ],
         "floor-div-money" => &[
             "The defect is floor division (`//`) truncating a monetary amount. Decide the correct policy: exact division or explicit HALF-UP rounding.",
@@ -92,5 +92,10 @@ mod tests {
         assert!(hints.contains("decimal") || hints.contains("Decimal"));
         assert!(hints.contains("INSIDE the function"));
         assert!(hints.contains("HALF-UP"));
+        // E0 2026-09-25: hints without these two guards produced 14/14
+        // failures (Decimal return broke float-equality; builtin
+        // round(..., rounding=) raised TypeError).
+        assert!(hints.contains("return type"));
+        assert!(hints.contains("quantize"));
     }
 }

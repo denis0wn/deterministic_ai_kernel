@@ -1,0 +1,13 @@
+17,21c17
+<     """Refund the proportional share of a fee.
+< 
+<     refund = fee * (refunded_share / total_share), rounded HALF-UP to the
+<     cent. Example: fee 1.0, share 1 of 8 -> 0.125 -> 0.13 (HALF-UP).
+<     """
+---
+>     from decimal import Decimal, ROUND_HALF_UP
+24,25c20
+<     # Refund is computed in whole cents.
+<     return int(raw * 100) / 100
+---
+>     return float(Decimal(str(raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))

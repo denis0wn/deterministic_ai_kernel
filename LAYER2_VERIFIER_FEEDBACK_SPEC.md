@@ -62,6 +62,16 @@ should state the return-type contract and forbid builtin
 `round(..., rounding=)` — `rounding=` is legal only on
 `Decimal.quantize`.
 
+**E0 follow-up (same day, hints v2):** the hints were fixed per that
+finding (return-type preservation + quantize-only + no `round(rounding=)`)
+and the series re-run (loop OFF for clean attribution):
+**7/14 completed with correct Decimal+float HALF-UP fixes; the semantic
+class dropped to 0/14** (evidence `analyzer_out/mq_northpay_hints_v2_2026-09-25/`).
+The residual 7/14 is the C4 format class (`malformed patch: invalid
+escape` — a `patch_repair` coverage gap, not feedback's job). Layer 2's
+scope is thereby confirmed as *classes without a hint recipe*; the loop
+stays for those.
+
 ## 4. Prerequisites — DONE 2026-09-25
 
 All four landed as separate commits on `analyzer` (suite 915/0, clippy

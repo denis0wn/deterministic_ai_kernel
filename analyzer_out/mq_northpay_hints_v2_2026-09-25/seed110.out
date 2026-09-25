@@ -1,0 +1,45 @@
+observability: component=parser operation=decompose payload_len=989 action_count=9 steps=6 trigger=conjunction
+READY_QUEUE: ["00_read_repository"]
+DISPATCHED: 00_read_repository
+STEP_STATUS: {"00_read_repository": "dispatched", "01_locate_bug": "pending", "02_patch_code": "pending", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+READY_QUEUE: []
+STEP_STATUS: {"00_read_repository": "dispatched", "01_locate_bug": "pending", "02_patch_code": "pending", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_read_repository
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_read_repository
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_read_repository
+READY_QUEUE: ["01_locate_bug"]
+DISPATCHED: 01_locate_bug
+STEP_STATUS: {"00_read_repository": "committed", "01_locate_bug": "dispatched", "02_patch_code": "pending", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_locate_bug
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_locate_bug
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_locate_bug
+READY_QUEUE: ["02_patch_code"]
+DISPATCHED: 02_patch_code
+STEP_STATUS: {"00_read_repository": "committed", "01_locate_bug": "committed", "02_patch_code": "dispatched", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_patch_code
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_patch_code
+patch_repair: deterministic repair not applied (not an invalid-escape parse problem: key must be a string at line 1 column 843); falling back to model repair retry
+STEP_FAIL_OK
+WORKER: worker-executor
+STEP_FAILED_BY_WORKER: 02_patch_code
+REASON: fatal: malformed patch: patch_v1 schema violation: invalid escape at line 1 column 290
+TASK_STATE: failed
+TASK_FAILED_REASON: step 02_patch_code failed: fatal: malformed patch: patch_v1 schema violation: invalid escape at line 1 column 290
+TERMINAL_ASSESSMENT: InProgress (baseline or inconclusive attempt)
+execute-effects failed: step 02_patch_code failed: fatal: malformed patch: patch_v1 schema violation: invalid escape at line 1 column 290
