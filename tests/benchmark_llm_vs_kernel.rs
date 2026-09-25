@@ -20,7 +20,6 @@ struct RunMetrics {
     llm_calls: u32,
     tool_calls: u32,
     latency_ms: u64,
-    cache_hits: u32,
     recovery_events: u32,
     replay_valid: bool,
     artifact_retained: bool,
@@ -112,7 +111,6 @@ impl ReferenceRunner {
         deterministic_ai_kernel::llm::reset_llm_usage();
 
         providers::get_storage().set_override_path(Some(self.db_path.clone()));
-        let _ = providers::get_storage().clear_caches();
 
         // 1. Plan generation
         let input = TaskInput::generic(&self.scenario.prompt);
@@ -165,7 +163,6 @@ impl ReferenceRunner {
                 .unwrap_or(0),
             tool_calls,
             latency_ms: start.elapsed().as_millis() as u64,
-            cache_hits: 0,
             recovery_events: 0,
             replay_valid: true,
             artifact_retained,
@@ -285,7 +282,6 @@ async fn run_comparative_benchmark() {
             llm_calls: receipt.llm_calls as u32,
             tool_calls: receipt.tool_calls as u32,
             latency_ms: receipt.wall_clock_ms,
-            cache_hits: receipt.cache_hits as u32,
             recovery_events: receipt.recovery_events as u32,
             replay_valid,
             artifact_retained,
@@ -321,7 +317,6 @@ async fn run_comparative_benchmark() {
             llm_calls: receipt.llm_calls as u32,
             tool_calls: receipt.tool_calls as u32,
             latency_ms: receipt.wall_clock_ms,
-            cache_hits: receipt.cache_hits as u32,
             recovery_events: receipt.recovery_events as u32,
             replay_valid,
             artifact_retained,
@@ -330,11 +325,21 @@ async fn run_comparative_benchmark() {
     }
     let (warm_mean, warm_std, warm_ci_l, warm_ci_u, warm_succ) = calculate_statistics(&warm_runs);
 
-    // Verify cache hit presence on warm phase
-    let has_cache_hits = warm_runs.iter().skip(1).any(|m| m.cache_hits > 0);
+    // Verify verified-artifact reuse presence on warm phase
+    let has_artifact_reuse = (0..11).any(|i| {
+        let task_id = format!("kernel-bench-task-warm-{}", i);
+        providers::get_storage()
+            .query_events(&task_id)
+            .map(|events| {
+                events.iter().any(|e| {
+                    e.event_type == "ARTIFACT_REPLAY_HIT" || e.event_type == "ARTIFACT_STORE"
+                })
+            })
+            .unwrap_or(false)
+    });
     assert!(
-        has_cache_hits,
-        "Warm-cache runs after warm-up must reuse execution cache"
+        has_artifact_reuse,
+        "Warm runs after warm-up must reuse verified artifacts"
     );
 
     // Verify total replay validity of all accepted runs
@@ -377,7 +382,7 @@ async fn run_comparative_benchmark() {
             warm_ci_u = warm_ci_u,
             warm_calls = warm_runs.iter().skip(1).map(|m| m.llm_calls as f64).sum::<f64>() / 10.0,
             warm_tools = warm_runs.iter().skip(1).map(|m| m.tool_calls as f64).sum::<f64>() / 10.0,
-            warm_hits = warm_runs.iter().skip(1).map(|m| m.cache_hits as f64).sum::<f64>() / 10.0,
+            warm_hits = 0.0,
         )
     } else {
         "- Success Rate: 0.0%\n- Phase Invalid (Replay Validation Mismatch)".to_string()

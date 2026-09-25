@@ -207,6 +207,8 @@ async fn do_chat_request(
 const CODING_ASSISTANT_SYSTEM_PROMPT: &str = "You are a concise coding assistant.";
 const TASK_PLANNER_SYSTEM_PROMPT: &str =
     "You are a concise task planning assistant. Follow output constraints exactly.";
+const MATH_SOLVER_SYSTEM_PROMPT: &str =
+    "You are solving a mathematical problem. Work carefully. Before answering: 1. Define the exact success criterion. 2. Derive the formula or argument step by step. 3. Re-check the derivation independently. 4. Test the result on a smaller analogous case when possible. 5. If you are not certain, say so explicitly. Return the full solution draft in plain text. Do not guess and do not jump straight to a short final answer.";
 
 pub async fn chat_with_role(role: &str, system_prompt: &str, user_prompt: &str) -> Result<String> {
     let purpose = match role {
@@ -222,6 +224,15 @@ pub async fn coding_assistant(user_prompt: &str) -> Result<String> {
     chat_with_purpose(
         ModelPurpose::CodingAssistant,
         CODING_ASSISTANT_SYSTEM_PROMPT,
+        user_prompt,
+    )
+    .await
+}
+
+pub async fn math_solver(user_prompt: &str) -> Result<String> {
+    chat_with_purpose(
+        ModelPurpose::CodingAssistant,
+        MATH_SOLVER_SYSTEM_PROMPT,
         user_prompt,
     )
     .await

@@ -194,17 +194,7 @@ impl Replayer {
                     if prim_idx < hist_primitives.len() {
                         ohash = hist_primitives[prim_idx].3.clone();
                     }
-                    let env_fp = crate::planner_pipeline::get_environment_fingerprint();
-                    let cache_key = blake3::hash(
-                        format!("{}:{}:{}:{}:{}", task_id, plan.id, prim.id.0, ihash, env_fp)
-                            .as_bytes(),
-                    )
-                    .to_hex()
-                    .to_string();
-                    if let Ok(Some(record)) = crate::providers::get_storage().get_cache(&cache_key)
-                    {
-                        ohash = record.output_hash;
-                    }
+                    let _env_fp = crate::planner_pipeline::get_environment_fingerprint();
                     actual_primitives.push((step_spec.step_id.clone(), prim_id, ihash, ohash));
                     prim_idx += 1;
                 }

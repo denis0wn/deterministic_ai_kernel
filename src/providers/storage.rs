@@ -169,33 +169,6 @@ pub trait StorageProvider: Send + Sync {
         &self,
         task_id: &str,
     ) -> Result<Option<crate::kernel_types::ReplayCapsule>>;
-    fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>>;
-    fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()>;
-    fn clear_caches(&self) -> Result<()>;
-    fn get_cached_primitive(&self, cache_key: &str) -> Result<Option<String>>;
-    fn store_cached_primitive(
-        &self,
-        cache_key: &str,
-        primitive_type: &str,
-        primitive_version: &str,
-        environment_fingerprint: &str,
-        dependency_hash: Option<&str>,
-        result_payload: &str,
-    ) -> Result<()>;
-    fn get_cached_plan(&self, cache_key: &str) -> Result<Option<(String, String)>>;
-    #[allow(clippy::too_many_arguments)]
-    fn store_cached_plan(
-        &self,
-        cache_key: &str,
-        manifest_version: &str,
-        planner_version: &str,
-        environment_fingerprint: &str,
-        repository_fingerprint: Option<&str>,
-        normalized_prompt: &str,
-        plan_id: &str,
-        parsed_steps_json: &str,
-    ) -> Result<()>;
-
     // Verified deterministic artifact memory
     fn get_artifact_by_fingerprint(&self, fingerprint: &str) -> Result<Option<String>>;
     fn store_verified_artifact(
@@ -207,14 +180,6 @@ pub trait StorageProvider: Send + Sync {
         output_payload: &str,
         dependency_hash: Option<&str>,
     ) -> Result<()>;
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CacheRecord {
-    pub execution_result: String,
-    pub output_hash: String,
-    pub duration_ms: i64,
-    pub metadata: String,
 }
 
 static OVERRIDE_PATH: std::sync::OnceLock<std::sync::RwLock<Vec<String>>> =
@@ -2590,55 +2555,6 @@ impl StorageProvider for DefaultStorage {
         }
     }
 
-    fn get_cache(&self, key: &str) -> Result<Option<CacheRecord>> {
-        let conn = self.conn()?;
-        let row: Option<(String, String, i64, String)> = conn
-            .query_row(
-                "SELECT execution_result, output_hash, duration_ms, metadata FROM execution_cache WHERE cache_key = ?1",
-                [key],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .optional()?;
-
-        match row {
-            Some((res, hash, dur, meta)) => Ok(Some(CacheRecord {
-                execution_result: res,
-                output_hash: hash,
-                duration_ms: dur,
-                metadata: meta,
-            })),
-            None => Ok(None),
-        }
-    }
-
-    fn put_cache(&self, key: &str, record: &CacheRecord) -> Result<()> {
-        let conn = self.conn()?;
-        conn.execute(
-            "INSERT OR REPLACE INTO execution_cache (cache_key, execution_result, output_hash, duration_ms, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                key,
-                record.execution_result,
-                record.output_hash,
-                record.duration_ms,
-                record.metadata
-            ],
-        )?;
-        Ok(())
-    }
-
-    fn clear_caches(&self) -> Result<()> {
-        let conn = self.conn()?;
-        conn.execute_batch(
-            r#"
-            DELETE FROM execution_cache;
-            DELETE FROM primitive_execution_cache;
-            DELETE FROM planner_memoization_cache;
-            "#,
-        )?;
-        Ok(())
-    }
-
     fn print_stats(&self) -> Result<(i64, i64, i64, i64)> {
         let conn = self.conn()?;
         let events: i64 = conn
@@ -2789,107 +2705,7 @@ impl StorageProvider for DefaultStorage {
         Ok(row)
     }
 
-    fn get_cached_primitive(&self, cache_key: &str) -> Result<Option<String>> {
-        let _t = std::time::Instant::now();
-        let conn = self.conn()?;
-        let res: Option<String> = conn
-            .query_row(
-                "SELECT result_payload FROM primitive_execution_cache WHERE cache_key = ?1",
-                [cache_key],
-                |r| r.get(0),
-            )
-            .optional()?;
-        crate::metrics::METRICS.record(
-            crate::metrics::SQLITE_READ_MS,
-            _t.elapsed().as_millis() as u64,
-        );
-        Ok(res)
-    }
-
-    fn store_cached_primitive(
-        &self,
-        cache_key: &str,
-        primitive_type: &str,
-        primitive_version: &str,
-        environment_fingerprint: &str,
-        dependency_hash: Option<&str>,
-        result_payload: &str,
-    ) -> Result<()> {
-        let _t = std::time::Instant::now();
-        let conn = self.conn()?;
-        conn.execute(
-            "INSERT OR REPLACE INTO primitive_execution_cache
-             (cache_key, primitive_type, primitive_version, environment_fingerprint, dependency_hash, result_payload)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                cache_key,
-                primitive_type,
-                primitive_version,
-                environment_fingerprint,
-                dependency_hash,
-                result_payload
-            ],
-        )?;
-        crate::metrics::METRICS.record(
-            crate::metrics::SQLITE_WRITE_MS,
-            _t.elapsed().as_millis() as u64,
-        );
-        Ok(())
-    }
-
-    fn get_cached_plan(&self, cache_key: &str) -> Result<Option<(String, String)>> {
-        let _t = std::time::Instant::now();
-        let conn = self.conn()?;
-        let res: Option<(String, String)> = conn
-            .query_row(
-                "SELECT plan_id, parsed_steps_json FROM planner_memoization_cache WHERE cache_key = ?1",
-                [cache_key],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        crate::metrics::METRICS.record(
-            crate::metrics::SQLITE_READ_MS,
-            _t.elapsed().as_millis() as u64,
-        );
-        Ok(res)
-    }
-
     #[allow(clippy::too_many_arguments)]
-    fn store_cached_plan(
-        &self,
-        cache_key: &str,
-        manifest_version: &str,
-        planner_version: &str,
-        environment_fingerprint: &str,
-        repository_fingerprint: Option<&str>,
-        normalized_prompt: &str,
-        plan_id: &str,
-        parsed_steps_json: &str,
-    ) -> Result<()> {
-        let _t = std::time::Instant::now();
-        let conn = self.conn()?;
-        conn.execute(
-            "INSERT OR REPLACE INTO planner_memoization_cache
-             (cache_key, manifest_version, planner_version, environment_fingerprint, repository_fingerprint, normalized_prompt, plan_id, parsed_steps_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                cache_key,
-                manifest_version,
-                planner_version,
-                environment_fingerprint,
-                repository_fingerprint,
-                normalized_prompt,
-                plan_id,
-                parsed_steps_json
-            ],
-        )?;
-        crate::metrics::METRICS.record(
-            crate::metrics::SQLITE_WRITE_MS,
-            _t.elapsed().as_millis() as u64,
-        );
-        Ok(())
-    }
-
     fn get_artifact_by_fingerprint(&self, fingerprint: &str) -> Result<Option<String>> {
         let _t = std::time::Instant::now();
         let conn = self.conn()?;

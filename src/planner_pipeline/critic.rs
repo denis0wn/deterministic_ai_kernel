@@ -2,16 +2,24 @@ use crate::planner_pipeline::Plan;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct CriticReport {
+pub struct PlanInvariantReport {
     pub invariant_violations: Vec<String>,
     pub warnings: Vec<String>,
     pub passed: bool,
 }
 
-pub struct PlannerCritic;
+pub trait ValidationStage {
+    type Report;
 
-impl PlannerCritic {
-    pub fn analyze(&self, plan: &Plan) -> CriticReport {
+    fn validate(&self, plan: &Plan) -> Self::Report;
+}
+
+pub struct PlanInvariantCritic;
+
+impl ValidationStage for PlanInvariantCritic {
+    type Report = PlanInvariantReport;
+
+    fn validate(&self, plan: &Plan) -> Self::Report {
         let mut violations = Vec::new();
         let mut warnings = Vec::new();
 
@@ -41,11 +49,17 @@ impl PlannerCritic {
         }
 
         let passed = violations.is_empty();
-        CriticReport {
+        PlanInvariantReport {
             invariant_violations: violations,
             warnings,
             passed,
         }
+    }
+}
+
+impl PlanInvariantCritic {
+    pub fn analyze(&self, plan: &Plan) -> PlanInvariantReport {
+        self.validate(plan)
     }
 }
 
@@ -59,7 +73,7 @@ mod tests {
 
     #[test]
     fn critic_passes_valid_plan() {
-        let report = PlannerCritic.analyze(&valid_plan());
+        let report = PlanInvariantCritic.analyze(&valid_plan());
         assert!(report.passed);
         assert!(report.invariant_violations.is_empty());
     }
@@ -68,7 +82,7 @@ mod tests {
     fn critic_catches_empty_id() {
         let mut plan = valid_plan();
         plan.id = "".into();
-        let report = PlannerCritic.analyze(&plan);
+        let report = PlanInvariantCritic.analyze(&plan);
         assert!(!report.passed);
         assert!(report.invariant_violations.iter().any(|v| v.contains("id")));
     }
@@ -76,7 +90,7 @@ mod tests {
     #[test]
     fn critic_catches_duplicate_steps() {
         let plan = Plan::new_with_stable_id(42, vec!["step one".into(), "step one".into()]);
-        let report = PlannerCritic.analyze(&plan);
+        let report = PlanInvariantCritic.analyze(&plan);
         assert!(!report.passed);
         assert!(report
             .invariant_violations
@@ -88,7 +102,7 @@ mod tests {
     fn critic_does_not_mutate_plan() {
         let plan = valid_plan();
         let steps_before = plan.steps.clone();
-        PlannerCritic.analyze(&plan);
+        PlanInvariantCritic.analyze(&plan);
         assert_eq!(plan.steps, steps_before);
     }
 }

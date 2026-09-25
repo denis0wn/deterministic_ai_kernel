@@ -42,6 +42,7 @@ fn make_compute_spec(op: &str) -> PrimitiveSpec {
 fn test_artifact_store_then_replay() -> Result<()> {
     let db_path = unique_db("replay");
     cleanup_db(&db_path);
+    std::env::set_var("KERNEL_DB_PATH", &db_path);
 
     let bus = EventBus::new(&db_path)?;
     let task_id = "replay-task-001";
@@ -74,6 +75,7 @@ fn test_artifact_store_then_replay() -> Result<()> {
     assert_eq!(first.status, second.status);
 
     drop(bus);
+    std::env::remove_var("KERNEL_DB_PATH");
     cleanup_db(&db_path);
     Ok(())
 }
@@ -82,6 +84,7 @@ fn test_artifact_store_then_replay() -> Result<()> {
 fn test_volatile_op_not_stored() -> Result<()> {
     let db_path = unique_db("volatile");
     cleanup_db(&db_path);
+    std::env::set_var("KERNEL_DB_PATH", &db_path);
 
     let bus = EventBus::new(&db_path)?;
     let task_id = "volatile-task-001";
@@ -98,6 +101,7 @@ fn test_volatile_op_not_stored() -> Result<()> {
     assert!(!has_store, "volatile ops must NOT produce ARTIFACT_STORE");
 
     drop(bus);
+    std::env::remove_var("KERNEL_DB_PATH");
     cleanup_db(&db_path);
     Ok(())
 }

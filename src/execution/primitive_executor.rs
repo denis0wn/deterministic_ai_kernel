@@ -1,4 +1,3 @@
-use crate::execution::cache::{generate_cache_key, get_primitive_version, is_cacheable};
 use crate::execution_abi::primitives::{
     ArtifactSpec, PrimitiveKind, PrimitiveResult, PrimitiveSpec,
 };
@@ -55,71 +54,6 @@ impl PrimitiveExecutor {
         }
 
         let payload = &spec.payload;
-        let primitive_type = format!("{:?}", spec.kind);
-        let primitive_version = get_primitive_version(spec.kind);
-        let environment_fingerprint = crate::planner_pipeline::get_environment_fingerprint();
-
-        let dependency_hash = match spec.kind {
-            PrimitiveKind::Read => {
-                let path = payload
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("repository");
-
-                let content = if path == "repository" {
-                    task_payload.to_string()
-                } else {
-                    providers::get_filesystem().read_to_string(path)?
-                };
-
-                Some(blake3::hash(content.as_bytes()).to_hex().to_string())
-            }
-            _ => None,
-        };
-
-        let cacheable = is_cacheable(spec.kind);
-
-        let cache_key = if cacheable {
-            Some(generate_cache_key(
-                &primitive_type,
-                primitive_version,
-                payload,
-                &environment_fingerprint,
-                dependency_hash.as_deref(),
-            ))
-        } else {
-            None
-        };
-
-        if let Some(key) = cache_key.as_ref() {
-            if let Some(cached) = providers::get_storage().get_cached_primitive(key)? {
-                let mut cached_result: PrimitiveResult = serde_json::from_str(&cached)?;
-                cached_result.id = spec.id.clone();
-
-                let _ = providers::get_storage().append_event(
-                    task_id,
-                    Some(&spec.id.0),
-                    "CACHE_HIT",
-                    &json!({
-                        "primitive_id": spec.id.0,
-                        "cache_key": key
-                    }),
-                );
-
-                return Ok(cached_result);
-            }
-
-            let _ = providers::get_storage().append_event(
-                task_id,
-                Some(&spec.id.0),
-                "CACHE_MISS",
-                &json!({
-                    "primitive_id": spec.id.0,
-                    "cache_key": key
-                }),
-            );
-        }
-
         if matches!(spec.kind, PrimitiveKind::Compute | PrimitiveKind::Reasoning) {
             let operation = payload
                 .get("operation")
@@ -188,7 +122,7 @@ impl PrimitiveExecutor {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let exit_status = output.status.code().unwrap_or(-1);
 
-                PrimitiveResult {
+                let compute_result = PrimitiveResult {
                     id: spec.id.clone(),
                     status: if output.status.success() {
                         "ok".to_string()
@@ -202,7 +136,49 @@ impl PrimitiveExecutor {
                         "exit_status": exit_status
                     }),
                     artifacts: vec![],
+                };
+
+                let compute_is_volatile = matches!(
+                    payload
+                        .get("operation")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("none"),
+                    "git_status"
+                );
+                if !compute_is_volatile {
+                    let fingerprint =
+                        blake3::hash(format!("{}:{}:{}", task_id, spec.id.0, payload).as_bytes())
+                            .to_hex()
+                            .to_string();
+
+                    let output_payload = serde_json::to_string(&compute_result.output)
+                        .unwrap_or_else(|_| "{}".to_string());
+                    let input_hash =
+                        blake3::hash(format!("{}:{}:{}", task_id, spec.id.0, payload).as_bytes())
+                            .to_hex()
+                            .to_string();
+
+                    let _ = providers::get_storage().store_verified_artifact(
+                        &fingerprint,
+                        "primitive_result_v1",
+                        "v1",
+                        &input_hash,
+                        &output_payload,
+                        None,
+                    );
+
+                    let _ = providers::get_storage().append_event(
+                        task_id,
+                        Some(&spec.id.0),
+                        "ARTIFACT_STORE",
+                        &json!({
+                            "primitive_id": spec.id.0,
+                            "fingerprint": fingerprint
+                        }),
+                    );
                 }
+
+                compute_result
             }
             PrimitiveKind::Read => {
                 let path = payload
@@ -549,20 +525,6 @@ impl PrimitiveExecutor {
                 artifacts: vec![],
             },
         };
-
-        if let Some(key) = cache_key.as_ref() {
-            if cacheable && result.status == "ok" {
-                let serialized = serde_json::to_string(&result)?;
-                providers::get_storage().store_cached_primitive(
-                    key,
-                    &primitive_type,
-                    primitive_version,
-                    &environment_fingerprint,
-                    dependency_hash.as_deref(),
-                    &serialized,
-                )?;
-            }
-        }
 
         Ok(result)
     }

@@ -475,94 +475,28 @@ impl ExecutionEngine {
                         }),
                     )?;
 
-                    // Execute primitive (with Cache Layer check)
                     let ihash = calculate_primitive_input_hash(prim);
-                    let env_fp = crate::planner_pipeline::get_environment_fingerprint();
-                    let cache_key = blake3::hash(
-                        format!("{}:{}:{}:{}:{}", task_id, plan.id, prim.id.0, ihash, env_fp)
-                            .as_bytes(),
-                    )
-                    .to_hex()
-                    .to_string();
+                    let (prim_id, _, out_hash, status_str, dur_ms) =
+                        execute_primitive(prim, &execution_id);
+                    println!("observability: component=executor operation=execute_primitive duration_ms={}", prim_start.elapsed().as_millis());
 
-                    let mut cache_hit = false;
-                    let mut cached_status = "success".to_string();
-                    let mut ohash = "".to_string();
-                    let mut duration_ms = 0u64;
+                    // Emit PRIMITIVE_EXECUTED
+                    check_and_emit_transition(
+                        &task_id,
+                        Some(&step_spec.step_id),
+                        "PRIMITIVE_EXECUTED",
+                        &execution_id,
+                        serde_json::json!({
+                            "primitive_id": prim_id,
+                            "primitive_kind": format!("{:?}", prim.kind),
+                            "input_hash": ihash,
+                            "output_hash": out_hash,
+                            "status": status_str,
+                            "duration_ms": dur_ms
+                        }),
+                    )?;
 
-                    if let Ok(Some(record)) = crate::providers::get_storage().get_cache(&cache_key)
-                    {
-                        cache_hit = true;
-                        cached_status = record.execution_result;
-                        ohash = record.output_hash;
-                        duration_ms = record.duration_ms as u64;
-                    }
-
-                    let (prim_status, _prim_duration_ms) = if cache_hit {
-                        // Emit CACHE_HIT event
-                        check_and_emit_transition(
-                            &task_id,
-                            Some(&step_spec.step_id),
-                            "CACHE_HIT",
-                            &execution_id,
-                            serde_json::json!({
-                                "cache_key": cache_key,
-                                "primitive_id": prim.id.clone(),
-                                "output_hash": ohash,
-                                "duration_ms": duration_ms
-                            }),
-                        )?;
-
-                        // Emit PRIMITIVE_EXECUTED event representing cached state to keep replay valid
-                        check_and_emit_transition(
-                            &task_id,
-                            Some(&step_spec.step_id),
-                            "PRIMITIVE_EXECUTED",
-                            &execution_id,
-                            serde_json::json!({
-                                "primitive_id": prim.id.0.clone(),
-                                "primitive_kind": format!("{:?}", prim.kind),
-                                "input_hash": ihash,
-                                "output_hash": ohash,
-                                "status": cached_status,
-                                "duration_ms": duration_ms
-                            }),
-                        )?;
-
-                        (cached_status, duration_ms)
-                    } else {
-                        let (prim_id, _, out_hash, status_str, dur_ms) =
-                            execute_primitive(prim, &execution_id);
-                        println!("observability: component=executor operation=execute_primitive duration_ms={}", prim_start.elapsed().as_millis());
-                        ohash = out_hash.clone();
-
-                        // Emit PRIMITIVE_EXECUTED
-                        check_and_emit_transition(
-                            &task_id,
-                            Some(&step_spec.step_id),
-                            "PRIMITIVE_EXECUTED",
-                            &execution_id,
-                            serde_json::json!({
-                                "primitive_id": prim_id,
-                                "primitive_kind": format!("{:?}", prim.kind),
-                                "input_hash": ihash,
-                                "output_hash": ohash,
-                                "status": status_str,
-                                "duration_ms": dur_ms
-                            }),
-                        )?;
-
-                        // Save cache record
-                        let record = crate::providers::storage::CacheRecord {
-                            execution_result: status_str.clone(),
-                            output_hash: ohash.clone(),
-                            duration_ms: dur_ms as i64,
-                            metadata: format!("prim_kind:{:?}", prim.kind),
-                        };
-                        let _ = crate::providers::get_storage().put_cache(&cache_key, &record);
-
-                        (status_str, dur_ms)
-                    };
+                    let (prim_status, _prim_duration_ms) = (status_str, dur_ms);
 
                     if prim_status == "success" {
                         StepStatus::Ok

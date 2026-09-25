@@ -172,8 +172,8 @@ pub fn build_plan_and_publish(payload: &str, seed: u64, db_path: &str) -> Result
                 &report.plan.steps,
                 &report.fingerprint,
                 report.elapsed_ms,
-                report.critic_report.passed,
-                &report.critic_report.warnings,
+                report.validation.plan_invariants.passed,
+                &report.validation.plan_invariants.warnings,
                 &stage_tuples,
             );
             // Сохраняем PipelineReport как артефакт для Replay
@@ -183,8 +183,8 @@ pub fn build_plan_and_publish(payload: &str, seed: u64, db_path: &str) -> Result
                 "steps": report.plan.steps,
                 "planner_version": report.planner_version,
                 "elapsed_ms": report.elapsed_ms,
-                "critic_passed": report.critic_report.passed,
-                "warnings": report.critic_report.warnings,
+                "critic_passed": report.validation.plan_invariants.passed,
+                "warnings": report.validation.plan_invariants.warnings,
             });
             let _ = bus.append_semantic_artifact(
                 &report.plan.id,
@@ -207,11 +207,11 @@ pub fn build_plan_and_publish(payload: &str, seed: u64, db_path: &str) -> Result
     }
 }
 
-use crate::planner_pipeline::critic::PlannerCritic;
+use crate::planner_pipeline::critic::{PlanInvariantCritic, ValidationStage};
 use crate::planner_pipeline::normalizer::Normalizer;
 use crate::planner_pipeline::parser::Parser;
 use crate::planner_pipeline::replay::ReplayTape;
-use crate::planner_pipeline::report::{PipelineReport, ReplayEvent, StageName};
+use crate::planner_pipeline::report::{PipelineReport, ReplayEvent, StageName, ValidationReport};
 use crate::planner_pipeline::semantic_mapper::SemanticMapper;
 use crate::semantic_bias::BiasConfiguration;
 use std::time::Instant;
@@ -259,9 +259,9 @@ pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
         description: format!("plan id={}", plan.id),
     });
 
-    let critic_report = PlannerCritic.analyze(&plan);
+    let critic_report = PlanInvariantCritic.validate(&plan);
     events.push(ReplayEvent {
-        stage: StageName::Critic,
+        stage: StageName::ValidationPlanInvariant,
         timestamp_offset_ms: started.elapsed().as_millis(),
         description: if critic_report.passed {
             "critic passed".into()
@@ -276,7 +276,11 @@ pub fn build_plan(payload: &str, seed: u64) -> Result<PipelineReport> {
     Ok(PipelineReport {
         fingerprint: get_environment_fingerprint(),
         plan,
-        critic_report,
+        validation: ValidationReport {
+            plan_invariants: critic_report,
+            reasoning_review: None,
+            evidence_verification: None,
+        },
         replay_tape,
         stage_events: events,
         planner_version: env!("CARGO_PKG_VERSION"),

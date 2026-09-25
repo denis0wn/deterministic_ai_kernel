@@ -10,7 +10,6 @@ pub struct DeterministicSummary {
     pub failed_attempts: usize,
     pub retry_count: usize,
     pub replay_valid: bool,
-    pub cache_hits: usize,
     pub committed_effects: usize,
     pub rejected_effects: usize,
 }
@@ -37,7 +36,6 @@ impl DeterministicSummary {
             failed_attempts: receipt.failed_attempts,
             retry_count: receipt.retry_count,
             replay_valid: receipt.replay_validation,
-            cache_hits: receipt.cache_hits,
             committed_effects,
             rejected_effects,
         })
@@ -127,7 +125,6 @@ pub fn calculate_receipt_hash(receipt: &ExecutionReceipt) -> String {
         "recovery_events",
         serde_json::json!(receipt.recovery_events),
     );
-    map.insert("cache_hits", serde_json::json!(receipt.cache_hits));
     map.insert("tool_calls", serde_json::json!(receipt.tool_calls));
     map.insert("llm_calls", serde_json::json!(receipt.llm_calls));
     map.insert("artifacts", serde_json::json!(receipt.artifacts));

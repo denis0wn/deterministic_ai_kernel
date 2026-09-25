@@ -26,7 +26,6 @@ async fn test_final_answer_matches_summary_contradictions() {
         failed_attempts: 1,
         retry_count: 1,
         replay_valid: true,
-        cache_hits: 1,
         committed_effects: 2,
         rejected_effects: 0,
     };
@@ -89,7 +88,6 @@ async fn test_fallback_path_on_validation_failure() {
         failed_attempts: 1,
         retry_count: 1,
         replay_valid: true,
-        cache_hits: 0,
         committed_effects: 1,
         rejected_effects: 0,
     };
@@ -118,7 +116,6 @@ async fn test_transient_fail_retry_committed_no_failure_wording() {
         failed_attempts: 1,
         retry_count: 1,
         replay_valid: true,
-        cache_hits: 0,
         committed_effects: 1,
         rejected_effects: 0,
     };
@@ -140,7 +137,6 @@ async fn test_replay_invalid_reflected_in_answer() {
         failed_attempts: 1,
         retry_count: 1,
         replay_valid: false,
-        cache_hits: 0,
         committed_effects: 1,
         rejected_effects: 0,
     };
@@ -159,7 +155,6 @@ async fn test_canonical_receipt_hash_stability() {
         failed_attempts: 0,
         retry_count: 0,
         recovery_events: 0,
-        cache_hits: 0,
         tool_calls: 3,
         llm_calls: 1,
         artifacts: 1,
@@ -220,7 +215,6 @@ async fn test_db_receipt_summary_construction_flow() {
         failed_attempts: 0,
         retry_count: 0,
         recovery_events: 0,
-        cache_hits: 0,
         tool_calls: 2,
         llm_calls: 1,
         artifacts: 1,
@@ -257,7 +251,6 @@ async fn test_regression_second_step_failed_once_recovered_success() {
         failed_attempts: 1,
         retry_count: 1,
         replay_valid: true,
-        cache_hits: 0,
         committed_effects: 1,
         rejected_effects: 0,
     };

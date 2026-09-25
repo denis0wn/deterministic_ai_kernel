@@ -69,7 +69,6 @@ pub struct ExecutionReceipt {
     pub failed_attempts: usize,
     pub retry_count: usize,
     pub recovery_events: usize,
-    pub cache_hits: usize,
     pub tool_calls: usize,
     pub llm_calls: usize,
     pub artifacts: usize,
@@ -203,7 +202,6 @@ pub fn build_receipt(
     let mut completed_steps = 0;
     let mut failed_attempts = 0;
     let mut retry_count = 0;
-    let mut cache_hits = 0;
     let mut tool_calls = 0;
     let mut llm_calls = 0;
     let mut artifacts = 0;
@@ -216,7 +214,6 @@ pub fn build_receipt(
                 failed_attempts += 1;
                 retry_count += 1;
             }
-            "CACHE_HIT" => cache_hits += 1,
             "PRIMITIVE_EXECUTED" => tool_calls += 1,
             "PLANNER_CACHE_MISS" | "PLANNER_CACHE_HIT" => llm_calls += 1,
             "ARTIFACT_STORE" => artifacts += 1,
@@ -256,7 +253,6 @@ pub fn build_receipt(
         failed_attempts,
         retry_count,
         recovery_events: retry_count,
-        cache_hits,
         tool_calls,
         llm_calls,
         artifacts,

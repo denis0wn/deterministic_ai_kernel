@@ -1243,7 +1243,7 @@ async fn main() {
                     "planner_version": report.planner_version,
                     "elapsed_ms": report.elapsed_ms,
                     "final_answer": final_text,
-                    "critic": { "passed": report.critic_report.passed, "warnings": report.critic_report.warnings, "violations": report.critic_report.invariant_violations },
+                    "critic": { "passed": report.validation.plan_invariants.passed, "warnings": report.validation.plan_invariants.warnings, "violations": report.validation.plan_invariants.invariant_violations },
                     "stage_events": report.stage_events.iter().map(|e| serde_json::json!({"stage": e.stage.to_string(), "offset_ms": e.timestamp_offset_ms, "desc": e.description})).collect::<Vec<_>>(),
                     "execution_receipt": {
                         "task_id": task_id,
@@ -1275,7 +1275,10 @@ async fn main() {
                 println!("PLANNER_VERSION={}", report.planner_version);
                 println!("STEP_COUNT={}", report.plan.steps.len());
                 println!("ELAPSED_MS={}", report.elapsed_ms);
-                println!("CRITIC_PASSED={}", report.critic_report.passed);
+                println!(
+                    "PLAN_INVARIANTS_PASSED={}",
+                    report.validation.plan_invariants.passed
+                );
             }
             return;
         }

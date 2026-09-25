@@ -1,4 +1,4 @@
-use crate::planner_pipeline::critic::CriticReport;
+use crate::planner_pipeline::critic::PlanInvariantReport;
 use crate::planner_pipeline::replay::ReplayTape;
 use crate::planner_pipeline::Plan;
 use serde::Serialize;
@@ -9,7 +9,7 @@ pub enum StageName {
     Parser,
     SemanticMapper,
     StableId,
-    Critic,
+    ValidationPlanInvariant,
 }
 
 impl std::fmt::Display for StageName {
@@ -19,7 +19,7 @@ impl std::fmt::Display for StageName {
             StageName::Parser => "parser",
             StageName::SemanticMapper => "semantic_mapper",
             StageName::StableId => "stable_id",
-            StageName::Critic => "critic",
+            StageName::ValidationPlanInvariant => "validation.plan_invariant",
         };
         write!(f, "{s}")
     }
@@ -32,13 +32,26 @@ pub struct ReplayEvent {
     pub description: String,
 }
 
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ReasoningReviewReport {}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct EvidenceVerificationReport {}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidationReport {
+    pub plan_invariants: PlanInvariantReport,
+    pub reasoning_review: Option<ReasoningReviewReport>,
+    pub evidence_verification: Option<EvidenceVerificationReport>,
+}
+
 /// Full output of a single `build_plan()` call.
 /// Invariant: all fields belong to the same run.
 /// Side-effect-free: callers decide what to do with it.
 #[derive(Debug, Serialize)]
 pub struct PipelineReport {
     pub plan: Plan,
-    pub critic_report: CriticReport,
+    pub validation: ValidationReport,
     pub replay_tape: ReplayTape,
     pub stage_events: Vec<ReplayEvent>,
     pub fingerprint: String,

@@ -1,5 +1,5 @@
 use crate::planner_pipeline::{
-    critic::{CriticReport, PlannerCritic},
+    critic::{PlanInvariantCritic, PlanInvariantReport},
     normalizer::Normalizer,
     parser::Parser,
     semantic_mapper::SemanticMapper,
@@ -14,7 +14,7 @@ pub struct Pipeline {
 
 pub struct PipelineOutput {
     pub plan: Plan,
-    pub report: CriticReport,
+    pub report: PlanInvariantReport,
 }
 
 fn query_mlx_server(payload: &str) -> Option<Vec<String>> {
@@ -139,7 +139,7 @@ impl Pipeline {
         let plan = Plan::new_with_stable_id(ctx.seed, mapped.steps);
 
         // Stage 5: Critic (analyze only, no mutation)
-        let report = PlannerCritic.analyze(&plan);
+        let report = PlanInvariantCritic.analyze(&plan);
 
         Ok(PipelineOutput { plan, report })
     }
