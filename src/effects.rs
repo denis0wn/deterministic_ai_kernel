@@ -414,6 +414,30 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                             )?;
                         }
                         Err(e) => {
+                            // C1: a failed RunTests step carries its
+                            // TestReportV1 — persist it as an artifact
+                            // before the task dies. Failing reports are
+                            // the feedback loop's input; without this the
+                            // report survived only inside the error string.
+                            // Same type and shape as the success path's
+                            // step output (semantic_artifacts has a CHECK
+                            // constraint on artifact_type).
+                            if let Some(trf) = e.downcast_ref::<crate::execution::primitive_executor::TestRunFailure>()
+                            {
+                                let generation =
+                                    storage.latest_generation_for_task(task_id)?;
+                                storage.append_semantic_artifact(
+                                    task_id,
+                                    &step_id,
+                                    generation,
+                                    "primitive_result_v1",
+                                    &serde_json::json!({
+                                        "test_report_v1": trf.report,
+                                        "tests_passed": false,
+                                        "step_id": step_id,
+                                    }),
+                                )?;
+                            }
                             // Kernel-detected contract violations (e.g. malformed
                             // patches) carry an explicit "fatal:" prefix and must
                             // reach classify_failure_outcome unprefixed so they

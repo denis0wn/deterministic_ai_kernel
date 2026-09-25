@@ -263,6 +263,25 @@ fn run_tool_sync(
 /// to build or select a command. A report whose `passed` is false (non-zero
 /// exit, timeout, or unavailable command) fails the step terminally so a
 /// CodeFix task can never complete on unproven or failing tests.
+/// C1: a failed RunTests step carries its evidence report so the effects
+/// loop can persist the failing TestReportV1 as an artifact before the
+/// task dies — previously the report survived only inside an error string.
+/// Display is exactly `reason`; the fatal:/classification wording is
+/// unchanged (log scanners and tests depend on it).
+#[derive(Debug)]
+pub struct TestRunFailure {
+    pub reason: String,
+    pub report: serde_json::Value,
+}
+
+impl std::fmt::Display for TestRunFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for TestRunFailure {}
+
 fn execute_run_tests(spec: &PrimitiveSpec, payload: &serde_json::Value) -> Result<PrimitiveResult> {
     let workspace = payload
         .get("workspace")
@@ -300,14 +319,6 @@ fn execute_run_tests(spec: &PrimitiveSpec, payload: &serde_json::Value) -> Resul
         .and_then(|v| v.as_i64())
         .unwrap_or(-1);
 
-    let mut output = json!({
-        "test_report_v1": report,
-        "tests_passed": passed,
-    });
-    if let Some(obj) = output.as_object_mut() {
-        obj.insert("step_id".to_string(), json!(spec.id.0));
-    }
-
     if !passed {
         // Persist nothing false: surface the truthful failure. The kernel
         // never declares tests passed on the model's word — only on the
@@ -320,19 +331,28 @@ fn execute_run_tests(spec: &PrimitiveSpec, payload: &serde_json::Value) -> Resul
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
         use crate::tools::test_runner::outcome;
-        return Err(match cls {
-            outcome::TIMEOUT => anyhow!(
+        let reason = match cls {
+            outcome::TIMEOUT => format!(
                 "fatal: real tests timed out after {}s (classification={cls})",
                 timeout_secs
             ),
-            outcome::TESTS_FAILED => anyhow!(
+            outcome::TESTS_FAILED => format!(
                 "fatal: real tests failed with exit code {} (classification={cls}; no fabricated success)",
                 exit_code
             ),
-            _ => anyhow!(
+            _ => format!(
                 "fatal: real test execution error: {cls} (exit={exit_code}; no fabricated success)"
             ),
-        });
+        };
+        return Err(TestRunFailure { reason, report }.into());
+    }
+
+    let mut output = json!({
+        "test_report_v1": report,
+        "tests_passed": passed,
+    });
+    if let Some(obj) = output.as_object_mut() {
+        obj.insert("step_id".to_string(), json!(spec.id.0));
     }
 
     Ok(PrimitiveResult {

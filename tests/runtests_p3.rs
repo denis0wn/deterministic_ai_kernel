@@ -404,6 +404,46 @@ fn failing_real_tests_block_completion() {
 }
 
 #[test]
+fn failing_run_tests_persists_failing_report_artifact() {
+    // C1: the failing TestReportV1 must survive as a semantic_artifacts
+    // row — the feedback loop's input — not just inside an error string.
+    let ws = fresh_dir("p3_c1");
+    python_project(
+        &ws,
+        "from calc import multiply\n\n\ndef test_multiply():\n    assert multiply(2, 3) == 999\n",
+    );
+    let calc = ws.join("calc.py");
+
+    let task_id = unique("p3-c1");
+    let spec = full_chain_spec(ws.to_str().unwrap());
+    let db = create_task(&task_id, &spec.to_string(), "fix multiply");
+    seed_patch(&db, &task_id, calc.to_str().unwrap());
+
+    let err = execute_effects(&db, &task_id).expect_err("failing tests must block");
+    assert!(err.to_string().contains("real tests failed"), "{err}");
+
+    let bus = EventBus::new(&db).unwrap();
+    let artifacts = bus.list_semantic_artifacts(&task_id, None).unwrap();
+    let failing = artifacts
+        .iter()
+        .filter(|row| row.artifact_type == "primitive_result_v1")
+        .filter_map(|row| serde_json::from_str::<serde_json::Value>(&row.payload).ok())
+        .find(|p| p.get("tests_passed") == Some(&json!(false)))
+        .and_then(|p| p.get("test_report_v1").cloned())
+        .expect("failing test_report_v1 must be persisted as an artifact");
+    assert_eq!(failing["passed"], false);
+    assert_eq!(failing["classification"], "tests_failed");
+    assert_eq!(
+        failing["failures"],
+        json!(["test_multiply"]),
+        "C0 names must ride the persisted failing report"
+    );
+
+    cleanup_task_files(&task_id, &db);
+    let _ = std::fs::remove_dir_all(&ws);
+}
+
+#[test]
 fn failing_pytest_style_tests_block_completion() {
     // CD-1 regression (acceptance F3): a pytest-style test file whose
     // assertions fail after the patch MUST block completion. Bare
