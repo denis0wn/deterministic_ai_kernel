@@ -1,9 +1,17 @@
 use deterministic_ai_kernel::lm_control::doctor;
+use deterministic_ai_kernel::model_manifest;
 
 #[test]
 fn doctor_contract_is_stable() {
     std::env::set_var("DAK_LM_BACKEND", "mock");
     std::env::set_var("DAK_FREE_GB_OVERRIDE", "16.0");
+    // Hermetic sync: doctor() compares role env keys against the manifest.
+    // Fresh checkouts (CI) have no .env, so pin process env from the manifest.
+    for role in ["coding_assistant", "task_planning", "code_review", "embeddings"] {
+        let key = model_manifest::env_key_for_role(role).expect("test failure");
+        let model = model_manifest::best_enabled_model_for_role(role).expect("test failure");
+        std::env::set_var(key, model.id);
+    }
     let report = doctor().expect("test failure");
 
     assert!(report.free_gb > 0.0);

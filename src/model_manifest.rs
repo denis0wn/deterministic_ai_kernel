@@ -114,6 +114,11 @@ pub fn system_prompt_for_role(role: &str) -> Result<String> {
     Ok(model.system_prompt)
 }
 fn read_env_value(env_key: &str) -> Result<Option<String>> {
+    // Process env wins over the .env file (standard dotenvy precedence);
+    // the file alone is absent on fresh checkouts (CI) and in tests.
+    if let Ok(value) = std::env::var(env_key) {
+        return Ok(Some(value));
+    }
     let text = fs::read_to_string(".env").unwrap_or_default();
     for line in text.lines() {
         if let Some(value) = line.strip_prefix(&format!("{env_key}=")) {
