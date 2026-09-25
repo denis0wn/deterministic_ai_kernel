@@ -70,7 +70,7 @@ fn executor_prompt_for(step_kind: &str, detail: &str) -> String {
 /// `execute_run_tests`: an explicit payload value wins, otherwise
 /// `DAK_CODEFIX_WORKSPACE`. `None` means no confinement is possible, and
 /// every caller must fail closed rather than touch the filesystem.
-fn authorized_workspace(payload: &serde_json::Value) -> Option<String> {
+pub(crate) fn authorized_workspace(payload: &serde_json::Value) -> Option<String> {
     payload
         .get("workspace")
         .and_then(|v| v.as_str())
@@ -85,7 +85,7 @@ fn authorized_workspace(payload: &serde_json::Value) -> Option<String> {
 /// task-derived paths and write model-supplied content with no confinement at
 /// all, which is what made arbitrary file read and arbitrary file write
 /// reachable from `pipeline-run`.
-fn confined(candidate: &str, workspace: Option<&str>) -> Result<std::path::PathBuf> {
+pub(crate) fn confined(candidate: &str, workspace: Option<&str>) -> Result<std::path::PathBuf> {
     let ws = workspace.ok_or_else(|| {
         anyhow!("fatal: filesystem step has no authorized workspace (set DAK_CODEFIX_WORKSPACE)")
     })?;
@@ -498,6 +498,14 @@ impl PrimitiveExecutor {
                         )
                     })?;
                     let prompt = patch_prompt(&target, &file_content, task_payload);
+                    // Layer-2 feedback loop: on re-entered attempts the
+                    // payload carries the kernel's located-rung feedback
+                    // (failing test names only) — it joins the prompt here.
+                    let prompt = if let Some(fb) = payload.get("feedback") {
+                        crate::execution::feedback::augment_patch_prompt(prompt, fb)
+                    } else {
+                        prompt
+                    };
                     // Bounded target-correction: the initial attempt plus AT
                     // MOST ONE corrective retry when the model returns the
                     // wrong target_file. Every shape/context/target gate

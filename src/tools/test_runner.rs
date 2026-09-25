@@ -42,9 +42,20 @@ const OUTPUT_TAIL_CHARS: usize = 2000;
 const PYTHON_TEST_FILE_HARNESS: &str = r#"
 import inspect
 import json
+import os
 import runpy
+import shutil
 import sys
 import traceback
+
+# Stale bytecode cache can shadow freshly patched sources (same-second
+# writes with identical byte length keep a pyc "valid") — fatal for the
+# feedback loop, which re-runs tests seconds after a re-patch. Purge
+# caches under the workspace and do not write new ones.
+sys.dont_write_bytecode = True
+for _root, _dirs, _files in os.walk("."):
+    for _d in [d for d in _dirs if d == "__pycache__"]:
+        shutil.rmtree(os.path.join(_root, _d), ignore_errors=True)
 
 
 def _kernel_test_harness():
@@ -1111,5 +1122,36 @@ mod tests {
         });
         let report: TestReportV1 = serde_json::from_value(legacy).unwrap();
         assert!(report.failures.is_empty());
+    }
+
+    #[test]
+    fn stale_pycache_does_not_shadow_repatched_source() {
+        // The feedback loop re-patches and re-runs within the same second;
+        // Python's timestamp+size pyc validation then treats the OLD
+        // bytecode as valid. The harness purges __pycache__ before running.
+        let ws = unique_dir("stale_pyc");
+        std::fs::write(ws.join("calc.py"), "def value():\n    return 1\n").unwrap();
+        std::fs::write(
+            ws.join("test_x.py"),
+            "from calc import value\n\ndef test_value():\n    assert value() == 1\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(report.passed);
+
+        // Re-patch with same-length different content and a matching test.
+        std::fs::write(ws.join("calc.py"), "def value():\n    return 2\n").unwrap();
+        std::fs::write(
+            ws.join("test_x.py"),
+            "from calc import value\n\ndef test_value():\n    assert value() == 2\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(
+            report.passed,
+            "stale bytecode must not shadow the re-patched source: {}",
+            report.stderr_tail
+        );
+        let _ = std::fs::remove_dir_all(&ws);
     }
 }

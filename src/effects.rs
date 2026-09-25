@@ -16,7 +16,7 @@ fn payload_for_task(task_id: &str) -> Result<String> {
     }
 }
 
-fn step_slug(step_id: &str) -> &str {
+pub(crate) fn step_slug(step_id: &str) -> &str {
     step_id
         .split_once('_')
         .map(|(_, rest)| rest)
@@ -37,10 +37,10 @@ fn default_worker_for_step(step_id: &str) -> &'static str {
 /// (written by the PatchCode step as part of its primitive_result_v1
 /// output). P2: this is how the kernel — not the LLM — hands the patch to
 /// the ApplyPatch step.
-fn find_latest_patch_v1(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
+pub(crate) fn find_latest_patch_v1(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
     let bus = crate::event_bus::EventBus::new(db)?;
     let artifacts = bus.list_semantic_artifacts(task_id, None)?;
-    for row in artifacts.iter().rev() {
+    for row in artifacts.iter() { // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
         if row.artifact_type != "primitive_result_v1" {
             continue;
         }
@@ -235,7 +235,7 @@ fn apply_composed_patches(
 fn find_latest_apply_evidence(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
     let bus = crate::event_bus::EventBus::new(db)?;
     let artifacts = bus.list_semantic_artifacts(task_id, None)?;
-    for row in artifacts.iter().rev() {
+    for row in artifacts.iter() { // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
         if row.artifact_type != "primitive_result_v1" {
             continue;
         }
@@ -259,7 +259,7 @@ fn find_latest_apply_evidence(db: &str, task_id: &str) -> Result<Option<serde_js
 fn find_latest_test_report(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
     let bus = crate::event_bus::EventBus::new(db)?;
     let artifacts = bus.list_semantic_artifacts(task_id, None)?;
-    for row in artifacts.iter().rev() {
+    for row in artifacts.iter() { // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
         if row.artifact_type != "primitive_result_v1" {
             continue;
         }
@@ -437,6 +437,37 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                                         "step_id": step_id,
                                     }),
                                 )?;
+
+                                // Layer-2 POC (spec §5, security review
+                                // 2026-09-25 C1–C4): a tests_failed
+                                // run_tests step with located failing-test
+                                // names opens a bounded feedback cycle that
+                                // re-enters this same executor path.
+                                if slug == "run_tests"
+                                    && trf
+                                        .report
+                                        .get("classification")
+                                        .and_then(|v| v.as_str())
+                                        == Some(crate::tools::test_runner::outcome::TESTS_FAILED)
+                                {
+                                    // NotEligible / Exhausted / loop error
+                                    // all fall through to the honest
+                                    // terminal failure below.
+                                    if let Ok(
+                                        crate::execution::feedback::LoopOutcome::Converted { .. },
+                                    ) = crate::execution::feedback::maybe_run(
+                                        db,
+                                        task_id,
+                                        &spec,
+                                        &payload,
+                                        &trf.report,
+                                    ) {
+                                        worker::complete_step(
+                                            db, task_id, &worker_id, &step_id,
+                                        )?;
+                                        continue;
+                                    }
+                                }
                             }
                             // Kernel-detected contract violations (e.g. malformed
                             // patches) carry an explicit "fatal:" prefix and must

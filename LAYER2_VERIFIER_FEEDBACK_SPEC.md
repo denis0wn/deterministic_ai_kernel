@@ -141,24 +141,25 @@ else. No test output, no traceback, no expected values.
   stays 0.0. Loop decisions (retry/stop) depend only on persisted
   artifacts and hashes, never on wall-clock or RNG.
 
-## 6. POC verification plan
+## 6. POC verification — DONE 2026-09-25
 
-After E0 and prerequisites land (each behind its own commit):
+Loop implemented per §5 (`src/execution/feedback.rs`, effects-loop hook on
+run_tests failure, prompt augmentation in the PatchCode branch;
+`tests/feedback_loop_poc.rs`: conversion / honest exhaustion /
+identical-patch stop / kill switch). Live Arm A on NorthPay (5 seeds,
+same payload as the 2026-09-25 control): **conversion 0/5** — evidence
+`analyzer_out/mq_northpay_loop_2026-09-25/`.
 
-- **Arm A (treatment)**: the 14-seed NorthPay series on the loop-enabled
-  kernel, same payload as 2026-09-25.
-- **Arm B (control)**: same-prefix resample without feedback — attempt 1's
-  exact prompt is re-issued verbatim (one extra model call per seed).
-  Temperature-0 determinism of identical prompts is an assumption of the
-  stack (see `src/llm.rs` determinism comment), NOT something the
-  2026-09-25 series measured — every run had a distinct prompt — so the
-  control must run for real; do not assume it is free. Only the margin
-  above the control's outcome is credited to feedback.
-- **Success metric**: conversion rate of `tests_failed → completed`
-  above the control arm, with per-attempt evidence
-  inspectable in `semantic_artifacts`.
-- **Regression gate**: full suite + clippy green; CI green (now actually
-  watched — it was silently red on 2026-09-24).
+Outcome, honestly: the loop machinery is verified end-to-end (cycles,
+rollback, attempt artifacts, events, futility stop), and the model does
+not exploit located-rung feedback for this defect class — it pivots to
+Decimal and keeps failing the return-type contract. Side signal: the
+feedback prompt degraded JSON compliance (2/5 patch_error vs 0/19
+baseline). The pilot blocker is model capability, not the loop. Two real
+bugs found and fixed by the POC: stale `__pycache__` shadowing re-patched
+sources (harness purge), and a latent stale-read in the `find_latest_*`
+helpers (returned the OLDEST artifact; exposed by multiple reports per
+task).
 
 ## 7. Security considerations
 

@@ -1,0 +1,11 @@
+22,23c22,24
+<     ratio = refunded_share / total_share
+<     raw = fee * ratio
+---
+>     from decimal import Decimal, ROUND_HALF_UP
+>     ratio = Decimal(str(refunded_share)) / Decimal(str(total_share))
+>     raw = Decimal(str(fee)) * ratio
+25c26
+<     return int(raw * 100) / 100
+---
+>     return (raw * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP) / 100

@@ -1,0 +1,15 @@
+== llm-smoke ==
+llm-smoke exit=0
+== seed 42 == 15:09:25
+seed=42 exit=1 TASK_STATE: failed classification=tests_failed fb=[FEEDBACK_ATTEMPT:1 FEEDBACK_ATTEMPT:2]
+== seed 100 == 15:10:42
+seed=100 exit=1 TASK_STATE: failed classification=tests_failed fb=[FEEDBACK_ATTEMPT:1 FEEDBACK_ATTEMPT:2]
+== seed 101 == 15:11:51
+seed=101 exit=1 TASK_STATE: failed classification=tests_failed fb=[FEEDBACK_ATTEMPT:1 FEEDBACK_ATTEMPT:2]
+== seed 102 == 15:13:09
+seed=102 exit=1 TASK_STATE: failed classification=tests_failed fb=[FEEDBACK_ATTEMPT:1 FEEDBACK_ATTEMPT:2]
+== seed 103 == 15:15:00
+seed=103 exit=1 TASK_STATE: failed classification=tests_failed fb=[FEEDBACK_ATTEMPT:1]
+== stopping model server ==
+SHUTDOWN attempted=true pid=3205 escalated=false process_gone=true endpoint_down=true verified=true detail=graceful SIGTERM shutdown
+== done 15:16:30 ==
