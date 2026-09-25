@@ -1,3 +1,4 @@
+pub mod feedback;
 pub mod patch_apply;
 pub mod patch_contract;
 pub mod patch_repair;
