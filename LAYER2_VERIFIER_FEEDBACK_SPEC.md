@@ -1,0 +1,194 @@
+# Layer 2 — Verifier-Driven Feedback Loop Spec
+
+Status: PROPOSED (2026-09-25). Supersedes the DEFERRED state in
+`ANALYZER_ROADMAP.md` (Layer 2 section, 2026-08-18) upon gate E0 passing.
+
+## 1. Justification — the resume condition is met
+
+The deferral record required: *a reproducible executable semantic failure
+that Layer 1 does not eliminate and the verifier can diagnose.*
+
+Evidence (`analyzer_out/mq_northpay_2026-09-25/`, live gemma4-reasoning,
+canonical `pipeline-run` path, 14 runs):
+
+- **14/14 runs**: well-formed patch → `patch_shape_validation=ok` → applied
+  → real tests failed semantically → honest `classification=tests_failed`,
+  no fabricated success. `repair_report` absent 14/14; `malformed_patch`
+  0/14. Layer 1 (shape validation, patch repair) never fires — the class
+  is invisible to it.
+- **Reproducible at classification level**: seeds 42 and 102 reproduced
+  `tests_failed` across 2026-09-24 and 2026-09-25. Patch-level identity
+  did NOT hold (seed 42: `round(x*100+0.5)` vs `round(x*100)`; seed 102:
+  Decimal vs `round(x*100+0.5)`) — consistent with the payload
+  reconstruction confound; cross-day artifact identity is NOT claimed.
+- **Diagnosable by the verifier**: the failing check has a stable name
+  (`test_refund_basic_third`) and the defect is localizable from it
+  (`round(x+0.5)` used where `floor(x+0.5)` is required).
+
+Open sub-condition (see §3, gate E0): the series ran WITHOUT Layer-1
+hints. The money-truncation hint set (`src/analyzer/hint_engine.rs`)
+targets exactly this defect family. If hints alone convert the class,
+Layer 2 is again unjustified *for this class* and this spec returns to
+DEFERRED.
+
+## 2. What Layer 2 is
+
+A **bounded, evidence-emitting repair loop** inside the canonical CodeFix
+chain. When `04_run_tests` fails with `classification=tests_failed` and
+the failing test identity is known, the kernel feeds the *located rung*
+back into a bounded number of additional `02_patch_code` attempts instead
+of failing terminally on the first bad patch.
+
+Explicitly NOT:
+- not a statistical monitor, not anomaly telemetry (rejected by the
+  deferral record; 6-step episodes give no post-onset horizon);
+- not traceback/values feedback — no expected values, no stdout/stderr
+  content ever enters the prompt (T11 gaming surface and injection
+  surface, per the deferral record's design constraints);
+- not a retry-until-pass — no fabricated success under any budget
+  exhaustion; the honesty invariant is untouched;
+- not executor-side autonomy — every attempt is a first-class persisted,
+  replayable, event-logged kernel episode.
+
+## 3. Gate experiment E0 (runs before ANY kernel change)
+
+Re-run the 2026-09-25 series harness WITH the Layer-1 money-truncation
+hint block appended to the payload (the three hints verbatim from
+`hint_engine.rs`: decimal module with ROUND_HALF_UP; import inside the
+fixed function; sum exact values then round once).
+
+- Hints convert ≥ 1 failure to completed → record the conversion rate;
+  Layer 2 scope narrows to the residual. If residual is empty, Layer 2
+  returns to DEFERRED with the evidence appended.
+- Hints convert nothing → proceed to §4 prerequisites.
+
+Cost: ~15 min wall clock, zero code change (`run_series.sh` with a second
+payload template). Deliverable: `analyzer_out/mq_northpay_hints_*/`.
+
+## 4. Prerequisites (from the deferral record, + one found 2026-09-25)
+
+- **C0 (new) — failing-test identity.** `test_report_v1` today carries
+  only `passed/exit_code/classification/stdout_tail/stderr_tail`
+  (`src/tools/test_runner.rs`). The kernel harness already invokes
+  module-level `test_*` functions one by one, so per-test pass/fail is
+  available natively. Extend the report with `failures: [{name}]` —
+  names only, no messages, no values. This is the only verifier output
+  the feedback path may consume.
+- **C1 — persist the failing TestReportV1.** On failure the report
+  currently dies inside an error string
+  (`src/execution/primitive_executor.rs` `execute_run_tests`). Persist it
+  as a `semantic_artifacts` row keyed `(task_id, step_id, attempt)`.
+- **C2 — record model calls.** `ChatRequest` has no seed field
+  (`src/llm.rs:317`). Add optional `seed` (wire-compatible: server may
+  ignore it) and persist every request/response pair per attempt. At
+  temperature 0.0 the seed is belt-and-braces; the point is provenance.
+- **C3 — event the cycle.** Event kinds: `FEEDBACK_CYCLE_STARTED`,
+  `FEEDBACK_ATTEMPT` (attempt index, patch hash, failing test names),
+  `FEEDBACK_EXHAUSTED` / `FEEDBACK_CONVERTED`. Appended through the
+  canonical event bus so replay and the analyzer see the loop.
+- **Security review before merge** (carried over from the deferral
+  record): the loop re-enters the patch path with model output; workspace
+  confinement (`resolve_safe`, `authorized_workspace`) must hold per
+  attempt exactly as it does for the first attempt.
+
+## 5. Design
+
+### 5.1 Where it lives
+
+In the canonical effect loop (`src/effects.rs::execute_effects`, used by
+`pipeline-run` via `main.rs:1265`), driven by failure-signature strategy
+selection (`src/strategy.rs::admissible_strategies`) as a stage of the
+existing PROGRESS UNTIL VERIFIED program (`src/progress.rs`, stage 2 is
+detect-only today). NOT in the standalone `run` binary path — the misfire
+audit (2026-08-18) documented its simulated lifecycles; no new writer may
+appear outside the canonical path.
+
+### 5.2 The loop
+
+```
+attempt 1: 02_patch_code → 03_apply_patch → 04_run_tests
+  on tests_failed with failures[].name known and attempts left:
+    feedback = { failing_tests: [names], defect_contract: <from payload>,
+                 prior_patch_hash: <blake3 of attempt's patch> }
+    re-enter 02_patch_code with prompt + feedback block
+  on identical patch hash (temp-0 futility): stop — FEEDBACK_EXHAUSTED
+    (at temperature 0 an identical prompt repeats identically; a repeated
+    patch after changed feedback means the model cannot use the signal)
+budget: max 2 feedback attempts (3 patch attempts total) — hard-coded,
+  not configurable, for the POC
+```
+
+The feedback block contains: failing test **names**, the defect contract
+sentence from the original payload, and the prior patch hash. Nothing
+else. No test output, no traceback, no expected values.
+
+### 5.3 Termination and honesty
+
+- Exhaustion → the task ends exactly as it does today:
+  `classification=tests_failed; no fabricated success`, terminal, with
+  all attempts persisted. The loop can never widen the definition of
+  success.
+- A converted run (attempt N passes `04_run_tests`) proceeds to
+  `05_validate_patch` unchanged — validation is not weakened for
+  loop-produced patches.
+
+### 5.4 Determinism and replay
+
+- Each attempt is an independent persisted episode: patch artifact, test
+  report artifact, model request/response records — all keyed with the
+  attempt index.
+- `execute_effects` remains the single writer; replay of a looped task
+  replays attempts in order (event log is the source of truth).
+- The kernel `--seed` continues to govern planning; model temperature
+  stays 0.0. Loop decisions (retry/stop) depend only on persisted
+  artifacts and hashes, never on wall-clock or RNG.
+
+## 6. POC verification plan
+
+After E0 and prerequisites land (each behind its own commit):
+
+- **Arm A (treatment)**: the 14-seed NorthPay series on the loop-enabled
+  kernel, same payload as 2026-09-25.
+- **Arm B (control)**: same-prefix resample without feedback — attempt 1's
+  exact prompt is re-issued verbatim (one extra model call per seed).
+  Temperature-0 determinism of identical prompts is an assumption of the
+  stack (see `src/llm.rs` determinism comment), NOT something the
+  2026-09-25 series measured — every run had a distinct prompt — so the
+  control must run for real; do not assume it is free. Only the margin
+  above the control's outcome is credited to feedback.
+- **Success metric**: conversion rate of `tests_failed → completed`
+  above the control arm, with per-attempt evidence
+  inspectable in `semantic_artifacts`.
+- **Regression gate**: full suite + clippy green; CI green (now actually
+  watched — it was silently red on 2026-09-24).
+
+## 7. Security considerations
+
+- Feedback content is kernel-derived (test names from C0), never model-
+  or file-derived text — the prompt cannot be poisoned via traceback.
+- No expected values in feedback → no hardcoding channel opened (T11).
+- Each attempt re-runs the existing confined write/patch path; the loop
+  adds no new filesystem capability.
+- New events are append-only; nothing in the loop deletes or mutates
+  prior artifacts.
+- Security review (executor is frozen for it already) must cover this
+  spec before implementation merges.
+
+## 8. Non-goals
+
+- Multi-defect or multi-file repair loops (single located rung only).
+- Feedback into decomposition/planning (the plan is fixed once made).
+- Temperature/scheduling tuning as a repair strategy.
+- Layer 3 (policy/adaptation from loop outcomes) — separate track.
+
+## 9. Open questions
+
+- Should `admissible_strategies` own the retry budget per failure
+  signature, or is the budget global for the POC? (Leaning global: one
+  failure class demonstrated.)
+- Does `05_validate_patch` need an attempt-aware report, or is the
+  current single-report shape sufficient when only the final attempt can
+  reach it?
+- Hint composition order when E0 shows partial conversion: hints-then-
+  loop, or loop-then-hints on exhaustion? (Leaning hints-first: cheaper
+  signal first.)
