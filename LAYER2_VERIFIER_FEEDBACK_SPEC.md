@@ -62,31 +62,32 @@ should state the return-type contract and forbid builtin
 `round(..., rounding=)` — `rounding=` is legal only on
 `Decimal.quantize`.
 
-## 4. Prerequisites (from the deferral record, + one found 2026-09-25)
+## 4. Prerequisites — DONE 2026-09-25
 
-- **C0 (new) — failing-test identity.** `test_report_v1` today carries
-  only `passed/exit_code/classification/stdout_tail/stderr_tail`
-  (`src/tools/test_runner.rs`). The kernel harness already invokes
-  module-level `test_*` functions one by one, so per-test pass/fail is
-  available natively. Extend the report with `failures: [{name}]` —
-  names only, no messages, no values. This is the only verifier output
-  the feedback path may consume.
-- **C1 — persist the failing TestReportV1.** On failure the report
-  currently dies inside an error string
-  (`src/execution/primitive_executor.rs` `execute_run_tests`). Persist it
-  as a `semantic_artifacts` row keyed `(task_id, step_id, attempt)`.
-- **C2 — record model calls.** `ChatRequest` has no seed field
-  (`src/llm.rs:317`). Add optional `seed` (wire-compatible: server may
-  ignore it) and persist every request/response pair per attempt. At
-  temperature 0.0 the seed is belt-and-braces; the point is provenance.
-- **C3 — event the cycle.** Event kinds: `FEEDBACK_CYCLE_STARTED`,
-  `FEEDBACK_ATTEMPT` (attempt index, patch hash, failing test names),
-  `FEEDBACK_EXHAUSTED` / `FEEDBACK_CONVERTED`. Appended through the
-  canonical event bus so replay and the analyzer see the loop.
-- **Security review before merge** (carried over from the deferral
-  record): the loop re-enters the patch path with model output; workspace
-  confinement (`resolve_safe`, `authorized_workspace`) must hold per
-  attempt exactly as it does for the first attempt.
+All four landed as separate commits on `analyzer` (suite 915/0, clippy
+clean, CI watched):
+
+- **C0 — failing-test identity** (`fc53c26`): `TestReportV1.failures`
+  carries located failing-test names. The python harness emits a
+  `DAK_TEST_FAILURES_V1 <json>` marker as the LAST stderr line (a forged
+  marker from a test file cannot shadow it); the kernel parses the last
+  marker, validates identifier shape, fails closed to empty. Names only.
+- **C1 — failing report persisted** (`58401e1`): `execute_run_tests`
+  failure returns `TestRunFailure { reason, report }`; the effects loop
+  persists it as a `primitive_result_v1` artifact with
+  `tests_passed=false` before the step dies. Error strings unchanged.
+- **C2 — model calls recorded** (`ad9e879`): `ChatRequest.seed` (wire,
+  optional) stamped from `DAK_KERNEL_SEED` set by `pipeline-run`; the
+  PatchCode path records `llm_calls[]` (full prompt, full response,
+  model, seed) into the step artifact.
+- **C3 — cycle events** (`6756ac4`): `FEEDBACK_CYCLE_STARTED /
+  FEEDBACK_ATTEMPT / FEEDBACK_EXHAUSTED / FEEDBACK_CONVERTED` locked in
+  `src/execution/feedback.rs` with payload contracts; bus roundtrip
+  tested. Emitters land with the POC.
+- **Security review before merge of the loop itself** (carried over from
+  the deferral record): the loop re-enters the patch path with model
+  output; workspace confinement (`resolve_safe`, `authorized_workspace`)
+  must hold per attempt exactly as it does for the first attempt.
 
 ## 5. Design
 
