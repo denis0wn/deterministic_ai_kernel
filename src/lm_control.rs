@@ -441,7 +441,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn parse_gb_helper_works() {
+        // Real vm_stat exists only on macOS; the pure parser is covered by
+        // vm_stat_parser_* everywhere.
         assert!(free_memory_gb_estimate().is_ok());
     }
 
@@ -470,6 +473,8 @@ Pages wired down:                             200946.\n\
     fn doctor_json_report_has_expected_shape() {
         // doctor_json_report() must return raw Value — no CLI envelope here.
         // The interface layer (main.rs / cli_json) is responsible for wrapping.
+        // Memory probe is mocked: vm_stat exists only on macOS.
+        std::env::set_var("DAK_FREE_GB_OVERRIDE", "16.0");
         let raw = doctor_json_report().expect("failed to generate doctor json report");
         assert!(raw.get("free_gb").is_some());
         assert!(raw.get("mlx_models").is_some());
