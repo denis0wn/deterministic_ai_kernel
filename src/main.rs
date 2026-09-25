@@ -247,7 +247,11 @@ fn record_terminal_assessment(db: &str, task_id: &str) {
 
 #[tokio::main]
 async fn main() {
-    deterministic_ai_kernel::model_registry::validate().unwrap();
+    // Model-registry validation happens at point of use (resolve_model is
+    // fail-closed on missing env). Validating unconditionally at startup made
+    // every subcommand — including pure ones like bias-explain, --help and
+    // integrity-json — panic on hosts without OPENAI_BASE_URL/OPENAI_MODEL,
+    // which is exactly the CI environment (.env is gitignored).
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {
         std::env::current_dir()
