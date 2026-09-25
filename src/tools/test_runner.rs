@@ -163,6 +163,19 @@ pub fn classify_outcome(
         return TIMEOUT;
     }
     if exit_code == 0 {
+        // Security (found in the Layer-2 review): the kernel harness runs
+        // workspace code IN-PROCESS via runpy, and a model-patched module
+        // can `os._exit(0)` at import time — killing the harness before any
+        // test ran, with a success exit code. For the harness runner,
+        // "passed" additionally requires the harness's own OK line, printed
+        // only after every test_* function returned. Deliberate forgery of
+        // the marker string by in-process code is the M-2 isolation
+        // problem, out of scope here.
+        if command_id == "python_test_file"
+            && !stdout.lines().any(|l| l == "kernel test harness: OK")
+        {
+            return TESTS_FAILED;
+        }
         return TESTS_PASSED;
     }
     match command_id {
@@ -768,12 +781,60 @@ mod tests {
 
     #[test]
     fn classify_zero_exit_is_tests_passed_for_any_runner() {
-        for id in ["cargo_test", "python_pytest", "python_test_file"] {
+        for id in ["cargo_test", "python_pytest"] {
             assert_eq!(
                 classify_outcome(id, None, false, 0, ""),
                 outcome::TESTS_PASSED
             );
         }
+        // python_test_file additionally requires the harness OK line:
+        // in-process workspace code can os._exit(0) and skip all tests.
+        assert_eq!(
+            classify_outcome(
+                "python_test_file",
+                None,
+                false,
+                0,
+                "kernel test harness: OK\n"
+            ),
+            outcome::TESTS_PASSED
+        );
+    }
+
+    #[test]
+    fn classify_harness_exit0_without_ok_marker_is_not_a_pass() {
+        // The os._exit(0) spoof: SUT kills the harness at import time.
+        assert_eq!(
+            classify_outcome("python_test_file", None, false, 0, ""),
+            outcome::TESTS_FAILED
+        );
+        // Stray output without the marker is also not a pass.
+        assert_eq!(
+            classify_outcome("python_test_file", None, false, 0, "some print\n"),
+            outcome::TESTS_FAILED
+        );
+    }
+
+    #[test]
+    fn os_exit_zero_from_sut_does_not_fabricate_pass() {
+        // End-to-end: model-patched SUT kills the harness process with
+        // os._exit(0) at import time. Must NOT produce tests_passed.
+        let ws = unique_dir("osexit_spoof");
+        std::fs::write(
+            ws.join("sut.py"),
+            "import os\nos._exit(0)\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ws.join("test_x.py"),
+            "from sut import *\n\ndef test_real():\n    assert True\n",
+        )
+        .unwrap();
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert!(!report.passed, "os._exit(0) spoof must not pass");
+        assert_eq!(report.classification, outcome::TESTS_FAILED);
+        assert_eq!(report.exit_code, 0, "the spoof really did exit 0");
+        let _ = std::fs::remove_dir_all(&ws);
     }
 
     #[test]
