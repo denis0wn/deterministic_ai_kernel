@@ -1,7 +1,7 @@
 # Layer 2 — Verifier-Driven Feedback Loop Spec
 
-Status: PROPOSED (2026-09-25). Supersedes the DEFERRED state in
-`ANALYZER_ROADMAP.md` (Layer 2 section, 2026-08-18) upon gate E0 passing.
+Status: PROPOSED (2026-09-25). Gate E0 PASSED the same day (see §3):
+Layer 1 does not eliminate the class. Prerequisites C0–C3 are next.
 
 ## 1. Justification — the resume condition is met
 
@@ -25,11 +25,12 @@ canonical `pipeline-run` path, 14 runs):
   (`test_refund_basic_third`) and the defect is localizable from it
   (`round(x+0.5)` used where `floor(x+0.5)` is required).
 
-Open sub-condition (see §3, gate E0): the series ran WITHOUT Layer-1
-hints. The money-truncation hint set (`src/analyzer/hint_engine.rs`)
-targets exactly this defect family. If hints alone convert the class,
-Layer 2 is again unjustified *for this class* and this spec returns to
-DEFERRED.
+Sub-condition CLOSED 2026-09-25 (gate E0,
+`analyzer_out/mq_northpay_hints_2026-09-25/`): the same 14-seed series WITH
+the money-truncation hint block converted **0/14** — hints changed the
+failure's shape (one uniform Decimal patch, which additionally
+hallucinates `round(x, 2, rounding=...)` — builtin `round` has no such
+parameter) but not its class. Layer 1 is exhausted for this class.
 
 ## 2. What Layer 2 is
 
@@ -50,20 +51,16 @@ Explicitly NOT:
 - not executor-side autonomy — every attempt is a first-class persisted,
   replayable, event-logged kernel episode.
 
-## 3. Gate experiment E0 (runs before ANY kernel change)
+## 3. Gate experiment E0 — DONE 2026-09-25, PASSED (hints convert 0/14)
 
-Re-run the 2026-09-25 series harness WITH the Layer-1 money-truncation
+Ran the 2026-09-25 series harness WITH the Layer-1 money-truncation
 hint block appended to the payload (the three hints verbatim from
-`hint_engine.rs`: decimal module with ROUND_HALF_UP; import inside the
-fixed function; sum exact values then round once).
-
-- Hints convert ≥ 1 failure to completed → record the conversion rate;
-  Layer 2 scope narrows to the residual. If residual is empty, Layer 2
-  returns to DEFERRED with the evidence appended.
-- Hints convert nothing → proceed to §4 prerequisites.
-
-Cost: ~15 min wall clock, zero code change (`run_series.sh` with a second
-payload template). Deliverable: `analyzer_out/mq_northpay_hints_*/`.
+`hint_engine.rs`). Result: 14/14 `tests_failed`, evidence in
+`analyzer_out/mq_northpay_hints_2026-09-25/`. Side finding (Layer-1
+improvement item, not a Layer-2 blocker): the money-truncation hints
+should state the return-type contract and forbid builtin
+`round(..., rounding=)` — `rounding=` is legal only on
+`Decimal.quantize`.
 
 ## 4. Prerequisites (from the deferral record, + one found 2026-09-25)
 
