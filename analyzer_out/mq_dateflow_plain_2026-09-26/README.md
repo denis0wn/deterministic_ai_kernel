@@ -6,11 +6,11 @@ per arm, canonical payload form. Fixtures: `analyzer_examples/client_dateflow`
 
 ## Results
 
-| Class | plain | + class hints |
-|---|---|---|
-| scorer (null-safety) | 8/8 | 8/8 |
-| dateflow, weak suite (first run) | 8/8 | 3/8 |
-| **dateflow, strengthened suite** | **0/8** | **3/8** |
+| Class | plain | + class hints v1 | + hints v2 (recipe fixed) |
+|---|---|---|---|
+| scorer (null-safety) | 8/8 | 8/8 | — |
+| dateflow, weak suite (first run) | 8/8 | 3/8 | — |
+| **dateflow, strengthened suite** | **0/8** | 3/8 | **8/8** |
 
 ## What the evidence showed (and fixed)
 
@@ -21,9 +21,18 @@ per arm, canonical payload form. Fixtures: `analyzer_examples/client_dateflow`
    (fixture `test_schedule.py` carries the note). Tests-as-judge is only as
    strong as the suite — and the evidence chain is what exposed it.
 2. With the strengthened suite: plain 0/8 (the hole-exploiting patches now
-   fail honestly), hints 3/8 (the completed ones are genuinely correct —
-   `while weekday() >= 5: advance` — verified by reading).
-3. scorer (null-safety) is easy for this model: 8/8 both arms.
+   fail honestly), hints 3/8.
+3. **The v1 hint recipe was itself the defect**: it described the iteration
+   ("advance day-by-day, check weekday") but not the invariant — models
+   produced count-days-and-skip loops that land on weekends. The v2 recipe
+   states the invariant ("only business-day LANDINGS count; while added <
+   days: advance one calendar day, count only landings") → 8/8, patches
+   verified correct by reading. **Hint recipes are validated by measurement
+   or not at all.**
+4. scorer (null-safety) is easy for this model: 8/8 both arms.
+
+Note: the `mq_dateflow_hints_2026-09-26/` directory holds the hints-v2
+evidence (the v1 runs are in git history, commit `e0ddcc3`).
 
 ## Files
 
