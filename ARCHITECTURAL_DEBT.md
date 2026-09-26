@@ -13,7 +13,8 @@
 *   **Оценка трудозатрат:** 4-6 часов.
 
 ## 2. Остаточные fallback-пути (StepKind & TaskClass)
-*   **Модули:** `worker.rs`, `scheduler.rs`, `workflow/contract.rs`
+*   **Статус: ЗАКРЫТО 2026-09-25.** Fallback удалён из обоих мест, где он жил: `ordered_step_ids` и `load_exec_spec` в `src/providers/storage.rs` — задача без persisted ExecSpec теперь fail-closed («publish a plan before scheduling»), а ПОВРЕЖДЁННАЯ спека — ошибка, а не молчаливая регенерация дефолтного флоу (раньше `if let Ok(spec)` глотал corruption). Попутно закрыт баг несогласованных веток (NULL-exec_spec не принимал класс `Question`, пустая строка — принимал). Потоки с легальным дефолтом (`submit-task`, TUI `submit_task`) теперь выписывают `TaskClass::Generic.to_exec_spec(None)` явно на записи. Двухфазный поток (`analyze-task` → `pipeline-run`) не затронут: спека заполняется через upsert до планирования. Тест `unknown_task_class_is_rejected` заменён на `specless_task_is_rejected` (класс больше не гейтит планирование — гейтит наличие спеки). Сами перечисления `StepKind`/`TaskClass` остаются как классификация/отображение (TUI, `classify_task_class`); их полное удаление из дистрибутива — отдельный проект (миграция колонки `tasks.task_class` + TUI-фильтры), здесь не в скоупе.
+*   **Модули:** ~~`worker.rs`, `scheduler.rs`, `workflow/contract.rs`~~ → фактически `src/providers/storage.rs`
 *   **Проблема:** В коде ядра сохранены fallback-пути парсинга `StepKind` и `TaskClass` для обеспечения обратной совместимости с существующими тестами и базами данных.
 *   **Нарушение:** Препятствует полному удалению перечислений `StepKind` и `TaskClass` из бинарного дистрибутива ядра.
 *   **Сложность миграции:** Low (требуется полный переход внешних систем на ExecSpec с последующим удалением fallback-кода).

@@ -64,6 +64,13 @@ fn sqlite(db: &Path, sql: &str) {
 fn setup_task(db: &Path, task_id: &str) {
     let _ = fs::remove_file(db);
 
+    // Tasks must carry their ExecSpec (the TaskClass read-time fallback is
+    // removed) — seed the Generic flow explicitly.
+    let generic_spec = serde_json::to_string(
+        &deterministic_ai_kernel::workflow::contract::TaskClass::Generic.to_exec_spec(None),
+    )
+    .expect("spec serialize");
+
     let schema_and_seed = format!(
         r#"
 PRAGMA foreign_keys = ON;
@@ -111,7 +118,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 INSERT OR IGNORE INTO tasks (task_id, task_class, exec_spec) VALUES
-('{0}','Generic', NULL);
+('{0}','Generic', '{1}');
 
 INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES
 ('{0}','00_analyze_task','pending'),
@@ -122,7 +129,7 @@ INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) V
 ('{0}','01_plan_execution','00_analyze_task'),
 ('{0}','02_execute_changes','01_plan_execution');
 "#,
-        task_id
+        task_id, generic_spec
     );
 
     sqlite(db, &schema_and_seed);
@@ -130,9 +137,14 @@ INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) V
 
 fn setup_codefix_task(db: &Path, task_id: &str) {
     setup_task(db, task_id);
+    // Class and spec must agree (no class-based derivation anymore).
+    let codefix_spec = serde_json::to_string(
+        &deterministic_ai_kernel::workflow::contract::TaskClass::CodeFix.to_exec_spec(None),
+    )
+    .expect("spec serialize");
     sqlite(db, &format!(
-        "UPDATE tasks SET task_class = 'CodeFix' WHERE task_id = '{0}';         DELETE FROM step_status WHERE task_id = '{0}';         DELETE FROM step_dependencies WHERE task_id = '{0}';         INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES          ('{0}','00_read_repository','ready'),         ('{0}','01_locate_bug','pending'),         ('{0}','02_patch_code','pending'),         ('{0}','03_run_tests','pending'),         ('{0}','04_validate_patch','pending');         INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) VALUES          ('{0}','01_locate_bug','00_read_repository'),         ('{0}','02_patch_code','01_locate_bug'),         ('{0}','03_run_tests','02_patch_code'),         ('{0}','04_validate_patch','03_run_tests');",
-        task_id
+        "UPDATE tasks SET task_class = 'CodeFix', exec_spec = '{1}' WHERE task_id = '{0}';         DELETE FROM step_status WHERE task_id = '{0}';         DELETE FROM step_dependencies WHERE task_id = '{0}';         INSERT OR IGNORE INTO step_status (task_id, step_id, status) VALUES          ('{0}','00_read_repository','ready'),         ('{0}','01_locate_bug','pending'),         ('{0}','02_patch_code','pending'),         ('{0}','03_run_tests','pending'),         ('{0}','04_validate_patch','pending');         INSERT OR IGNORE INTO step_dependencies (task_id, step_id, depends_on_step_id) VALUES          ('{0}','01_locate_bug','00_read_repository'),         ('{0}','02_patch_code','01_locate_bug'),         ('{0}','03_run_tests','02_patch_code'),         ('{0}','04_validate_patch','03_run_tests');",
+        task_id, codefix_spec
     ));
 }
 
@@ -482,19 +494,21 @@ fn start_step_accepts_generic_worker_and_planner_worker() {
 }
 
 #[test]
-fn unknown_task_class_is_rejected() {
-    let db = unique_db_path("unknown_task_class_is_rejected");
-    setup_task(&db, "task_bad_class");
+fn specless_task_is_rejected() {
+    let db = unique_db_path("specless_task_is_rejected");
+    setup_task(&db, "task_no_spec");
 
+    // With the TaskClass read-time fallback removed, a task without a
+    // persisted ExecSpec must fail closed at schedule time.
     sqlite(
         &db,
-        "UPDATE tasks SET task_class = 'Bogus' WHERE task_id = 'task_bad_class';",
+        "UPDATE tasks SET exec_spec = NULL WHERE task_id = 'task_no_spec';",
     );
 
-    let err = run_expect_fail(&db, &["schedule", "task_bad_class"]);
+    let err = run_expect_fail(&db, &["schedule", "task_no_spec"]);
     assert!(
-        err.contains("unknown task_class") || err.contains("missing task_class"),
-        "expected explicit task_class validation failure, got: {}",
+        err.contains("no exec_spec"),
+        "expected explicit missing-spec failure, got: {}",
         err
     );
 

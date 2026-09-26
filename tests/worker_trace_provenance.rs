@@ -50,9 +50,16 @@ fn setup_db(db: &PathBuf) {
 
     let conn = Connection::open(db).expect("test failure");
 
+    // Tasks must carry their ExecSpec (the TaskClass read-time fallback is
+    // removed) — seed the Generic flow explicitly.
+    let generic_spec = serde_json::to_string(
+        &deterministic_ai_kernel::workflow::contract::TaskClass::Generic.to_exec_spec(None),
+    )
+    .expect("spec serialize");
+
     conn.execute(
-        "INSERT INTO tasks (task_id, task_class) VALUES (?1, ?2)",
-        ("task-trace", "Generic"),
+        "INSERT INTO tasks (task_id, task_class, exec_spec) VALUES (?1, ?2, ?3)",
+        ("task-trace", "Generic", generic_spec),
     )
     .expect("test failure");
 

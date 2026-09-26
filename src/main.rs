@@ -1704,8 +1704,18 @@ async fn main() {
         }
         Some("submit-task") => {
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");
+            // Write the default flow explicitly: tasks must carry an
+            // ExecSpec (the TaskClass read-time fallback is removed).
+            let spec_json = serde_json::to_string(
+                &deterministic_ai_kernel::workflow::contract::TaskClass::Generic
+                    .to_exec_spec(None),
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("submit-task: spec serialize failed: {e}");
+                std::process::exit(1);
+            });
             deterministic_ai_kernel::providers::storage_for(db)
-                .insert_task(task_id, "Generic", "")
+                .insert_task(task_id, "Generic", &spec_json)
                 .unwrap_or_else(|e| {
                     eprintln!("submit-task failed: {e}");
                     std::process::exit(1);

@@ -1,5 +1,5 @@
 use crate::exec_spec::ExecSpec;
-use crate::workflow::contract::{StepOutcome, TaskClass, WorkerCapability};
+use crate::workflow::contract::{StepOutcome, WorkerCapability};
 use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -258,31 +258,21 @@ fn ordered_step_ids(conn: &Connection, task_id: &str) -> Result<Vec<String>> {
         )
         .optional()?;
 
-    let (exec_spec_opt, task_class_str) =
-        row.ok_or_else(|| anyhow!("missing task record for task_id '{}'", task_id))?;
+    let (exec_spec_opt, _task_class_str) =
+        row.ok_or_else(|| anyhow!("missing task record for task_id '{task_id}'"))?;
 
-    let spec = if let Some(json_str) = exec_spec_opt {
-        if !json_str.trim().is_empty() {
-            serde_json::from_str::<ExecSpec>(&json_str)?
-        } else {
-            let task_class = match task_class_str.as_str() {
-                "Generic" => TaskClass::Generic,
-                "PlannerHardening" => TaskClass::PlannerHardening,
-                "CodeFix" => TaskClass::CodeFix,
-                "Question" => TaskClass::Question,
-                other => anyhow::bail!("unknown task_class '{}'", other),
-            };
-            task_class.to_exec_spec(None)
-        }
-    } else {
-        let task_class = match task_class_str.as_str() {
-            "Generic" => TaskClass::Generic,
-            "PlannerHardening" => TaskClass::PlannerHardening,
-            "CodeFix" => TaskClass::CodeFix,
-            other => anyhow::bail!("unknown task_class '{}'", other),
-        };
-        task_class.to_exec_spec(None)
-    };
+    // Architectural debt item 2 closed (2026-09-25): no TaskClass fallback.
+    // A task without a persisted ExecSpec is an error, not a silently
+    // regenerated default flow — the two-phase flows (analyze-task then
+    // pipeline-run) fill the spec via upsert before scheduling.
+    let json_str = exec_spec_opt
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "task '{task_id}' has no exec_spec; publish a plan before scheduling (TaskClass fallback removed)"
+            )
+        })?;
+    let spec: ExecSpec = serde_json::from_str(&json_str)?;
 
     Ok(spec.steps.iter().map(|s| s.step_id.clone()).collect())
 }
@@ -986,25 +976,23 @@ impl StorageProvider for DefaultStorage {
             )
             .optional()?;
 
-        let (exec_spec_opt, task_class_str) =
-            row.ok_or_else(|| anyhow!("missing task record for task_id '{}'", task_id))?;
+        let (exec_spec_opt, _task_class_str) =
+            row.ok_or_else(|| anyhow!("missing task record for task_id '{task_id}'"))?;
 
-        if let Some(json_str) = exec_spec_opt {
-            if !json_str.trim().is_empty() {
-                if let Ok(spec) = serde_json::from_str::<ExecSpec>(&json_str) {
-                    return Ok(spec);
-                }
-            }
-        }
-
-        let task_class = match task_class_str.as_str() {
-            "Generic" => TaskClass::Generic,
-            "PlannerHardening" => TaskClass::PlannerHardening,
-            "CodeFix" => TaskClass::CodeFix,
-            "Question" => TaskClass::Question,
-            other => anyhow::bail!("unknown task_class '{}'", other),
-        };
-        Ok(task_class.to_exec_spec(None))
+        // Architectural debt item 2 closed (2026-09-25): no TaskClass
+        // fallback — a task without a persisted ExecSpec is an error, and
+        // a CORRUPT spec is an error too (previously it silently
+        // regenerated the class default, discarding evidence).
+        let json_str = exec_spec_opt
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| {
+                anyhow!(
+                    "task '{task_id}' has no exec_spec; publish a plan before scheduling (TaskClass fallback removed)"
+                )
+            })?;
+        let spec: ExecSpec = serde_json::from_str(&json_str)
+            .map_err(|e| anyhow!("task '{task_id}' has a corrupt exec_spec: {e}"))?;
+        Ok(spec)
     }
 
     fn update_step_status(&self, task_id: &str, step_id: &str, status: &str) -> Result<()> {

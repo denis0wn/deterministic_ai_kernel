@@ -588,9 +588,14 @@ impl KernelAdapter {
 
     /// Insert a Generic task through the canonical storage API, then schedule
     /// it through the kernel scheduler facade. No state is invented here.
+    /// The default flow is written explicitly as an ExecSpec — tasks must
+    /// carry one (the TaskClass read-time fallback is removed).
     pub fn submit_task(&self, task_id: &str) -> Result<()> {
         let storage = self.storage();
-        storage.insert_task(task_id, "Generic", "")?;
+        let spec_json = serde_json::to_string(
+            &deterministic_ai_kernel::workflow::contract::TaskClass::Generic.to_exec_spec(None),
+        )?;
+        storage.insert_task(task_id, "Generic", &spec_json)?;
         deterministic_ai_kernel::scheduler::schedule(&self.db, task_id)
     }
 
@@ -699,13 +704,23 @@ mod tests {
         let _ = std::fs::remove_file(format!("{db}-shm"));
     }
 
+    /// Generic task with the default flow written explicitly as ExecSpec
+    /// (the read-time TaskClass fallback is removed).
+    fn insert_generic_task(db: &str, task: &str) {
+        let spec_json = serde_json::to_string(
+            &deterministic_ai_kernel::workflow::contract::TaskClass::Generic.to_exec_spec(None),
+        )
+        .expect("spec serialize");
+        providers::storage_for(db)
+            .insert_task(task, "Generic", &spec_json)
+            .expect("insert task");
+    }
+
     /// Seed a real canonical lifecycle through the production kernel APIs
     /// (storage + scheduler/worker facades), exactly like the CLI does.
     fn seed_lifecycle(db: &str, task: &str, mode: &str) {
         let storage = providers::storage_for(db);
-        storage
-            .insert_task(task, "Generic", "")
-            .expect("insert task");
+        insert_generic_task(db, task);
         deterministic_ai_kernel::scheduler::schedule(db, task).expect("schedule");
 
         let worker = "worker-planner";
@@ -966,7 +981,7 @@ mod tests {
         let db = unique_db("curstep");
         // commit only step 00; current step must be 01
         let storage = providers::storage_for(&db);
-        storage.insert_task("t-cur", "Generic", "").expect("insert");
+        insert_generic_task(&db, "t-cur");
         deterministic_ai_kernel::scheduler::schedule(&db, "t-cur").expect("schedule");
         storage
             .claim_worker("t-cur", "worker-planner")
