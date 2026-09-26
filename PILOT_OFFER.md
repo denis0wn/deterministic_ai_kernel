@@ -38,12 +38,21 @@ test suites. You keep the evidence packs either way.
 
 ## Commercials
 
-- 4-week paid pilot, fixed fee: **[USD amount — set per engagement]**
-- Includes: task-class onboarding, kernel deployment in your environment,
-  evidence-pack integration into your review workflow, and a final
+- **Week-0 proof competition: free.** Our reference defect class, or yours.
+- **4-week pilot: USD 15,000 fixed** — 50% on signing, 50% on the final
+  report. **100% credited** against the year-1 license if you convert
+  within 60 days.
+- **Year-1 license: USD 48,000/yr** — self-hosted kernel, hint-library
+  updates, evidence-pack support.
+- Includes: task-class onboarding, deployment in your environment,
+  evidence-pack integration into your review workflow, final
   audit-readiness report.
 - If the measured success rate on your task class does not beat your
   current process, the pilot report says so. In writing.
+- Contract: ready-to-sign pilot agreement in `docs/PILOT_AGREEMENT.md`
+  (predefined success criteria, evidence-not-output warranty, liability
+  capped at fees). Price rationale and market comparables:
+  `docs/BUSINESS_ANALYSIS.md`.
 
 ## What we will not claim
 
