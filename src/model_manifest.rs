@@ -197,7 +197,7 @@ mod tests {
     fn task_planning_model_is_present() {
         let manifest = load_manifest().expect("failed to load manifest");
         assert!(manifest.models.iter().any(|m| {
-            m.id == "/Users/denissmoliakov/Models/gemma4-reasoning" && m.role == "task_planning"
+            m.id == "/Users/denissmoliakov/Models/ministral-14b-reasoning" && m.role == "task_planning"
         }));
     }
 
@@ -217,7 +217,7 @@ mod tests {
     fn best_enabled_task_planning_model_prefers_priority_one() {
         let model =
             best_enabled_model_for_role("task_planning").expect("best model for role not found");
-        assert_eq!(model.id, "/Users/denissmoliakov/Models/gemma4-reasoning");
+        assert_eq!(model.id, "/Users/denissmoliakov/Models/ministral-14b-reasoning");
     }
 
     #[test]

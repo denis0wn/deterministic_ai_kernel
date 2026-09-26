@@ -401,7 +401,7 @@ impl RuntimeState {
             }
         }
         std::env::var("OPENAI_MODEL")
-            .unwrap_or_else(|_| "/Users/denissmoliakov/Models/gemma4-reasoning".to_string())
+            .unwrap_or_else(|_| "/Users/denissmoliakov/Models/ministral-14b-reasoning".to_string())
     }
 
     /// Extract port from base_url.

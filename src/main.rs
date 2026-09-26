@@ -182,6 +182,9 @@ async fn main() {
     // every subcommand — including pure ones like bias-explain, --help and
     // integrity-json — panic on hosts without OPENAI_BASE_URL/OPENAI_MODEL,
     // which is exactly the CI environment (.env is gitignored).
+    // Loading .env (no validation) restores the ambient config side effect
+    // that paths like doctor/model_path_present rely on.
+    dotenvy::dotenv().ok();
     let args: Vec<String> = std::env::args().collect();
     let db = std::env::var("KERNEL_DB_PATH").unwrap_or_else(|_| {
         std::env::current_dir()
