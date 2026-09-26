@@ -1,0 +1,6 @@
+24,25c24,25
+<     # Refund is computed in whole cents.
+<     return int(raw * 100) / 100
+---
+>     # Refund is computed in whole cents, rounded HALF-UP.
+>     return round(raw * 100) / 100

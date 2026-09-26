@@ -1,0 +1,31 @@
+== llm-smoke (cloud) ==
+llm-smoke exit=0
+== seed 42 == 12:49:42
+seed=42 exit=1 TASK_STATE: failed
+== seed 100 == 12:49:49
+seed=100 exit=1 TASK_STATE: failed
+== seed 101 == 12:50:00
+seed=101 exit=1 TASK_STATE: failed
+== seed 102 == 12:50:07
+seed=102 exit=1 TASK_STATE: failed
+== seed 103 == 12:50:13
+seed=103 exit=1 TASK_STATE: failed
+== seed 104 == 12:50:24
+seed=104 exit=1 TASK_STATE: failed
+== seed 105 == 12:50:29
+seed=105 exit=1 TASK_STATE: failed
+== seed 106 == 12:50:35
+seed=106 exit=1 TASK_STATE: failed
+== seed 107 == 12:50:40
+seed=107 exit=1 TASK_STATE: failed
+== seed 108 == 12:50:45
+seed=108 exit=1 TASK_STATE: failed
+== seed 109 == 12:50:52
+seed=109 exit=1 TASK_STATE: failed
+== seed 110 == 12:50:57
+seed=110 exit=1 TASK_STATE: failed
+== seed 111 == 12:51:04
+seed=111 exit=1 TASK_STATE: failed
+== seed 112 == 12:51:09
+seed=112 exit=1 TASK_STATE: failed
+== done 12:51:14 ==
