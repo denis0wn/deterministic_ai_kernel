@@ -1,0 +1,5 @@
+10c10,11
+<     return sum(scores) / len(scores)
+---
+>     filtered = [s for s in scores if s is not None]
+>     return sum(filtered) / len(filtered) if filtered else 0.0

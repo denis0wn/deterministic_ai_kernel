@@ -1,0 +1,9 @@
+12c12,17
+<     return start_date + timedelta(days=days)
+---
+>     current_date = start_date
+>     for _ in range(days):
+>         current_date += timedelta(days=1)
+>         if current_date.weekday() >= 5:  # Skip weekends (Saturday=5, Sunday=6)
+>             current_date += timedelta(days=1)
+>     return current_date

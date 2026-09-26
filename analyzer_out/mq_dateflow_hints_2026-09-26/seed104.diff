@@ -1,0 +1,11 @@
+12c12,19
+<     return start_date + timedelta(days=days)
+---
+>     current_date = start_date
+>     for _ in range(days):
+>         current_date += timedelta(days=1)
+>         if current_date.weekday() < 5:  # 0=Monday, 4=Friday
+>             continue
+>         while current_date.weekday() >= 5:  # Skip weekends
+>             current_date += timedelta(days=1)
+>     return current_date

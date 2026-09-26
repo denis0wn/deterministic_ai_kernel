@@ -1,0 +1,4 @@
+10c10
+<     return sum(scores) / len(scores)
+---
+>     return sum(s for s in scores if s is not None) / max(len(scores) - scores.count(None), 1) if scores else 0.0

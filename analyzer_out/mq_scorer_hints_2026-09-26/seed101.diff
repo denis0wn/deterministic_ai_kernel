@@ -1,0 +1,5 @@
+10c10,11
+<     return sum(scores) / len(scores)
+---
+>     valid = [s for s in scores if s is not None]
+>     return sum(valid) / len(valid) if valid else 0.0

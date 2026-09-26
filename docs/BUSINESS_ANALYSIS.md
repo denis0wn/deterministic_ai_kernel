@@ -20,11 +20,11 @@ primary source, [likely] = secondary sources, [assumption] = untested.
 
 | # | Weakness | Severity for sales |
 |---|---|---|
-| W1 | **One defect class proven.** NorthPay money-rounding only. Generalization to a client's class is exactly what the pilot must establish. | High — mitigated by selling the evaluation, not the claim |
+| W1 | ~~**One defect class proven.**~~ **CLOSED 2026-09-26:** three classes measured on the sanctioned local model — money-rounding (0/14 plain → 14/14 hints), business-days (0/8 → 3/8 after the fixture's own test hole was found and closed *by reading the evidence*), null-safety (8/8 both). Bonus finding: the evidence chain exposed a hole in our own test suite — the machinery measures its own judges. | High — mitigated by selling the evaluation, not the claim |
 | W2 | **Model-dependent.** Without hints every model tested fails the class (0/14). The kernel doesn't make models smarter; hints are hand-written recipes per defect class. | High — the Layer-1 hint library becomes the real asset to build per client |
 | W3 | **Layer-2 self-repair doesn't convert** on current models (0/5 live). The "it fixes itself" story is not available. | Medium — we simply don't claim it |
 | W4 | **One operator.** Bus factor, response times, enterprise procurement optics. | Medium — standard for a pilot stage; disclose |
-| W5 | **macOS-only sandbox** (Seatbelt). Linux/Windows test execution is unconfined today. | Medium — matters only for self-hosted Linux shops |
+| W5 | ~~**macOS-only sandbox** (Seatbelt).~~ **CLOSED 2026-09-26:** Linux covered via bubblewrap (ro-bind /, rw workspace, `--unshare-net`, credential dirs masked); the report records `sandbox_backend` honestly (`seatbelt`/`bwrap`/`none`). | Medium — matters only for self-hosted Linux shops |
 | W6 | **No managed offering.** Self-hosted only; no SaaS, no SLAs, no support desk. | Medium — fine for pilot, blocks scale-up later |
 | W7 | **Zero community proof.** Public repo as of today; no stars, no third-party usage yet. | High for inbound; irrelevant for outbound pilots |
 

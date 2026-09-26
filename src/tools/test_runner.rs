@@ -229,6 +229,10 @@ pub struct TestReportV1 {
     /// persisted before this field readable.
     #[serde(default)]
     pub failures: Vec<String>,
+    /// Which sandbox confined this run ("seatbelt", "bwrap", "none").
+    /// Evidence honesty: an unsandboxed run says "none" — never overclaimed.
+    #[serde(default = "default_sandbox_backend")]
+    pub sandbox_backend: String,
     pub duration_ms: u64,
     pub workspace: String,
     pub captured_unix: u64,
@@ -345,6 +349,26 @@ const SANDBOX_PROFILE: &str = "(version 1)\
     (deny file-read* (subpath (param \"DAK_KUBE\")))\
     (deny file-read* (subpath (param \"DAK_NETRC\")))";
 
+/// Which confinement actually wrapped the harness run — recorded in the
+/// report so evidence never overclaims. "none" is honest: an unsandboxed
+/// run says so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxBackend {
+    Seatbelt,
+    Bwrap,
+    None,
+}
+
+impl SandboxBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SandboxBackend::Seatbelt => "seatbelt",
+            SandboxBackend::Bwrap => "bwrap",
+            SandboxBackend::None => "none",
+        }
+    }
+}
+
 /// DAK_TEST_SANDBOX=off|0|false disables sandboxing (operator escape hatch).
 pub fn sandbox_enabled() -> bool {
     !matches!(
@@ -358,42 +382,97 @@ fn sandbox_exec_available() -> bool {
     *AVAILABLE.get_or_init(|| Path::new("/usr/bin/sandbox-exec").exists())
 }
 
-/// Wrap the python_test_file harness invocation in sandbox-exec (M-2).
-/// Returns the (possibly wrapped) program/argv. Non-macOS, other runners,
-/// missing sandbox-exec, or the env kill switch all pass through unchanged.
+fn bwrap_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        // bwrap may live in /usr/bin or elsewhere on PATH
+        std::process::Command::new("bwrap")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Wrap the python_test_file harness invocation in a sandbox (M-2).
+/// macOS: sandbox-exec/Seatbelt. Linux: bubblewrap (ro-bind /, rw workspace,
+/// --unshare-net, credential dirs masked). Returns (program, argv, backend).
+/// Other runners, missing tooling, and the env kill switch pass through as
+/// backend "none" — which the report records honestly.
 fn maybe_sandbox(
     command_id: &str,
     program: &str,
     argv: &[String],
     ws: &Path,
-) -> (String, Vec<String>) {
-    if !cfg!(target_os = "macos")
-        || command_id != "python_test_file"
-        || !sandbox_enabled()
-        || !sandbox_exec_available()
-    {
-        return (program.to_string(), argv.to_vec());
+) -> (String, Vec<String>, SandboxBackend) {
+    if command_id != "python_test_file" || !sandbox_enabled() {
+        return (program.to_string(), argv.to_vec(), SandboxBackend::None);
     }
-    let home = std::env::var("HOME").unwrap_or_default();
-    let mut wrapped: Vec<String> = vec![
-        "-D".into(),
-        format!("DAK_WS={}", ws.display()),
-        "-D".into(),
-        format!("DAK_SSH={home}/.ssh"),
-        "-D".into(),
-        format!("DAK_AWS={home}/.aws"),
-        "-D".into(),
-        format!("DAK_GNUPG={home}/.gnupg"),
-        "-D".into(),
-        format!("DAK_KUBE={home}/.kube"),
-        "-D".into(),
-        format!("DAK_NETRC={home}/.netrc"),
-        "-p".into(),
-        SANDBOX_PROFILE.to_string(),
-        program.to_string(),
-    ];
-    wrapped.extend(argv.iter().cloned());
-    ("/usr/bin/sandbox-exec".to_string(), wrapped)
+    if cfg!(target_os = "macos") && sandbox_exec_available() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let mut wrapped: Vec<String> = vec![
+            "-D".into(),
+            format!("DAK_WS={}", ws.display()),
+            "-D".into(),
+            format!("DAK_SSH={home}/.ssh"),
+            "-D".into(),
+            format!("DAK_AWS={home}/.aws"),
+            "-D".into(),
+            format!("DAK_GNUPG={home}/.gnupg"),
+            "-D".into(),
+            format!("DAK_KUBE={home}/.kube"),
+            "-D".into(),
+            format!("DAK_NETRC={home}/.netrc"),
+            "-p".into(),
+            SANDBOX_PROFILE.to_string(),
+            program.to_string(),
+        ];
+        wrapped.extend(argv.iter().cloned());
+        return ("/usr/bin/sandbox-exec".to_string(), wrapped, SandboxBackend::Seatbelt);
+    }
+    if cfg!(target_os = "linux") && bwrap_available() {
+        // Read-only system, writable workspace, no network, credential
+        // stores masked with empty tmpfs (/dev/null for the file ones).
+        let home = std::env::var("HOME").unwrap_or_default();
+        let mut wrapped: Vec<String> = vec![
+            "--ro-bind".into(),
+            "/".into(),
+            "/".into(),
+            "--bind".into(),
+            ws.to_string_lossy().into_owned(),
+            ws.to_string_lossy().into_owned(),
+            "--unshare-net".into(),
+            "--dev-bind".into(),
+            "/dev".into(),
+            "/dev".into(),
+            "--proc".into(),
+            "/proc".into(),
+        ];
+        for dir in [".ssh", ".aws", ".gnupg", ".kube"] {
+            wrapped.extend([
+                "--tmpfs".into(),
+                format!("{home}/{dir}"),
+            ]);
+        }
+        wrapped.extend([
+            "--ro-bind".into(),
+            "/dev/null".into(),
+            format!("{home}/.netrc"),
+            "--chdir".into(),
+            ws.to_string_lossy().into_owned(),
+            "--".into(),
+            program.to_string(),
+        ]);
+        wrapped.extend(argv.iter().cloned());
+        return ("bwrap".to_string(), wrapped, SandboxBackend::Bwrap);
+    }
+    (program.to_string(), argv.to_vec(), SandboxBackend::None)
+}
+
+fn default_sandbox_backend() -> String {
+    "none".to_string()
 }
 
 fn tail(s: &str, n: usize) -> String {
@@ -430,7 +509,7 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
     // M-2: on macOS the python_test_file harness runs under sandbox-exec
     // (network denied, writes confined to the workspace). The report's argv
     // records the actual wrapped command — evidence stays honest.
-    let (program, run_argv) =
+    let (program, run_argv, sandbox_backend) =
         maybe_sandbox(&derived.command_id, &derived.program, &derived.argv, &ws);
     let spawn_result = Command::new(&program)
         .args(&run_argv)
@@ -466,6 +545,7 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
             stdout_tail: tail(&stdout, OUTPUT_TAIL_CHARS),
             stderr_tail: tail(&stderr, OUTPUT_TAIL_CHARS),
             failures,
+            sandbox_backend: sandbox_backend.as_str().to_string(),
             duration_ms: started.elapsed().as_millis() as u64,
             workspace: ws.to_string_lossy().into_owned(),
             captured_unix: SystemTime::now()
@@ -1333,6 +1413,32 @@ mod tests {
             Some("python3"),
             "kill switch must bypass the wrapper"
         );
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_backend_is_recorded_honestly() {
+        let _g = SANDBOX_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let ws = unique_dir("m2_backend");
+        std::fs::write(ws.join("test_x.py"), "def test_ok():\n    assert True\n").unwrap();
+
+        // sandboxed run reports seatbelt
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        assert_eq!(report.sandbox_backend, "seatbelt");
+
+        // kill switch reports none — never overclaimed
+        std::env::set_var("DAK_TEST_SANDBOX", "off");
+        let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
+        std::env::remove_var("DAK_TEST_SANDBOX");
+        assert_eq!(report.sandbox_backend, "none");
+
+        // reports persisted before this field still deserialize as "none"
+        let mut legacy = serde_json::to_value(&report).unwrap();
+        legacy.as_object_mut().unwrap().remove("sandbox_backend");
+        let report: TestReportV1 = serde_json::from_value(legacy).unwrap();
+        assert_eq!(report.sandbox_backend, "none");
+
         let _ = std::fs::remove_dir_all(&ws);
     }
 }

@@ -1,0 +1,4 @@
+10c10
+<     return sum(scores) / len(scores)
+---
+>     return sum(s for s in scores if s is not None) / len([s for s in scores if s is not None]) if any(s is not None for s in scores) else 0.0
