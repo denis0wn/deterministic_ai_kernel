@@ -72,6 +72,25 @@ pub fn augment_patch_prompt(prompt: String, feedback: &Value) -> String {
     )
 }
 
+/// Patch identity for the futility stop: only the semantic triple counts
+/// (target, anchors, replacement). Model prose like `reason` varies between
+/// attempts and must not defeat the stop — measured 2026-09-26: Ministral
+/// emitted the identical replacement with a different `reason` three times
+/// and the raw-JSON hash let it through twice.
+fn patch_semantic_hash(patch: &Value) -> Option<String> {
+    let p = patch.get("patch_v1").unwrap_or(patch);
+    let (t, c, r) = (
+        p.get("target_file")?.as_str()?,
+        p.get("context_before")?.as_str()?,
+        p.get("replacement")?.as_str()?,
+    );
+    Some(
+        blake3::hash(format!("{t}\x00{c}\x00{r}").as_bytes())
+            .to_hex()
+            .to_string(),
+    )
+}
+
 fn failing_test_names(report: &Value) -> Vec<String> {
     report
         .get("failures")
@@ -193,7 +212,7 @@ pub fn maybe_run(
     )?;
 
     let mut prior_hash = crate::effects::find_latest_patch_v1(db, task_id)?
-        .map(|p| blake3::hash(p.to_string().as_bytes()).to_hex().to_string());
+        .and_then(|p| patch_semantic_hash(&p));
     let mut attempts = 0u32;
 
     loop {
@@ -259,9 +278,7 @@ pub fn maybe_run(
 
         // identical patch => at temperature 0 the model cannot use the
         // signal; further attempts are futile (spec §5.2).
-        let new_hash = out
-            .get("patch_v1")
-            .map(|p| blake3::hash(p.to_string().as_bytes()).to_hex().to_string());
+        let new_hash = out.get("patch_v1").and_then(patch_semantic_hash);
         if new_hash.is_some() && new_hash == prior_hash {
             bus.append_event(
                 task_id,

@@ -1,0 +1,4 @@
+25c25
+<     return int(raw * 100) / 100
+---
+>     return round(raw * 100) / 100

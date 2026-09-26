@@ -57,12 +57,20 @@ impl LlmProvider for LoopMockLlm {
             }
             _ => "    return a - b", // identical
         };
+        // mode "identical_reason_drift": same semantic patch, but the prose
+        // `reason` field drifts per call — the futility stop must still fire
+        // (measured live: Ministral repeated the fix with different prose).
+        let reason = if mode == "identical_reason_drift" {
+            format!("loop mock call {}", CALLS.load(Ordering::SeqCst))
+        } else {
+            "loop mock".to_string()
+        };
         let text = json!({
             "version": "patch_v1",
             "target_file": target,
             "context_before": "    return a + b",
             "replacement": replacement,
-            "reason": "loop mock"
+            "reason": reason
         })
         .to_string();
         Ok(LlmResponse {
@@ -276,6 +284,45 @@ fn feedback_loop_stops_on_identical_patch() {
         .expect("EXHAUSTED event");
     assert!(ex.payload.contains("identical_patch"), "{}", ex.payload);
     let _ = events;
+
+    cleanup(&task_id, &db, &ws);
+}
+
+#[test]
+fn feedback_loop_stops_on_semantically_identical_patch() {
+    // The model repeats the SAME fix but rewords the prose `reason` field.
+    // The futility stop compares the semantic triple (target, anchors,
+    // replacement) — prose drift must not defeat it (measured live on
+    // Ministral, 2026-09-26: identical replacement, drifting reason).
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    ensure_mock();
+    (*MODE.lock().unwrap_or_else(|e| e.into_inner())) = "identical_reason_drift";
+    CALLS.store(0, Ordering::SeqCst);
+    std::env::remove_var("DAK_FEEDBACK_LOOP");
+
+    let ws = fresh_dir("loop_reason_drift");
+    python_project(&ws);
+    let calc = ws.join("calc.py");
+    let task_id = unique("loop-reason-drift");
+    let payload = format!(
+        "Step 1 read repository {0}\nStep 2 find bug\nStep 3 patch code\nStep 4 apply patch\nStep 5 run tests\nStep 6 validate patch\nFix multiply: returns a + b instead of a * b.",
+        calc.display()
+    );
+    let db = create_task(&task_id, &loop_chain_spec(ws.to_str().unwrap()).to_string(), &payload);
+
+    let err = execute_effects(&db, &task_id).expect_err("must fail honestly");
+    assert!(err.to_string().contains("real tests failed"), "{err}");
+
+    // prose drift must not defeat the stop: 2 patch calls total
+    assert_eq!(CALLS.load(Ordering::SeqCst), 2);
+
+    let bus = EventBus::new(&db).unwrap();
+    let exhausted = bus.query(&task_id).unwrap();
+    let ex = exhausted
+        .iter()
+        .find(|e| e.event_type == feedback::FEEDBACK_EXHAUSTED)
+        .expect("EXHAUSTED event");
+    assert!(ex.payload.contains("identical_patch"), "{}", ex.payload);
 
     cleanup(&task_id, &db, &ws);
 }
