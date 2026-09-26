@@ -1,9 +1,8 @@
 # 60-Second Demo Script (verified commands, September 2026)
 
 **Recording:** `demo_60s.cast` (asciinema, recorded live 2026-09-26 with
-`docs/demo_runner.sh`; note: asciinema 3.2.1 on this machine compressed
-event timing — re-record on a normal terminal for a readable pace; the
-runner script is the source of truth for the beats).
+`docs/demo_runner.sh`; events re-timed to a readable 36 s pace — content
+is the raw live output; `docs/demo_runner.sh` re-records anywhere).
 
 Audience: one skeptical engineering lead. Setup: a terminal, the kernel
 binary built (`cargo build`; binary at `./target/debug/deterministic_ai_kernel`),

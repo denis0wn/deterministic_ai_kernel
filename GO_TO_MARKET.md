@@ -114,10 +114,34 @@ consulting-adjacent 4-week technical pilots commonly land $10–25k
 
 - One-person operation: the motion above is sized for that (no ads, no
   conference circuit).
-- One defect class is proven (NorthPay money-rounding). The pilot pitch
-  deliberately sells the *evaluation on the client's class* — the product
-  is the proof machinery, not the fixture.
+- Three defect classes measured (money-rounding, business-days,
+  null-safety) — one of them (business-days) needed the fixture's own
+  test suite strengthened mid-measurement. The pilot pitch deliberately
+  sells the *evaluation on the client's class* — the product is the
+  proof machinery, not the fixtures.
 - R3 pilot delivery is the entire next milestone; everything else waits.
+
+## 8. Launch checklist (W7 closure — the actual launch sequence)
+
+Preparation state 2026-09-26: repo public, default branch `main`,
+Apache-2.0 license, description + topics set, demo cast re-timed to a
+readable 36 s, post drafted.
+
+Launch day (Pacific time):
+1. 12:01 AM PT — post the Show HN (text: `docs/SHOW_HN_POST.md`); first
+   comment with the demo cast link and the evidence dirs.
+2. Same hour: LinkedIn/X version for the compliance audience (Art. 12
+   framing).
+3. Answer every technical comment with specifics within the hour —
+   dev-tool launches live or die on comment quality.
+4. Week 1 after: start Phase 2 outbound (30–50 named companies from §4)
+   regardless of HN placement — pilots come from outbound, not karma.
+5. Track: stars/watchers (vanity), demo-cast plays (signal), pilot
+   conversations started (the only metric that pays).
+
+Kill criteria: if the Show HN + outbound produces zero pilot conversations
+in 3 weeks, the positioning is wrong — rewrite the story around the AI Act
+record-keeping angle (Dec 2027) and re-run.
 
 ## Sources
 
