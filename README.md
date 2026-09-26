@@ -2,6 +2,11 @@
 
 A deterministic Rust kernel for task execution, replay, snapshotting, and local model control.
 
+**For engineering leads evaluating this as a product:** see `PILOT.md`
+(what it is, measured results, why it's not another observability tool),
+`PILOT_OFFER.md` (4-week paid pilot terms), and `DEMO_SCRIPT_60S.md`
+(live 60-second demo with verified commands).
+
 ## Core concepts
 
 - `event_bus`: persistence layer for events and semantic artifacts.
