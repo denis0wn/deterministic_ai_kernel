@@ -1,5 +1,8 @@
 # deterministic_ai_kernel
 
+[![Rust](https://github.com/denis0wn/deterministic_ai_kernel/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/denis0wn/deterministic_ai_kernel/actions/workflows/rust.yml)
+[![integrity](https://github.com/denis0wn/deterministic_ai_kernel/actions/workflows/integrity.yml/badge.svg?branch=main)](https://github.com/denis0wn/deterministic_ai_kernel/actions/workflows/integrity.yml)
+
 A deterministic Rust kernel for task execution, replay, snapshotting, and local model control.
 
 **For engineering leads evaluating this as a product:** see `PILOT.md`
