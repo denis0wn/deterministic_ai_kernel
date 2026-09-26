@@ -26,6 +26,14 @@ pub fn generate_hints(rule_id: &str) -> Vec<String> {
             "Preserve the function's existing return type: if it returned `float`, convert the decimal result back with `float(...)` before returning — a `Decimal` return breaks equality checks and callers.",
             "Round HALF-UP to the cent via `Decimal.quantize(..., rounding=ROUND_HALF_UP)`; builtin `round()` has no `rounding` keyword. You may add the import INSIDE the function you are fixing.",
         ],
+        // Validated by measurement (mq_dateflow_* 2026-09-26): v1 of this
+        // recipe described the iteration and produced count-and-skip loops
+        // landing on weekends (3/8). The invariant form below converts 8/8.
+        "business-days" => &[
+            "The defect counts calendar days. Correct algorithm: start from the date; while added < days, advance one calendar day, and only when it lands on a business day (weekday() < 5) increment added. Only business-day landings count toward the requested number of days. Never count calendar days traversed.",
+            "Preserve the function's existing return type: a date in, a date out.",
+            "Stdlib only (datetime). Do not import holiday calendars or numpy.",
+        ],
         "floor-div-money" => &[
             "The defect is floor division (`//`) truncating a monetary amount. Decide the correct policy: exact division or explicit HALF-UP rounding.",
             "If you need `decimal`, you may import it INSIDE the function to keep the patch in one contiguous region.",
@@ -60,10 +68,20 @@ mod tests {
             "floor-div-money",
             "none-arith",
             "offbyone-range",
+            "business-days",
         ] {
             assert!(has_hints(rule), "{rule} should have hints");
             assert!(!generate_hints(rule).is_empty());
         }
+    }
+
+    #[test]
+    fn business_days_hints_state_the_invariant() {
+        // Validated 2026-09-26 (mq_dateflow_hints2): recipes must state the
+        // invariant (only business-day landings count), not the iteration.
+        let hints = generate_hints("business-days").join(" ");
+        assert!(hints.contains("Only business-day landings count"));
+        assert!(hints.contains("weekday() < 5"));
     }
 
     #[test]
