@@ -64,4 +64,6 @@ test suites. You keep the evidence packs either way.
 
 ## Contact
 
-[contact placeholder]
+nface0@icloud.com — tell us about your codebase and the defect class you
+want measured. We reply with the Week-0 proof setup within two business
+days.

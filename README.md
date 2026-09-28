@@ -6,6 +6,7 @@
 > **License: all rights reserved.** This repository is publicly viewable
 > for evaluation purposes only — no use, copy, or modification rights are
 > granted. For pilots and licensing, see `PILOT_OFFER.md`.
+> Contact: nface0@icloud.com
 
 A deterministic Rust kernel for task execution, replay, snapshotting, and local model control.
 
@@ -60,14 +61,11 @@ Example end-to-end walkthrough:
 
 This demonstrates the intended loop: analyze -> persist semantic artifact -> inspect artifact state -> snapshot -> replay.
 
-## Live LM Studio test
+## LM backend in tests
 
-Обычный test suite использует mock LM backend.
-
-Для реальной проверки LM Studio:
-
-```bash
-```
+The test suite runs against a mock LM backend by default — the tests set
+`DAK_LM_BACKEND=mock` themselves, so no local model or running LM server
+is required for `./ct`.
 
 ## Developer Experience (DX) Test Runner: `./ct`
 
