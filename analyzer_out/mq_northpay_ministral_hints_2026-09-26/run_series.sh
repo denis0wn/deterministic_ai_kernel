@@ -1,22 +1,21 @@
 #!/bin/bash
-# Cloud-model capability series: same 14-seed NorthPay run on DashScope
-# qwen-plus (cloud), NO hints, loop OFF. Question: does a stronger model
-# clear the semantic-failure class that gemma4-reasoning failed 14/14?
-# Key comes from macOS Keychain (service qwen-dashscope-api-key) and is
-# exported only into the child env; it is never printed or written to disk.
+# Local-model capability series: same 14-seed NorthPay run on the local
+# Ministral-3-14B-Reasoning-2512 (MLX, 127.0.0.1:8080) WITH Layer-1 hints
+# v2, loop OFF. Question: does the sanctioned local model convert when the
+# hint recipe is in the payload? Result: 14/14 completed with the correct
+# Decimal/ROUND_HALF_UP/float fix (see seed*.diff).
+# (Header corrected 2026-09-28: originally copy-pasted from the cloud
+# no-hints series script.)
 set -uo pipefail
 
 REPO="$HOME/projects/deterministic_ai_kernel_clean_2"
 BIN="$REPO/target/debug/deterministic_ai_kernel"
 FIXTURE="$REPO/analyzer_examples/client_northpay"
-OUT_DIR="$REPO/analyzer_out/analyzer_out/mq_northpay_ministral_hints_2026-09-26"
+OUT_DIR="$REPO/analyzer_out/mq_northpay_ministral_hints_2026-09-26"
 WORK=/tmp/dek_mq26_ministral_hints
 mkdir -p "$OUT_DIR" "$WORK"
 
 cd "$REPO" || exit 1
-
-KEY="$(security find-generic-password -s qwen-dashscope-api-key -w 2>/dev/null)"
-[ -n "$KEY" ] || { echo "ABORT: no keychain key"; exit 1; }
 
 export OPENAI_BASE_URL="http://127.0.0.1:8080/v1"
 export OPENAI_API_KEY="mlx-local"

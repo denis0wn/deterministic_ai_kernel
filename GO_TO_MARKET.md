@@ -124,8 +124,11 @@ consulting-adjacent 4-week technical pilots commonly land $10–25k
 ## 8. Launch checklist (W7 closure — the actual launch sequence)
 
 Preparation state 2026-09-26: repo public, default branch `main`,
-Apache-2.0 license, description + topics set, demo cast re-timed to a
-readable 36 s, post drafted.
+**all-rights-reserved license** (owner decision: code viewable for
+evaluation, no reuse rights — the OSS/community reuse channel is closed
+by design; the motion below works on evidence, not on "try it yourself"),
+description + topics set, demo cast re-timed to a readable 36 s, post
+drafted.
 
 Launch day (Pacific time):
 1. 12:01 AM PT — post the Show HN (text: `docs/SHOW_HN_POST.md`); first

@@ -46,7 +46,7 @@ watch your pipeline — it *is* the pipeline, with receipts.
 
 ## Current state (September 2026)
 
-- 933 automated tests green, CI green on every merge (checked, not assumed).
+- 936 automated tests green, CI green on every merge (checked, not assumed).
 - Security review passed with documented conditions; two high-severity
   findings found and fixed in-review (fabricated-success vector and
   unsandboxed test execution).

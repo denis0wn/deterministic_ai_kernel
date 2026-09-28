@@ -19,3 +19,6 @@ runs/
 # Python bytecode (analyzer_examples fixtures)
 __pycache__/
 *.py[cod]
+
+# Local tool caches that must never be committed
+.mimocode/

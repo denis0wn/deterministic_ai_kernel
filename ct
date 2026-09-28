@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+import sys
+import subprocess
+import re
+
+def strip_color(s):
+    # Strip ANSI escape sequences
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', s)
+
+def main():
+    args = sys.argv[1:]
+    # Run cargo test with color enabled to preserve colors for errors
+    cmd = ["cargo", "test", "--color=always"] + args
+    
+    try:
+        process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except FileNotFoundError:
+        print("Error: cargo command not found. Make sure Rust is installed and cargo is in your PATH.", file=sys.stderr)
+        sys.exit(1)
+        
+    return_code = process.returncode
+    stdout_content = process.stdout
+    stderr_content = process.stderr
+    
+    if return_code == 0:
+        print("✅ ALL TESTS PASSED")
+        sys.exit(0)
+        
+    # Accumulate output lines
+    output_lines = []
+    
+    # 1. Filter stderr (compilation/cargo errors)
+    stderr_lines = stderr_content.splitlines()
+    in_error = False
+    for line in stderr_lines:
+        stripped = strip_color(line).strip()
+        
+        # State transitions for compiler diagnostics
+        if stripped.startswith('error') or stripped.startswith('error['):
+            in_error = True
+        elif stripped.startswith('warning') or stripped.startswith('warning['):
+            in_error = False
+        elif stripped.startswith('Compiling') or stripped.startswith('Checking') or stripped.startswith('Finished'):
+            in_error = False
+            
+        if 'could not compile' in stripped:
+            output_lines.append(line)
+            continue
+            
+        if in_error:
+            output_lines.append(line)
+
+    # 2. Filter stdout (test failures and panic messages)
+    stdout_lines = stdout_content.splitlines()
+    in_panic = False
+    for line in stdout_lines:
+        stripped = strip_color(line).strip()
+        
+        # Detect failed test name lines (e.g. "test foo ... FAILED")
+        is_failed_test_name = '... FAILED' in stripped
+        
+        # Detect panic start
+        if 'panicked at' in stripped:
+            in_panic = True
+            output_lines.append(line)
+            continue
+        # Detect panic end
+        elif in_panic and (stripped.startswith('note:') or stripped == ''):
+            in_panic = False
+            
+        if in_panic:
+            output_lines.append(line)
+            continue
+            
+        # Detect final failed summary
+        is_failed_summary = stripped.startswith('test result: FAILED')
+        
+        if is_failed_test_name or is_failed_summary:
+            output_lines.append(line)
+
+    # Print the filtered diagnostics
+    if output_lines:
+        for line in output_lines:
+            print(line)
+    else:
+        # If nothing matched the filters but exit code is non-zero
+        print("FAILED (no filtered diagnostics found)")
+        
+    sys.exit(return_code)
+
+if __name__ == "__main__":
+    main()

@@ -14,7 +14,7 @@ primary source, [likely] = secondary sources, [assumption] = untested.
   model 0/14; kernel + Layer-1 hints 14/14; honest failure on every wrong
   attempt, zero fabricated successes across 70+ live episodes.
 - Security reviewed; test execution sandboxed (network denied, workspace
-  confined) on macOS; 933 automated tests green; CI green on every merge.
+  confined) on macOS; 936 automated tests green; CI green on every merge.
 
 ## 2. Minuses (the part a good deputy does not hide)
 
