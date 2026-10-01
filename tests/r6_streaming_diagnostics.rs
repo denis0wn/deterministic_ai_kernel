@@ -13,8 +13,7 @@
 //! 3. the HARD CAP fires despite active chunks when total duration exceeds
 //!    DAK_LLM_REQUEST_TIMEOUT_SECS (truly unbounded generation).
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -32,17 +31,6 @@ async fn send_chunked(socket: &mut TcpStream, data: &[u8]) {
 async fn end_chunked(socket: &mut TcpStream) {
     let _ = socket.write_all(b"0\r\n\r\n").await;
     let _ = socket.flush().await;
-}
-
-static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn unique(name: &str) -> String {
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("{name}_{n}_{nanos}")
 }
 
 fn set_llm_env(base_url: &str, idle: &str, cap: &str) {

@@ -80,7 +80,10 @@ impl PendingAction {
     }
 }
 
+// Snapshot dominates the message payload; boxing it would only add
+// indirection on the one hot variant, so the size skew is accepted.
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Msg {
     Key(KeyEvent),
     /// A fresh kernel snapshot produced by the adapter.
@@ -827,11 +830,13 @@ mod tests {
         use crate::adapter::IntegrityVm;
         let mut m = model_with_tasks(&["task-r"]);
         // A refresh carrying an integrity result stores it.
-        let mut snap = Snapshot::default();
-        snap.integrity = Some(IntegrityVm {
-            ok: true,
-            summary: "ok".into(),
-        });
+        let snap = Snapshot {
+            integrity: Some(IntegrityVm {
+                ok: true,
+                summary: "ok".into(),
+            }),
+            ..Default::default()
+        };
         update(&mut m, Msg::Data(snap));
         assert!(m.data.integrity.is_some());
         // A later refresh WITHOUT run_integrity must keep the last result.
@@ -857,15 +862,17 @@ mod tests {
         let mut m = model_with_tasks(&["a", "b", "c"]);
         m.screen = Screen::Tasks;
         m.tasks_sel = 2;
-        let mut snap = Snapshot::default();
-        snap.tasks = vec![TaskRowVm {
-            task_id: "only".into(),
-            task_class: "Generic".into(),
-            state: "pending".into(),
-            current_step: "-".into(),
-            active_lease_worker: "-".into(),
-            latest_generation: 0,
-        }];
+        let snap = Snapshot {
+            tasks: vec![TaskRowVm {
+                task_id: "only".into(),
+                task_class: "Generic".into(),
+                state: "pending".into(),
+                current_step: "-".into(),
+                active_lease_worker: "-".into(),
+                latest_generation: 0,
+            }],
+            ..Default::default()
+        };
         update(&mut m, Msg::Data(snap));
         assert_eq!(m.tasks_sel, 0, "selection must clamp to the new data");
         assert_eq!(m.data.tasks.len(), 1);
@@ -999,18 +1006,19 @@ mod tests {
     fn refresh_failure_retains_previous_snapshot_and_marks_stale() {
         let mut m = model_with_tasks(&["keep-me"]);
         // successful refresh first
-        let good = {
-            let mut s = Snapshot::default();
-            s.tasks = m.data.tasks.clone();
-            s
+        let good = Snapshot {
+            tasks: m.data.tasks.clone(),
+            ..Default::default()
         };
         update(&mut m, Msg::Data(good.clone()));
         assert_eq!(m.refresh_seq, 1);
         assert!(!m.stale);
 
         // failed refresh: previous data must survive
-        let mut bad = Snapshot::default();
-        bad.error = Some("tasks query failed".into());
+        let bad = Snapshot {
+            error: Some("tasks query failed".into()),
+            ..Default::default()
+        };
         update(&mut m, Msg::Data(bad));
         assert!(m.stale);
         assert!(m.status_is_error);

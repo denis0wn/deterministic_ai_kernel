@@ -22,6 +22,7 @@
 //!   compression algorithms (gzip, zstd), Linux distributions (ubuntu),
 //!   engine volumes (2,0 л). These classes are non-computable, so a
 //!   literal-containment check cannot collide with arithmetic results.
+//!
 //! Plain numbers are NOT claims: arithmetic answers (408, 272, 63) stay
 //! untouched. Personnel/historical prose fabrications ("who approved",
 //! "founded in 1987") are outside deterministic detection without false

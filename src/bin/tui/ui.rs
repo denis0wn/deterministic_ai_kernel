@@ -2218,8 +2218,7 @@ fn draw_palette(f: &mut Frame, app: &App) {
         .iter()
         .skip(start)
         .take(visible_height)
-        .enumerate()
-        .map(|(_, (original_idx, item))| {
+        .map(|(original_idx, item)| {
             let style = if *original_idx == app.palette_index {
                 Style::default()
                     .fg(Color::Cyan)

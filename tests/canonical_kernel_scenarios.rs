@@ -18,7 +18,7 @@
 //!   K  fresh-DB CLI matrix contains zero panics
 //!   L  concurrent heartbeats -> no silent event loss
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -41,8 +41,10 @@ struct Cli {
 }
 
 impl Cli {
-    fn new(db: &PathBuf) -> Self {
-        Self { db: db.clone() }
+    fn new(db: &Path) -> Self {
+        Self {
+            db: db.to_path_buf(),
+        }
     }
 
     fn run(&self, args: &[&str]) -> (bool, String, String) {

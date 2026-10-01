@@ -13,21 +13,9 @@
 //!    served (server-side concurrency was proven live, R7 EXP A; this
 //!    proves the kernel client handles it).
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-
-static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn unique(name: &str) -> String {
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("{name}_{n}_{nanos}")
-}
 
 fn set_env(base_url: &str, idle: &str, cap: &str, retries: &str, concurrent: &str) {
     std::env::set_var("OPENAI_BASE_URL", base_url);

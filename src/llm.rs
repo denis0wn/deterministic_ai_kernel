@@ -509,7 +509,9 @@ pub async fn chat_with_model_override(
         seed: kernel_seed(),
     };
 
-    let mut last_err = None;
+    // Every retry-loop pass assigns this before the final read below, so the
+    // declaration needs no (dead) initializer.
+    let mut last_err: Option<anyhow::Error>;
     // INFERENCE state for the lifecycle manager: while this guard lives the
     // idle watcher will never shut the server down (race protection).
     let _lifecycle_guard = crate::mlx_lifecycle::begin_inference();

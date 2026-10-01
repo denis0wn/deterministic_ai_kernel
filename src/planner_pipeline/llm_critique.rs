@@ -293,12 +293,16 @@ pub async fn run_execution_critique(
 mod tests {
     use super::*;
 
+    // Deliberate invariant pinning: these asserts freeze the threshold
+    // constants at their measured values so a drift fails the suite loudly.
+    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn min_steps_threshold_works() {
         assert!(1 < MIN_STEPS_FOR_CRITIQUE);
         assert!(2 >= MIN_STEPS_FOR_CRITIQUE);
     }
 
+    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn max_defects_hard_stop_works() {
         assert!(5 <= MAX_DEFECTS_BEFORE_SKIP_REVISION);

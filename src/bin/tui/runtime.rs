@@ -47,6 +47,9 @@ impl ServerState {
         }
     }
 
+    // Semantic definition of usability; the TUI matches ServerState directly,
+    // so this is exercised only by unit tests for now.
+    #[allow(dead_code)]
     pub fn is_usable(self) -> bool {
         self == ServerState::Online
     }
@@ -56,9 +59,14 @@ impl ServerState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerOwnership {
+    // Ownership detection is not wired yet — every server is treated as
+    // Unknown (the safe path). The variants stay because start_recovery()
+    // branches on them and the restart path below is written against Managed.
     /// Server was launched by Replay OS — we can restart it.
+    #[allow(dead_code)]
     Managed,
     /// Server was launched externally — show hints, don't kill it.
+    #[allow(dead_code)]
     External,
     /// Ownership unknown — safe default: prompt before restart.
     Unknown,
@@ -262,12 +270,6 @@ impl RuntimeState {
         }
     }
 
-    /// Legacy probe — for one-shot checks outside tick loop.
-    pub fn probe() -> Self {
-        let (state, _) = Self::probe_live();
-        state
-    }
-
     /// Force a live probe and update self in place.
     pub fn probe_force(&mut self, stats: &mut ProbeStats) {
         stats.total_probes += 1;
@@ -344,7 +346,6 @@ impl RuntimeState {
                     self.managed_server_pid = Some(pid);
                     RecoveryAction::Launched {
                         message: format!("Server launched (pid={pid}). Waiting for readiness..."),
-                        pid,
                     }
                 } else {
                     self.server_state = ServerState::Offline;
@@ -366,6 +367,9 @@ impl RuntimeState {
     }
 
     /// Check if managed server process is still alive.
+    // Part of the Managed-recovery surface; not called from the TUI loop yet
+    // (ownership is always Unknown today) but covered by unit tests below.
+    #[allow(dead_code)]
     pub fn check_managed_server_alive(&self) -> bool {
         if let Some(pid) = self.managed_server_pid {
             #[cfg(unix)]
@@ -383,6 +387,7 @@ impl RuntimeState {
     }
 
     /// Reset recovery state (e.g., after user dismisses recovery UI).
+    #[allow(dead_code)]
     pub fn reset_recovery(&mut self) {
         self.recovery_attempts = 0;
         self.last_recovery_at = None;
@@ -419,7 +424,7 @@ impl RuntimeState {
 
 #[derive(Debug, Clone)]
 pub enum RecoveryAction {
-    Launched { message: String, pid: u32 },
+    Launched { message: String },
     LaunchFailed { message: String },
     ShowInstructions { message: String },
     RateLimited { message: String },

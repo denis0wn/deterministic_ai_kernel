@@ -48,6 +48,9 @@ enum WorkerMsg {
 }
 
 /// Messages worker → UI.
+// Snapshot dominates the channel payload; boxing it would only add
+// indirection on the one hot variant, so the size skew is accepted.
+#[allow(clippy::large_enum_variant)]
 enum UiMsg {
     Snap(Snapshot),
     ActionOk(String),
@@ -177,12 +180,9 @@ fn run(db: String) -> Result<()> {
 
         // Input (non-blocking poll keeps the loop responsive).
         if event::poll(Duration::from_millis(50))? {
-            match event::read()? {
-                Event::Key(k) => {
-                    let out = model::update(&mut model, model::Msg::Key(k));
-                    dispatch(&wtx, out);
-                }
-                _ => {}
+            if let Event::Key(k) = event::read()? {
+                let out = model::update(&mut model, model::Msg::Key(k));
+                dispatch(&wtx, out);
             }
         }
 

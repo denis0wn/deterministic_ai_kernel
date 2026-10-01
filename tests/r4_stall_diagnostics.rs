@@ -36,15 +36,13 @@ fn hanging_endpoint() -> (String, std::thread::JoinHandle<()>) {
     let addr = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
         // Accept and hold connections open without producing a byte.
-        for stream in listener.incoming() {
-            if let Ok(mut s) = stream {
-                std::thread::spawn(move || {
-                    let mut buf = [0u8; 4096];
-                    // Read the request, then sit on the socket silently.
-                    let _ = s.read(&mut buf);
-                    std::thread::sleep(Duration::from_secs(120));
-                });
-            }
+        for mut s in listener.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                // Read the request, then sit on the socket silently.
+                let _ = s.read(&mut buf);
+                std::thread::sleep(Duration::from_secs(120));
+            });
         }
     });
     (format!("http://{addr}/v1"), handle)

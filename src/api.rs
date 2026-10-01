@@ -6,7 +6,6 @@ use crate::cli_json::comparison_report;
 use crate::event_bus;
 use crate::kernel_types::ReplayCapsule;
 use crate::lm_control;
-use crate::providers;
 use crate::replay::capsule::build_replay_capsule;
 use crate::snapshot;
 

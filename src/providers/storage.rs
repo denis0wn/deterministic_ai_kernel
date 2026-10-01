@@ -602,13 +602,11 @@ impl TaskFold {
                         s.started = false;
                     }
                 }
-                "WORKER_CLAIMED" => {
-                    if s.active_lease.is_none() {
-                        local_violations.push(format!(
-                            "INVALID step {}: WORKER_CLAIMED (unit {}) without an active lease",
-                            step_id, unit
-                        ));
-                    }
+                "WORKER_CLAIMED" if s.active_lease.is_none() => {
+                    local_violations.push(format!(
+                        "INVALID step {}: WORKER_CLAIMED (unit {}) without an active lease",
+                        step_id, unit
+                    ));
                 }
                 "STEP_STARTED" => {
                     if s.status != "dispatched" || s.started {
@@ -620,13 +618,11 @@ impl TaskFold {
                         s.started = true;
                     }
                 }
-                "WORKER_HEARTBEAT" => {
-                    if !s.started || s.terminal() {
-                        local_violations.push(format!(
+                "WORKER_HEARTBEAT" if (!s.started || s.terminal()) => {
+                    local_violations.push(format!(
                             "INVALID step {}: WORKER_HEARTBEAT (unit {}) for a step that is not started",
                             step_id, unit
                         ));
-                    }
                 }
                 "STEP_COMPLETED" => {
                     // Live worker operations (complete_step) require an owned
@@ -694,10 +690,11 @@ impl TaskFold {
     }
 }
 
-fn load_task_event_rows(
-    conn: &Connection,
-    task_id: &str,
-) -> Result<Vec<(i64, i64, String, Option<String>, String)>> {
+/// One ordered event-log row: (causal_unit_id, sequence_in_unit, event_type,
+/// step_id, payload).
+type TaskEventRow = (i64, i64, String, Option<String>, String);
+
+fn load_task_event_rows(conn: &Connection, task_id: &str) -> Result<Vec<TaskEventRow>> {
     let mut stmt = conn.prepare(
         "SELECT causal_unit_id, sequence_in_unit, event_type, step_id, payload
          FROM event_log

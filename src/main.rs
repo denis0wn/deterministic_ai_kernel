@@ -1,6 +1,5 @@
 use deterministic_ai_kernel::cli_json::emit_json;
 use deterministic_ai_kernel::effects::execute_effects;
-use deterministic_ai_kernel::execution::runtime::Runtime;
 use deterministic_ai_kernel::leases::{expire_leases, seed_demo_leases};
 use deterministic_ai_kernel::providers::storage::StorageProvider;
 use deterministic_ai_kernel::replay::capsule::build_replay_capsule;
@@ -1648,7 +1647,6 @@ async fn main() {
             return;
         }
         Some("snapshot-artifacts") => {
-            use rusqlite::Connection;
             use serde_json::Value;
 
             let task_id = args.get(2).map(|s| s.as_str()).unwrap_or("task1");

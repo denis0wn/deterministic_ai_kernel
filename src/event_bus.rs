@@ -62,10 +62,6 @@ impl EventBus {
         self.storage.db_path()
     }
 
-    pub(crate) fn storage(&self) -> &crate::providers::storage::DefaultStorage {
-        &self.storage
-    }
-
     pub fn latest_generation_for_task(&self, task_id: &str) -> Result<i64> {
         self.storage.latest_generation_for_task(task_id)
     }

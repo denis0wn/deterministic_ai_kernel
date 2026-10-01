@@ -36,28 +36,6 @@ fn run_ok(db: &PathBuf, args: &[&str]) -> String {
     String::from_utf8(out.stdout).expect("test failure")
 }
 
-fn run_fail(db: &PathBuf, args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_deterministic_ai_kernel"))
-        .env("KERNEL_DB_PATH", db)
-        .args(args)
-        .output()
-        .expect("test failure");
-
-    assert!(
-        !out.status.success(),
-        "expected failure: {:?}\nstdout=\n{}\nstderr=\n{}",
-        args,
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    )
-}
-
 fn restore_payload(db: &PathBuf, task_id: &str) -> Value {
     let out = run_ok(db, &["restore", task_id]);
     let json_line = out

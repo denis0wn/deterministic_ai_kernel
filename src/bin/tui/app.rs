@@ -139,8 +139,6 @@ pub struct App {
     pub history_filter_type: HistoryFilterType,
     pub history_filter_status: HistoryFilterStatus,
     pub history_filter_tool: String,
-    pub history_filter_tool_cursor: usize,
-    pub history_filter_panel: HistoryFilterPanel,
     // Toast / status layer
     pub toast_message: Option<String>,
     pub toast_is_error: bool,
@@ -168,14 +166,6 @@ pub enum HistoryFilterStatus {
     Denied,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HistoryFilterPanel {
-    Type,
-    Status,
-    Tool,
-    Search,
-}
-
 #[derive(Debug, Clone)]
 pub struct ToolActivityEntry {
     pub tool_name: String,
@@ -183,7 +173,6 @@ pub struct ToolActivityEntry {
     pub duration_ms: u64,
     pub args_preview: String,
     pub result_preview: String,
-    pub timestamp: Instant,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -249,8 +238,6 @@ impl App {
             history_filter_type: HistoryFilterType::All,
             history_filter_status: HistoryFilterStatus::All,
             history_filter_tool: String::new(),
-            history_filter_tool_cursor: 0,
-            history_filter_panel: HistoryFilterPanel::Search,
             toast_message: None,
             toast_is_error: false,
             toast_created_at: None,
@@ -515,10 +502,8 @@ impl App {
                     self.execute_palette_action(action);
                 }
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.palette_index > 0 {
-                    self.palette_index -= 1;
-                }
+            KeyCode::Up | KeyCode::Char('k') if self.palette_index > 0 => {
+                self.palette_index -= 1;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let items = self.get_filtered_palette_items();
@@ -580,15 +565,11 @@ impl App {
                 self.save_current_session();
                 self.should_quit = true;
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.nav_index > 0 {
-                    self.nav_index -= 1;
-                }
+            KeyCode::Up | KeyCode::Char('k') if self.nav_index > 0 => {
+                self.nav_index -= 1;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if self.nav_index + 1 < nav_count {
-                    self.nav_index += 1;
-                }
+            KeyCode::Down | KeyCode::Char('j') if self.nav_index + 1 < nav_count => {
+                self.nav_index += 1;
             }
             KeyCode::Enter => {
                 if self.nav_index == nav_count - 1 {
@@ -644,39 +625,43 @@ impl App {
                 self.task_input.insert(self.task_input_cursor, c);
                 self.task_input_cursor += 1;
             }
-            KeyCode::Backspace if self.active_panel == ActivePanel::Input => {
-                if self.task_input_cursor > 0 {
-                    self.task_input_cursor -= 1;
-                    self.task_input.remove(self.task_input_cursor);
-                }
+            KeyCode::Backspace
+                if self.active_panel == ActivePanel::Input && self.task_input_cursor > 0 =>
+            {
+                self.task_input_cursor -= 1;
+                self.task_input.remove(self.task_input_cursor);
             }
-            KeyCode::Left if self.active_panel == ActivePanel::Input => {
-                if self.task_input_cursor > 0 {
-                    self.task_input_cursor -= 1;
-                }
+            KeyCode::Left
+                if self.active_panel == ActivePanel::Input && self.task_input_cursor > 0 =>
+            {
+                self.task_input_cursor -= 1;
             }
-            KeyCode::Right if self.active_panel == ActivePanel::Input => {
-                if self.task_input_cursor < self.task_input.len() {
-                    self.task_input_cursor += 1;
-                }
+            KeyCode::Right
+                if self.active_panel == ActivePanel::Input
+                    && self.task_input_cursor < self.task_input.len() =>
+            {
+                self.task_input_cursor += 1;
             }
-            KeyCode::Enter if self.active_panel == ActivePanel::Input => {
-                if !self.task_input.is_empty() && !self.task_running {
-                    // Runtime check for verified mode
-                    if self.execution_mode == ExecutionMode::Verified && !self.runtime.is_running {
-                        let recovery_hint = match self.runtime.server_state {
-                            super::runtime::ServerState::Crashed =>
-                                "MLX server crashed. Press R to restart, or m to switch to plan-only.",
-                            super::runtime::ServerState::Recovering =>
-                                "Recovery in progress... waiting for server.",
-                            _ =>
-                                "MLX server offline. Press R to restart, or m to switch to plan-only.",
-                        };
-                        self.set_status(recovery_hint, true);
-                        return;
-                    }
-                    self.start_task_streaming();
+            KeyCode::Enter
+                if self.active_panel == ActivePanel::Input
+                    && !self.task_input.is_empty()
+                    && !self.task_running =>
+            {
+                // Runtime check for verified mode
+                if self.execution_mode == ExecutionMode::Verified && !self.runtime.is_running {
+                    let recovery_hint = match self.runtime.server_state {
+                        super::runtime::ServerState::Crashed => {
+                            "MLX server crashed. Press R to restart, or m to switch to plan-only."
+                        }
+                        super::runtime::ServerState::Recovering => {
+                            "Recovery in progress... waiting for server."
+                        }
+                        _ => "MLX server offline. Press R to restart, or m to switch to plan-only.",
+                    };
+                    self.set_status(recovery_hint, true);
+                    return;
                 }
+                self.start_task_streaming();
             }
             _ => {}
         }
@@ -744,15 +729,13 @@ impl App {
                     self.filter_history();
                     self.show_toast("Filters reset", false);
                 }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if self.history_index > 0 {
-                        self.history_index -= 1;
-                    }
+                KeyCode::Up | KeyCode::Char('k') if self.history_index > 0 => {
+                    self.history_index -= 1;
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if self.history_index + 1 < self.filtered_history.len() {
-                        self.history_index += 1;
-                    }
+                KeyCode::Down | KeyCode::Char('j')
+                    if self.history_index + 1 < self.filtered_history.len() =>
+                {
+                    self.history_index += 1;
                 }
                 KeyCode::Enter => {
                     if let Some(&idx) = self.filtered_history.get(self.history_index) {
@@ -894,10 +877,8 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') => {
                 self.current_screen = Screen::Dashboard;
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.tool_selected > 0 {
-                    self.tool_selected -= 1;
-                }
+            KeyCode::Up | KeyCode::Char('k') if self.tool_selected > 0 => {
+                self.tool_selected -= 1;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let count = self.tool_registry.all().len();
@@ -953,7 +934,6 @@ impl App {
             duration_ms: 0,
             args_preview: args_preview.clone(),
             result_preview: String::new(),
-            timestamp: start,
         });
 
         // Run tool synchronously (blocking for now). The confirmation state
@@ -1131,24 +1111,20 @@ impl App {
                     self.workflow_input_mode = false;
                     self.active_panel = ActivePanel::LeftNav;
                 }
-                KeyCode::Enter => {
-                    if !self.workflow_input.is_empty() {
-                        self.workflow_task_id = self.workflow_input.clone();
-                        self.workflow_input_mode = false;
-                        self.active_panel = ActivePanel::Confirm;
-                        self.confirm_action = Some(self.workflow_input.clone());
-                        self.workflow_input.clear();
-                    }
+                KeyCode::Enter if !self.workflow_input.is_empty() => {
+                    self.workflow_task_id = self.workflow_input.clone();
+                    self.workflow_input_mode = false;
+                    self.active_panel = ActivePanel::Confirm;
+                    self.confirm_action = Some(self.workflow_input.clone());
+                    self.workflow_input.clear();
                 }
                 KeyCode::Char(c) => {
                     self.workflow_input.insert(self.workflow_input_cursor, c);
                     self.workflow_input_cursor += 1;
                 }
-                KeyCode::Backspace => {
-                    if self.workflow_input_cursor > 0 {
-                        self.workflow_input_cursor -= 1;
-                        self.workflow_input.remove(self.workflow_input_cursor);
-                    }
+                KeyCode::Backspace if self.workflow_input_cursor > 0 => {
+                    self.workflow_input_cursor -= 1;
+                    self.workflow_input.remove(self.workflow_input_cursor);
                 }
                 _ => {}
             }
@@ -1354,7 +1330,6 @@ impl App {
                                 duration_ms: 0,
                                 args_preview,
                                 result_preview,
-                                timestamp: Instant::now(),
                             });
                         }
                     }
@@ -1429,7 +1404,7 @@ impl App {
                                 .iter()
                                 .find(|l| l.contains("seed="))
                                 .and_then(|l| l.split("seed=").nth(1))
-                                .map(|s| s.trim().split_whitespace().next().unwrap_or("0"))
+                                .map(|s| s.split_whitespace().next().unwrap_or("0"))
                             {
                                 if let Ok(seed) = seed_str.parse::<u64>() {
                                     super::history::save_entry(&self.task_input, seed, &json);
@@ -1562,7 +1537,7 @@ impl App {
         let action = self.runtime.start_recovery();
 
         match action {
-            super::runtime::RecoveryAction::Launched { message, pid: _ } => {
+            super::runtime::RecoveryAction::Launched { message } => {
                 self.recovery_in_progress = true;
                 self.recovery_started_at = Some(Instant::now());
                 self.set_status(&message, false);
@@ -1675,9 +1650,7 @@ fn format_tool_result_short(tool_name: &str, output: &serde_json::Value) -> Stri
             let bytes = output.get("bytes").and_then(|v| v.as_u64()).unwrap_or(0);
             format!("HTTP {status}, {bytes} bytes")
         }
-        "open_url" => {
-            format!("opened")
-        }
+        "open_url" => "opened".to_string(),
         _ => String::new(),
     }
 }

@@ -111,6 +111,6 @@ mod tests {
         let result = llm_assisted_decompose(payload).await.unwrap();
         // Should be None (LLM unavailable) or Some if LLM happens to be running
         // The key assertion is that it doesn't panic or error
-        assert!(result.is_none() || result.as_ref().map_or(false, |v| v.len() > 1));
+        assert!(result.is_none() || result.as_ref().is_some_and(|v| v.len() > 1));
     }
 }

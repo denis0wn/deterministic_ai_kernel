@@ -1,6 +1,10 @@
+//! Shared test harness. Each integration-test binary includes this module but
+//! only uses part of it, so dead-code analysis is per-binary and noisy —
+//! silenced once here instead of per item.
+#![allow(dead_code)]
+
 use std::sync::Once;
 
-#[allow(dead_code)]
 pub fn with_mock_lm_backend<F: FnOnce()>(f: F) {
     let prev_backend = std::env::var("DAK_LM_BACKEND").ok();
     let prev_mem = std::env::var("DAK_FREE_GB_OVERRIDE").ok();
@@ -77,21 +81,4 @@ pub fn register_mock_llm() {
     MOCK_LLM_INIT.call_once(|| {
         deterministic_ai_kernel::providers::register_llm(Box::new(MockLlm::default()));
     });
-}
-
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-pub fn unique_db_path(test_name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("mock_llm_{}_{}.db", test_name, nanos))
-}
-
-pub fn cleanup_db(db: &PathBuf) {
-    let _ = std::fs::remove_file(db);
-    let _ = std::fs::remove_file(format!("{}-wal", db.display()));
-    let _ = std::fs::remove_file(format!("{}-shm", db.display()));
 }

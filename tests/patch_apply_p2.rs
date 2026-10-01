@@ -35,7 +35,6 @@ fn fresh_dir(name: &str) -> std::path::PathBuf {
 }
 
 const ORIGINAL: &str = "pub fn multiply(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
-const APPLIED: &str = "pub fn multiply(a: i32, b: i32) -> i32 { // fixed\n    a + b\n}\n";
 
 // P3 full-chain fixture (Python so a REAL allowlisted test command can run).
 const PY_ORIGINAL: &str = "def multiply(a, b):\n    return a + b\n";
