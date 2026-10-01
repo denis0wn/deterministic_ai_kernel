@@ -5,6 +5,31 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the toolchain the zero-warning baseline was measured with
+      # (2026-10-01, rustc 1.95.0). Bump together with the local toolchain,
+      # never alone — newer clippy releases add lints.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Install rustfmt and clippy
+        run: rustup component add rustfmt clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (zero warnings)
+        run: cargo clippy --all-targets --no-deps -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     steps:
