@@ -40,7 +40,8 @@ fn default_worker_for_step(step_id: &str) -> &'static str {
 pub(crate) fn find_latest_patch_v1(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
     let bus = crate::event_bus::EventBus::new(db)?;
     let artifacts = bus.list_semantic_artifacts(task_id, None)?;
-    for row in artifacts.iter() { // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
+    for row in artifacts.iter() {
+        // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
         if row.artifact_type != "primitive_result_v1" {
             continue;
         }
@@ -235,7 +236,8 @@ fn apply_composed_patches(
 fn find_latest_apply_evidence(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
     let bus = crate::event_bus::EventBus::new(db)?;
     let artifacts = bus.list_semantic_artifacts(task_id, None)?;
-    for row in artifacts.iter() { // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
+    for row in artifacts.iter() {
+        // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
         if row.artifact_type != "primitive_result_v1" {
             continue;
         }
@@ -259,7 +261,8 @@ fn find_latest_apply_evidence(db: &str, task_id: &str) -> Result<Option<serde_js
 fn find_latest_test_report(db: &str, task_id: &str) -> Result<Option<serde_json::Value>> {
     let bus = crate::event_bus::EventBus::new(db)?;
     let artifacts = bus.list_semantic_artifacts(task_id, None)?;
-    for row in artifacts.iter() { // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
+    for row in artifacts.iter() {
+        // list is DESC (newest first): first match = LATEST. (.rev() used to return the OLDEST — a latent stale-read exposed by the feedback loop, which writes multiple reports per task.)
         if row.artifact_type != "primitive_result_v1" {
             continue;
         }
@@ -473,10 +476,11 @@ pub fn execute_effects(db: &str, task_id: &str) -> Result<()> {
                             // persists its model calls (the corrupted raw
                             // response is the evidence base for repair
                             // patterns).
-                            if let Some(pf) = e.downcast_ref::<crate::execution::primitive_executor::PatchFailure>()
+                            if let Some(pf) = e
+                                .downcast_ref::<crate::execution::primitive_executor::PatchFailure>(
+                                )
                             {
-                                let generation =
-                                    storage.latest_generation_for_task(task_id)?;
+                                let generation = storage.latest_generation_for_task(task_id)?;
                                 storage.append_semantic_artifact(
                                     task_id,
                                     &step_id,

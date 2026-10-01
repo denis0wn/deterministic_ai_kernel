@@ -147,7 +147,9 @@ pub fn repair_patch_json(
                                 .map(|c| c == ' ' || c == '\t' || c == '\n')
                                 .unwrap_or(false)
                     })
-                    .ok_or_else(|| format!("unsupported escape near byte {idx} (no R1/R2 pattern)"))?;
+                    .ok_or_else(|| {
+                        format!("unsupported escape near byte {idx} (no R1/R2 pattern)")
+                    })?;
                 match work.as_bytes()[bs + 1] {
                     b'\n' => {
                         // R2 (single-valued): backslash + raw LF (C-style
@@ -298,7 +300,10 @@ mod tests {
         let extracted = crate::llm::extract_json(raw);
         assert!(serde_json::from_str::<serde_json::Value>(&extracted).is_err());
         let (patch, report) = repair_patch_json(&extracted, file).expect("test failure");
-        assert_eq!(patch.target_file, "/tmp/dek_mq25_hints2/seed102/clearing/fees.py");
+        assert_eq!(
+            patch.target_file,
+            "/tmp/dek_mq25_hints2/seed102/clearing/fees.py"
+        );
         assert!(report.sites.iter().any(|s| s.pattern == "R2"), "{report:?}");
         assert!(report.sites.iter().any(|s| s.pattern == "R1"), "{report:?}");
         // the repaired context is grounded in the real file exactly once

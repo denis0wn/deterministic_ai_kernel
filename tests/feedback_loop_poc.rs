@@ -107,7 +107,11 @@ fn fresh_dir(name: &str) -> std::path::PathBuf {
 }
 
 fn python_project(dir: &std::path::Path) {
-    std::fs::write(dir.join("calc.py"), "def multiply(a, b):\n    return a + b\n").unwrap();
+    std::fs::write(
+        dir.join("calc.py"),
+        "def multiply(a, b):\n    return a + b\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.join("test_calc.py"),
         "from calc import multiply\n\n\ndef test_multiply():\n    assert multiply(2, 3) == 6\n",
@@ -200,14 +204,27 @@ fn feedback_loop_converts_failing_task() {
         "Step 1 read repository {0}\nStep 2 find bug\nStep 3 patch code\nStep 4 apply patch\nStep 5 run tests\nStep 6 validate patch\nFix multiply: returns a + b instead of a * b.",
         calc.display()
     );
-    let db = create_task(&task_id, &loop_chain_spec(ws.to_str().unwrap()).to_string(), &payload);
+    let db = create_task(
+        &task_id,
+        &loop_chain_spec(ws.to_str().unwrap()).to_string(),
+        &payload,
+    );
 
     execute_effects(&db, &task_id).expect("loop must convert and the chain must complete");
 
     let events = event_types(&db, &task_id);
-    assert!(events.contains(&feedback::FEEDBACK_CYCLE_STARTED.to_string()), "{events:?}");
-    assert!(events.contains(&feedback::FEEDBACK_ATTEMPT.to_string()), "{events:?}");
-    assert!(events.contains(&feedback::FEEDBACK_CONVERTED.to_string()), "{events:?}");
+    assert!(
+        events.contains(&feedback::FEEDBACK_CYCLE_STARTED.to_string()),
+        "{events:?}"
+    );
+    assert!(
+        events.contains(&feedback::FEEDBACK_ATTEMPT.to_string()),
+        "{events:?}"
+    );
+    assert!(
+        events.contains(&feedback::FEEDBACK_CONVERTED.to_string()),
+        "{events:?}"
+    );
     assert!(!events.contains(&feedback::FEEDBACK_EXHAUSTED.to_string()));
 
     // converted on the first feedback attempt => 2 patch calls total
@@ -236,7 +253,11 @@ fn feedback_loop_exhausts_budget_honestly() {
         "Step 1 read repository {0}\nStep 2 find bug\nStep 3 patch code\nStep 4 apply patch\nStep 5 run tests\nStep 6 validate patch\nFix multiply: returns a + b instead of a * b.",
         calc.display()
     );
-    let db = create_task(&task_id, &loop_chain_spec(ws.to_str().unwrap()).to_string(), &payload);
+    let db = create_task(
+        &task_id,
+        &loop_chain_spec(ws.to_str().unwrap()).to_string(),
+        &payload,
+    );
 
     let err = execute_effects(&db, &task_id).expect_err("must fail honestly");
     assert!(err.to_string().contains("real tests failed"), "{err}");
@@ -246,7 +267,10 @@ fn feedback_loop_exhausts_budget_honestly() {
     assert!(events.contains(&feedback::FEEDBACK_EXHAUSTED.to_string()));
     assert!(!events.contains(&feedback::FEEDBACK_CONVERTED.to_string()));
     // budget = 2 feedback attempts => 3 patch calls total
-    assert_eq!(CALLS.load(Ordering::SeqCst), 1 + feedback::MAX_FEEDBACK_ATTEMPTS as u64);
+    assert_eq!(
+        CALLS.load(Ordering::SeqCst),
+        1 + feedback::MAX_FEEDBACK_ATTEMPTS as u64
+    );
 
     cleanup(&task_id, &db, &ws);
 }
@@ -267,7 +291,11 @@ fn feedback_loop_stops_on_identical_patch() {
         "Step 1 read repository {0}\nStep 2 find bug\nStep 3 patch code\nStep 4 apply patch\nStep 5 run tests\nStep 6 validate patch\nFix multiply: returns a + b instead of a * b.",
         calc.display()
     );
-    let db = create_task(&task_id, &loop_chain_spec(ws.to_str().unwrap()).to_string(), &payload);
+    let db = create_task(
+        &task_id,
+        &loop_chain_spec(ws.to_str().unwrap()).to_string(),
+        &payload,
+    );
 
     let err = execute_effects(&db, &task_id).expect_err("must fail honestly");
     assert!(err.to_string().contains("real tests failed"), "{err}");
@@ -308,7 +336,11 @@ fn feedback_loop_stops_on_semantically_identical_patch() {
         "Step 1 read repository {0}\nStep 2 find bug\nStep 3 patch code\nStep 4 apply patch\nStep 5 run tests\nStep 6 validate patch\nFix multiply: returns a + b instead of a * b.",
         calc.display()
     );
-    let db = create_task(&task_id, &loop_chain_spec(ws.to_str().unwrap()).to_string(), &payload);
+    let db = create_task(
+        &task_id,
+        &loop_chain_spec(ws.to_str().unwrap()).to_string(),
+        &payload,
+    );
 
     let err = execute_effects(&db, &task_id).expect_err("must fail honestly");
     assert!(err.to_string().contains("real tests failed"), "{err}");
@@ -343,7 +375,11 @@ fn feedback_loop_disabled_by_env() {
         "Step 1 read repository {0}\nStep 2 find bug\nStep 3 patch code\nStep 4 apply patch\nStep 5 run tests\nStep 6 validate patch\nFix multiply: returns a + b instead of a * b.",
         calc.display()
     );
-    let db = create_task(&task_id, &loop_chain_spec(ws.to_str().unwrap()).to_string(), &payload);
+    let db = create_task(
+        &task_id,
+        &loop_chain_spec(ws.to_str().unwrap()).to_string(),
+        &payload,
+    );
 
     let err = execute_effects(&db, &task_id).expect_err("disabled loop keeps terminal failure");
     assert!(err.to_string().contains("real tests failed"), "{err}");

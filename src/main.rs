@@ -1710,8 +1710,7 @@ async fn main() {
             // Write the default flow explicitly: tasks must carry an
             // ExecSpec (the TaskClass read-time fallback is removed).
             let spec_json = serde_json::to_string(
-                &deterministic_ai_kernel::workflow::contract::TaskClass::Generic
-                    .to_exec_spec(None),
+                &deterministic_ai_kernel::workflow::contract::TaskClass::Generic.to_exec_spec(None),
             )
             .unwrap_or_else(|e| {
                 eprintln!("submit-task: spec serialize failed: {e}");

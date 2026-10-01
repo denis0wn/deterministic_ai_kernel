@@ -71,8 +71,11 @@ pub trait StorageProvider: Send + Sync {
     fn upsert_task_exec_spec(&self, task_id: &str, task_class: &str, exec_spec: &str)
         -> Result<()>;
     /// Persist the task input representation (analyze-task CLI form).
-    fn insert_semantic_bias_artifact(&self, task_id: &str, input_representation: &str)
-        -> Result<()>;
+    fn insert_semantic_bias_artifact(
+        &self,
+        task_id: &str,
+        input_representation: &str,
+    ) -> Result<()>;
     /// Task row exists?
     fn task_exists(&self, task_id: &str) -> Result<bool>;
     /// (committed, rejected) counts from effect_ledger for a task.

@@ -129,13 +129,8 @@ fn read_pre_image(db: &str, task_id: &str) -> Result<Option<(String, String)>> {
 /// SAME starting state (identical-patch detection is only meaningful this
 /// way). The path comes from a kernel artifact and is re-confined anyway;
 /// the write goes through the same filesystem provider the executor uses.
-fn restore_pre_image(
-    read_path: &str,
-    content: &str,
-    patch_prim_payload: &Value,
-) -> Result<()> {
-    let workspace =
-        crate::execution::primitive_executor::authorized_workspace(patch_prim_payload);
+fn restore_pre_image(read_path: &str, content: &str, patch_prim_payload: &Value) -> Result<()> {
+    let workspace = crate::execution::primitive_executor::authorized_workspace(patch_prim_payload);
     let canonical =
         crate::execution::primitive_executor::confined(read_path, workspace.as_deref())?;
     crate::providers::get_filesystem().write(&canonical.to_string_lossy(), content)?;
@@ -211,8 +206,8 @@ pub fn maybe_run(
         &serde_json::json!({"failing_tests": failing_tests, "budget": MAX_FEEDBACK_ATTEMPTS}),
     )?;
 
-    let mut prior_hash = crate::effects::find_latest_patch_v1(db, task_id)?
-        .and_then(|p| patch_semantic_hash(&p));
+    let mut prior_hash =
+        crate::effects::find_latest_patch_v1(db, task_id)?.and_then(|p| patch_semantic_hash(&p));
     let mut attempts = 0u32;
 
     loop {

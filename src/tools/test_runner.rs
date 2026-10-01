@@ -124,9 +124,7 @@ fn parse_failures(stderr: &str) -> Vec<String> {
     names
         .into_iter()
         .filter(|n| {
-            !n.is_empty()
-                && n.len() <= 200
-                && n.chars().all(|c| c.is_alphanumeric() || c == '_')
+            !n.is_empty() && n.len() <= 200 && n.chars().all(|c| c.is_alphanumeric() || c == '_')
         })
         .take(64)
         .collect()
@@ -430,7 +428,11 @@ fn maybe_sandbox(
             program.to_string(),
         ];
         wrapped.extend(argv.iter().cloned());
-        return ("/usr/bin/sandbox-exec".to_string(), wrapped, SandboxBackend::Seatbelt);
+        return (
+            "/usr/bin/sandbox-exec".to_string(),
+            wrapped,
+            SandboxBackend::Seatbelt,
+        );
     }
     if cfg!(target_os = "linux") && bwrap_available() {
         // Read-only system, writable workspace, no network, credential
@@ -451,10 +453,7 @@ fn maybe_sandbox(
             "/proc".into(),
         ];
         for dir in [".ssh", ".aws", ".gnupg", ".kube"] {
-            wrapped.extend([
-                "--tmpfs".into(),
-                format!("{home}/{dir}"),
-            ]);
+            wrapped.extend(["--tmpfs".into(), format!("{home}/{dir}")]);
         }
         wrapped.extend([
             "--ro-bind".into(),
@@ -528,7 +527,8 @@ pub fn run_tests(workspace: &str, timeout_secs: u64) -> Result<TestReportV1, Str
                        stderr: String,
                        exit_code: i32,
                        timed_out: bool,
-                       classification: &'static str| -> TestReportV1 {
+                       classification: &'static str|
+     -> TestReportV1 {
         let failures = if derived.command_id == "python_test_file" {
             parse_failures(&stderr)
         } else {
@@ -987,11 +987,7 @@ mod tests {
         // End-to-end: model-patched SUT kills the harness process with
         // os._exit(0) at import time. Must NOT produce tests_passed.
         let ws = unique_dir("osexit_spoof");
-        std::fs::write(
-            ws.join("sut.py"),
-            "import os\nos._exit(0)\n",
-        )
-        .unwrap();
+        std::fs::write(ws.join("sut.py"), "import os\nos._exit(0)\n").unwrap();
         std::fs::write(
             ws.join("test_x.py"),
             "from sut import *\n\ndef test_real():\n    assert True\n",
@@ -1367,9 +1363,7 @@ mod tests {
                 .as_nanos()
         ));
         let escape_str = escape.to_string_lossy().into_owned();
-        let test = format!(
-            "def test_escape():\n    open({escape_str:?}, 'w').write('x')\n"
-        );
+        let test = format!("def test_escape():\n    open({escape_str:?}, 'w').write('x')\n");
         std::fs::write(ws.join("test_x.py"), test).unwrap();
         let report = run_tests(ws.to_str().unwrap(), 30).unwrap();
         assert!(!report.passed, "write outside workspace must fail");

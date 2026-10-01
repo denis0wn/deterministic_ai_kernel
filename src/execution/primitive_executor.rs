@@ -465,9 +465,9 @@ impl PrimitiveExecutor {
                     match patch_contract::extract_target_file(task_payload)
                         .and_then(|target| confined(&target, workspace.as_deref()).ok())
                         .and_then(|canonical| {
-                            std::fs::read_to_string(&canonical).ok().map(|c| {
-                                (canonical.to_string_lossy().to_string(), c)
-                            })
+                            std::fs::read_to_string(&canonical)
+                                .ok()
+                                .map(|c| (canonical.to_string_lossy().to_string(), c))
                         }) {
                         Some(pair) => pair,
                         None => ("repository".to_string(), task_payload.to_string()),
@@ -479,9 +479,15 @@ impl PrimitiveExecutor {
                     let canonical = confined(path, workspace.as_deref())?;
                     let display = canonical.to_string_lossy().to_string();
                     if canonical.exists() {
-                        (display.clone(), providers::get_filesystem().read_to_string(&display)?)
+                        (
+                            display.clone(),
+                            providers::get_filesystem().read_to_string(&display)?,
+                        )
                     } else {
-                        (display, format!("[file not found: {}]", canonical.display()))
+                        (
+                            display,
+                            format!("[file not found: {}]", canonical.display()),
+                        )
                     }
                 };
 

@@ -836,7 +836,10 @@ mod tests {
         let with = serde_json::to_value(mk(Some(7))).unwrap();
         assert_eq!(with["seed"], serde_json::json!(7));
         let without = serde_json::to_value(mk(None)).unwrap();
-        assert!(without.get("seed").is_none(), "seed must be omitted, not null");
+        assert!(
+            without.get("seed").is_none(),
+            "seed must be omitted, not null"
+        );
     }
 
     #[test]
