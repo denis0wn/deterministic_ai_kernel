@@ -1,0 +1,7 @@
+16,17c16,18
+<     share = round(total / parts, 2)
+<     return [share] * parts
+---
+>     share = total / parts
+>     remainder = round(share * 100) / 100
+>     return [remainder] * parts

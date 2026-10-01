@@ -1,0 +1,68 @@
+observability: component=parser operation=decompose payload_len=439 action_count=7 steps=6 trigger=action_chunk
+READY_QUEUE: ["00_read_repository"]
+DISPATCHED: 00_read_repository
+STEP_STATUS: {"00_read_repository": "dispatched", "01_locate_bug": "pending", "02_patch_code": "pending", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+READY_QUEUE: []
+STEP_STATUS: {"00_read_repository": "dispatched", "01_locate_bug": "pending", "02_patch_code": "pending", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 00_read_repository
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 00_read_repository
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 00_read_repository
+READY_QUEUE: ["01_locate_bug"]
+DISPATCHED: 01_locate_bug
+STEP_STATUS: {"00_read_repository": "committed", "01_locate_bug": "dispatched", "02_patch_code": "pending", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-planner
+STEP_CLAIMED: 01_locate_bug
+STEP_RUNNING_OK
+WORKER: worker-planner
+STEP: 01_locate_bug
+STEP_COMPLETE_OK
+WORKER: worker-planner
+STEP_COMPLETED_BY_WORKER: 01_locate_bug
+READY_QUEUE: ["02_patch_code"]
+DISPATCHED: 02_patch_code
+STEP_STATUS: {"00_read_repository": "committed", "01_locate_bug": "committed", "02_patch_code": "dispatched", "03_apply_patch": "pending", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 02_patch_code
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 02_patch_code
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 02_patch_code
+READY_QUEUE: ["03_apply_patch"]
+DISPATCHED: 03_apply_patch
+STEP_STATUS: {"00_read_repository": "committed", "01_locate_bug": "committed", "02_patch_code": "committed", "03_apply_patch": "dispatched", "04_run_tests": "pending", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 03_apply_patch
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 03_apply_patch
+STEP_COMPLETE_OK
+WORKER: worker-executor
+STEP_COMPLETED_BY_WORKER: 03_apply_patch
+READY_QUEUE: ["04_run_tests"]
+DISPATCHED: 04_run_tests
+STEP_STATUS: {"00_read_repository": "committed", "01_locate_bug": "committed", "02_patch_code": "committed", "03_apply_patch": "committed", "04_run_tests": "dispatched", "05_validate_patch": "pending"}
+WORKER_CLAIM_OK
+WORKER: worker-executor
+STEP_CLAIMED: 04_run_tests
+STEP_RUNNING_OK
+WORKER: worker-executor
+STEP: 04_run_tests
+STEP_FAIL_OK
+WORKER: worker-executor
+STEP_FAILED_BY_WORKER: 04_run_tests
+REASON: fatal: real tests failed with exit code 1 (classification=tests_failed; no fabricated success)
+TASK_STATE: failed
+TASK_FAILED_REASON: step 04_run_tests failed: fatal: real tests failed with exit code 1 (classification=tests_failed; no fabricated success)
+TERMINAL_ASSESSMENT: InProgress (baseline or inconclusive attempt)
+execute-effects failed: step 04_run_tests failed: fatal: real tests failed with exit code 1 (classification=tests_failed; no fabricated success)

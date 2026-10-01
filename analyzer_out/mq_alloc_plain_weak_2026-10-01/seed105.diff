@@ -1,0 +1,11 @@
+15,16c15,21
+<     share = round(total / parts, 2)
+<     return [share] * parts
+---
+>     share = total / parts
+>     remainder = round(share * parts - int(share * parts), 2)
+>     shares = [share] * parts
+>     if remainder > 0:
+>         for i in range(int(remainder / 0.01)):
+>             shares[i % parts] += 0.01
+>     return shares

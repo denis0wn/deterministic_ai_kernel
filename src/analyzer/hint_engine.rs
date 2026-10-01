@@ -38,6 +38,14 @@ pub fn generate_hints(rule_id: &str) -> Vec<String> {
             "The defect is floor division (`//`) truncating a monetary amount. Decide the correct policy: exact division or explicit HALF-UP rounding.",
             "If you need `decimal`, you may import it INSIDE the function to keep the patch in one contiguous region.",
         ],
+        // Validated by measurement (mq_alloc_* 2026-10-01): the invariant
+        // form states the cent-level construction, not the iteration — the
+        // same lesson as business-days.
+        "allocation-remainder" => &[
+            "The defect rounds each share independently, so the shares do not sum back to the total. Work in integer cents: cents = round(total * 100); base = cents // parts; remainder r = cents % parts; exactly r shares get base + 1 cents and the rest get base cents. Shares must differ by at most one cent and sum exactly to the total.",
+            "Preserve the function's existing return type: a list of floats (cents divided by 100).",
+            "Stdlib only. round(total * 100) gives exact integer cents for two-decimal inputs; do not import decimal or numpy.",
+        ],
         "none-arith" => &[
             "The defect is arithmetic on a value that may be None (dict.get without a default). Provide a default (e.g. `.get(key, 0)`) or handle None before the arithmetic.",
         ],
@@ -69,10 +77,22 @@ mod tests {
             "none-arith",
             "offbyone-range",
             "business-days",
+            "allocation-remainder",
         ] {
             assert!(has_hints(rule), "{rule} should have hints");
             assert!(!generate_hints(rule).is_empty());
         }
+    }
+
+    #[test]
+    fn allocation_hints_state_the_invariant() {
+        // The recipe states the cent-level construction (exactly r shares
+        // get the extra cent), not prose about "fair splits" — invariant
+        // form is what converted in the business-days measurement.
+        let hints = generate_hints("allocation-remainder").join(" ");
+        assert!(hints.contains("integer cents"));
+        assert!(hints.contains("sum exactly"));
+        assert!(hints.contains("at most one cent"));
     }
 
     #[test]

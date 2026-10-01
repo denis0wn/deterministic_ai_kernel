@@ -1,0 +1,11 @@
+16,17c16,22
+<     share = round(total / parts, 2)
+<     return [share] * parts
+---
+>     cents = round(total * 100)
+>     base = cents // parts
+>     remainder = cents % parts
+>     shares = [base / 100.0] * parts
+>     for i in range(remainder):
+>         shares[i] += 0.01
+>     return shares

@@ -10,18 +10,20 @@ primary source, [likely] = secondary sources, [assumption] = untested.
 - Run an AI code-fix task through a bounded pipeline with the repository's
   own tests as the judge; persist every prompt, response, seed, and test
   report; replay any run deterministically against its evidence chain.
-- Measured on the reference defect class: unassisted frontier-class cloud
-  model 0/14; kernel + Layer-1 hints 14/14; honest failure on every wrong
-  attempt, zero fabricated successes across 70+ live episodes.
+- Measured on four defect classes: money-rounding 0/14 → 14/14 with hints
+  (both a frontier-class cloud model and the local Ministral), business-days
+  0/8 → 8/8, money-allocation 0/8 → 8/8, null-safety 8/8 in both arms;
+  honest failure on every wrong attempt, zero fabricated successes across
+  100+ live episodes.
 - Security reviewed; test execution sandboxed (network denied, workspace
-  confined) on macOS; 936 automated tests green; CI green on every merge.
+  confined) on macOS; 937 automated tests green; CI green on every merge.
 
 ## 2. Minuses (the part a good deputy does not hide)
 
 | # | Weakness | Severity for sales |
 |---|---|---|
-| W1 | ~~**One defect class proven.**~~ **CLOSED 2026-09-26:** three classes measured on the sanctioned local model — money-rounding (0/14 plain → 14/14 hints), business-days (0/8 → 3/8 after the fixture's own test hole was found and closed *by reading the evidence*), null-safety (8/8 both). Bonus finding: the evidence chain exposed a hole in our own test suite — the machinery measures its own judges. | High — mitigated by selling the evaluation, not the claim |
-| W2 | **Model-dependent.** Without hints every model tested fails the class (0/14). The kernel doesn't make models smarter; hints are hand-written recipes per defect class — now with a validation loop: recipes are admitted only after measured conversion (the business-days recipe went 3/8 → 8/8 after the invariant was stated; first measured, then shipped in `hint_engine.rs`). | High — the Layer-1 hint library becomes the real asset to build per client |
+| W1 | ~~**One defect class proven.**~~ **CLOSED 2026-09-26, extended 2026-10-01:** four classes measured on the sanctioned local model — money-rounding (0/14 plain → 14/14 hints), business-days (0/8 → 8/8 after the fixture's own test hole was found and closed *by reading the evidence*), money-allocation (0/8 → 8/8, added 2026-10-01; the evidence again exposed a fixture-suite hole — a sub-cent patch passed the first revision — and again the fix was measured back to green), null-safety (8/8 both). Bonus finding repeats: the evidence chain exposes holes in our own judges — the machinery measures its own judges. | High — mitigated by selling the evaluation, not the claim |
+| W2 | **Model-dependent.** Without hints every model tested fails the class (0/14). The kernel doesn't make models smarter; hints are hand-written recipes per defect class — now with a validation loop: recipes are admitted only after measured conversion (the business-days recipe went 3/8 → 8/8 after the invariant was stated; the money-allocation recipe, written in the same invariant form from the start, converted 8/8 on its first measurement; first measured, then shipped in `hint_engine.rs`). | High — the Layer-1 hint library becomes the real asset to build per client |
 | W3 | **Layer-2 self-repair doesn't convert** — measured on TWO models now: gemma4 0/5, Ministral 0/8 (2026-09-26). The failure is total: at temp 0 the model emits the *identical* patch on every attempt (evidence: same replacement 3× per task). The class needs recipe knowledge (hints), not a verification signal. Side yield: the runs exposed a futility-stop bug — prose drift in the patch's `reason` field defeated the raw-JSON identical check; now hashed on the semantic triple only (test added). | Medium — we simply don't claim it |
 | W4 | **One operator.** Bus factor, response times, enterprise procurement optics. | Medium — standard for a pilot stage; disclose |
 | W5 | ~~**macOS-only sandbox** (Seatbelt).~~ **CLOSED 2026-09-26:** Linux covered via bubblewrap (ro-bind /, rw workspace, `--unshare-net`, credential dirs masked); the report records `sandbox_backend` honestly (`seatbelt`/`bwrap`/`none`). | Medium — matters only for self-hosted Linux shops |
